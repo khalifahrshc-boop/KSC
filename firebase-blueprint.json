@@ -1,0 +1,208 @@
+{
+  "collections": [
+    {
+      "name": "users",
+      "description": "System users and their roles",
+      "fields": [
+        { "name": "name", "type": "string" },
+        { "name": "role", "type": "string" },
+        { "name": "email", "type": "string" },
+        { "name": "badgeNumber", "type": "string" }
+      ]
+    },
+    {
+      "name": "projects",
+      "description": "Construction projects",
+      "fields": [
+        { "name": "projectNumber", "type": "string" },
+        { "name": "nameEn", "type": "string" },
+        { "name": "nameAr", "type": "string" },
+        { "name": "clientEn", "type": "string" },
+        { "name": "clientAr", "type": "string" },
+        { "name": "locationEn", "type": "string" },
+        { "name": "locationAr", "type": "string" },
+        { "name": "startDate", "type": "string" },
+        { "name": "endDate", "type": "string" },
+        { "name": "projectManager", "type": "string" },
+        { "name": "status", "type": "string" },
+        { "name": "budget", "type": "number", "optional": true }
+      ]
+    },
+    {
+      "name": "workItems",
+      "description": "Specific work items within a project",
+      "fields": [
+        { "name": "projectId", "type": "string" },
+        { "name": "itemNumber", "type": "string" },
+        { "name": "nameEn", "type": "string" },
+        { "name": "nameAr", "type": "string" },
+        { "name": "workType", "type": "string" },
+        { "name": "responsiblePerson", "type": "string" }
+      ]
+    },
+    {
+      "name": "activities",
+      "description": "Detailed activities for each work item",
+      "fields": [
+        { "name": "workItemId", "type": "string" },
+        { "name": "nameEn", "type": "string" },
+        { "name": "nameAr", "type": "string" },
+        { "name": "totalQuantity", "type": "number" },
+        { "name": "unit", "type": "string" },
+        { "name": "descriptionEn", "type": "string" },
+        { "name": "descriptionAr", "type": "string" },
+        { "name": "materialIds", "type": "array" },
+        { "name": "equipmentIds", "type": "array" },
+        { "name": "workerIds", "type": "array" },
+        { "name": "plannedDailyProduction", "type": "number", "optional": true },
+        { "name": "expectedDurationDays", "type": "number", "optional": true },
+        { "name": "expectedFinishDate", "type": "string", "optional": true }
+      ]
+    },
+    {
+      "name": "warehouseMaterials",
+      "description": "Inventory of construction materials",
+      "fields": [
+        { "name": "nameEn", "type": "string" },
+        { "name": "nameAr", "type": "string" },
+        { "name": "code", "type": "string" },
+        { "name": "unit", "type": "string" },
+        { "name": "quantity", "type": "number" },
+        { "name": "reservedStock", "type": "number" },
+        { "name": "minThreshold", "type": "number" }
+      ]
+    },
+    {
+      "name": "equipmentItems",
+      "description": "Fleet and machinery inventory",
+      "fields": [
+        { "name": "nameEn", "type": "string" },
+        { "name": "nameAr", "type": "string" },
+        { "name": "code", "type": "string" },
+        { "name": "totalQuantity", "type": "number" },
+        { "name": "reservedQuantity", "type": "number" },
+        { "name": "status", "type": "string" },
+        { "name": "locationEn", "type": "string" },
+        { "name": "locationAr", "type": "string" }
+      ]
+    },
+    {
+      "name": "workers",
+      "description": "Workforce profiles",
+      "fields": [
+        { "name": "fullName", "type": "string" },
+        { "name": "nationalId", "type": "string" },
+        { "name": "badgeNumber", "type": "string" },
+        { "name": "professionEn", "type": "string" },
+        { "name": "professionAr", "type": "string" },
+        { "name": "dailyProductivity", "type": "number" },
+        { "name": "hoursPerDay", "type": "number" },
+        { "name": "status", "type": "string" },
+        { "name": "salary", "type": "number" }
+      ]
+    },
+    {
+      "name": "progressUpdates",
+      "description": "Daily site progress logs",
+      "fields": [
+        { "name": "projectId", "type": "string" },
+        { "name": "workItemId", "type": "string" },
+        { "name": "activityId", "type": "string" },
+        { "name": "time", "type": "string" },
+        { "name": "completedQuantity", "type": "number" },
+        { "name": "numberOfWorkers", "type": "number" },
+        { "name": "equipmentUsed", "type": "array" },
+        { "name": "completionPercentage", "type": "number" },
+        { "name": "notes", "type": "string" },
+        { "name": "photos", "type": "array" },
+        { "name": "documents", "type": "array" },
+        { "name": "timestamp", "type": "string" }
+      ]
+    },
+    {
+      "name": "systemSettings",
+      "description": "Global application configuration",
+      "fields": [
+        { "name": "companyNameEn", "type": "string" },
+        { "name": "companyNameAr", "type": "string" },
+        { "name": "companyLogoUrl", "type": "string" },
+        { "name": "officialStampUrl", "type": "string" },
+        { "name": "companyPhone", "type": "string" },
+        { "name": "companyEmail", "type": "string" },
+        { "name": "officialAddressEn", "type": "string" },
+        { "name": "officialAddressAr", "type": "string" },
+        { "name": "managerNameEn", "type": "string" },
+        { "name": "managerNameAr", "type": "string" },
+        { "name": "managerSignature", "type": "string" },
+        { "name": "reportTemplateType", "type": "string" }
+      ]
+    },
+    {
+      "name": "siteReports",
+      "description": "Official generated site reports",
+      "fields": [
+        { "name": "projectId", "type": "string" },
+        { "name": "reportNumber", "type": "string" },
+        { "name": "reportDate", "type": "string" },
+        { "name": "reportBatchOption", "type": "string" },
+        { "name": "weather", "type": "string" },
+        { "name": "tempRange", "type": "string" },
+        { "name": "wind", "type": "string" },
+        { "name": "humidity", "type": "string" },
+        { "name": "contractNo", "type": "string" },
+        { "name": "highwayName", "type": "string" },
+        { "name": "personnelCounts", "type": "object" },
+        { "name": "remarksEn", "type": "string" },
+        { "name": "remarksAr", "type": "string" },
+        { "name": "preparedBy", "type": "string" },
+        { "name": "certNo", "type": "string" },
+        { "name": "manualRows", "type": "array" },
+        { "name": "timestamp", "type": "string" }
+      ]
+    },
+    {
+      "name": "attendanceRecords",
+      "description": "Daily employee attendance records logged by supervisors",
+      "fields": [
+        { "name": "projectId", "type": "string" },
+        { "name": "date", "type": "string" },
+        { "name": "workerId", "type": "string" },
+        { "name": "workerName", "type": "string" },
+        { "name": "professionAr", "type": "string" },
+        { "name": "professionEn", "type": "string" },
+        { "name": "isPresent", "type": "boolean" },
+        { "name": "status", "type": "string" },
+        { "name": "startTime", "type": "string" },
+        { "name": "breakTime", "type": "string" },
+        { "name": "endTime", "type": "string" },
+        { "name": "shiftTime", "type": "string" },
+        { "name": "supervisorName", "type": "string" },
+        { "name": "notes", "type": "string", "optional": true },
+        { "name": "timestamp", "type": "string" }
+      ]
+    },
+    {
+      "name": "savedKpiReports",
+      "description": "Daily KPI and productivity summary reports saved for records and tracking",
+      "fields": [
+        { "name": "reportNumber", "type": "string" },
+        { "name": "reportDate", "type": "string" },
+        { "name": "projectId", "type": "string" },
+        { "name": "projectNameEn", "type": "string" },
+        { "name": "projectNameAr", "type": "string" },
+        { "name": "targetQuantity", "type": "number" },
+        { "name": "actualQuantity", "type": "number" },
+        { "name": "attendanceRate", "type": "number" },
+        { "name": "presentWorkers", "type": "number" },
+        { "name": "absentWorkers", "type": "number" },
+        { "name": "efficiency", "type": "string" },
+        { "name": "safetyScore", "type": "number" },
+        { "name": "openIssuesCount", "type": "number" },
+        { "name": "capacityUtilization", "type": "number" },
+        { "name": "supervisorNotes", "type": "string" },
+        { "name": "createdByName", "type": "string", "optional": true },
+        { "name": "timestamp", "type": "string" }
+      ]
+    }
+  ]
+}

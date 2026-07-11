@@ -1,0 +1,214 @@
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&family=Inter:wght@300;400;500;700;900&display=swap');
+@import "tailwindcss";
+
+/* Document printing customizations */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 15mm 10mm 15mm 10mm;
+  }
+  
+  html, body {
+    background: white !important;
+    color: black !important;
+    font-family: 'Cairo', 'Inter', system-ui, sans-serif !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  /* Hide everything that is not needed for any report by default */
+  nav, aside, header, footer, button, .print-hidden, .print\:hidden, .no-print {
+    display: none !important;
+  }
+
+  /* Flatten all parent layout containers when any print mode is active */
+  body[class*="printing-"] #root,
+  body[class*="printing-"] #root > div,
+  body[class*="printing-"] #app-main-layout,
+  body[class*="printing-"] #app-main-layout > div,
+  body[class*="printing-"] main,
+  body[class*="printing-"] .dashboard-root-container,
+  body[class*="printing-"] #field-operations-root {
+    display: block !important;
+    position: static !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    transform: none !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+  }
+
+  /* 1. Direct A4 Report printing mode */
+  body.printing-report-active aside,
+  body.printing-report-active header,
+  body.printing-report-active #reports-header-card,
+  body.printing-report-active .tab-buttons,
+  body.printing-report-active #reports-module-root > div > :not(.print-parent) {
+    display: none !important;
+  }
+  body.printing-report-active .print-parent,
+  body.printing-report-active .printable-report-area,
+  body.printing-report-active #high-fidelity-printable-form {
+    display: block !important;
+    visibility: visible !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    background: white !important;
+    color: black !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    position: static !important;
+  }
+
+  /* 2. KPI Report printing mode */
+  body.printing-kpi-active aside,
+  body.printing-kpi-active header,
+  body.printing-kpi-active #kpi-dashboard-root > :not(.modern-report-container) {
+    display: none !important;
+  }
+  body.printing-kpi-active .modern-report-container {
+    display: block !important;
+    visibility: visible !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    background: white !important;
+    color: black !important;
+    padding: 10mm !important;
+    margin: 0 !important;
+    position: static !important;
+    border: none !important;
+  }
+
+  /* 3. 2-Hour Feed updates printing mode */
+  body.printing-2hour-active aside,
+  body.printing-2hour-active header,
+  body.printing-2hour-active #dashboard-module-root > div > :not(.feed-expanded-container) {
+    display: none !important;
+  }
+  body.printing-2hour-active .feed-expanded-container {
+    position: static !important;
+    display: block !important;
+    visibility: visible !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: white !important;
+  }
+  body.printing-2hour-active .feed-expanded-container * {
+    visibility: visible !important;
+  }
+
+  /* 4. Archived Reports printing mode (Single & Bulk) */
+  body.printing-archive-active aside,
+  body.printing-archive-active header,
+  body.printing-archive-active #reports-module-root > :not(.printable-archived-report-view) {
+    display: none !important;
+  }
+  body.printing-archive-active .printable-archived-report-view {
+    display: block !important;
+    visibility: visible !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    background: white !important;
+    color: black !important;
+    padding: 10mm !important;
+    margin: 0 !important;
+    position: static !important;
+    border: none !important;
+  }
+
+  
+  /* 5. Attendance Report printing mode */
+  body.printing-attendance-active aside,
+  body.printing-attendance-active header,
+  body.printing-attendance-active #field-operations-root > :not(.printable-attendance-view) {
+    display: none !important;
+  }
+  body.printing-attendance-active .printable-attendance-view {
+    display: block !important;
+    visibility: visible !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    background: white !important;
+    color: black !important;
+    padding: 10mm !important;
+    margin: 0 !important;
+    position: static !important;
+    border: none !important;
+  }
+
+  /* Fix table display in print */
+  table {
+    display: table !important;
+    width: 100% !important;
+    border-collapse: collapse !important;
+    page-break-inside: auto;
+    border: 1px solid #e2e8f0 !important;
+  }
+  
+  tr {
+    display: table-row !important;
+    page-break-inside: avoid !important;
+  }
+
+  th, td {
+    display: table-cell !important;
+    border: 1px solid #e2e8f0 !important;
+    padding: 6px 10px !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+    background-color: #f8fafc !important;
+  }
+
+  /* Hide shadows, borders and rounded corners for official document look */
+  .rounded-3xl, .rounded-2xl, .rounded-xl {
+    border-radius: 0 !important;
+  }
+  .shadow-sm, .shadow-md, .shadow-lg, .shadow-xl, .shadow-2xl {
+    box-shadow: none !important;
+  }
+}
+
+/* Slide and Scale transitions */
+@keyframes slideIn {
+  from {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-slideIn {
+  animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-scaleIn {
+  animation: scaleIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}

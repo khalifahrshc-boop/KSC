@@ -1,0 +1,6 @@
+{
+  "name": "Enterprise Project Management and Field Production Tracking System",
+  "description": "An enterprise-grade project management and field production tracking system with smart planning, supervisor check-ins, workforce management, and dual-language (Arabic/English) RTL support.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
