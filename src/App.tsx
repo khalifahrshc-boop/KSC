@@ -141,8 +141,24 @@ export default function App() {
   const [savedKpiReports, setSavedKpiReports] = useState<SavedKpiReport[]>([]);
   const [fieldSubmissions, setFieldSubmissions] = useState<FieldWorkSubmission[]>([]);
   const [isFieldPortal, setIsFieldPortal] = useState<boolean>(() => {
-    return window.location.search.includes('portal=field');
+    return window.location.search.includes('portal=field') || window.location.hash.includes('portal=field');
   });
+
+  // Listen to URL changes (for back button, hash navigation, popstate, etc.)
+  useEffect(() => {
+    const handleUrlChange = () => {
+      const hasPortal = window.location.search.includes('portal=field') || window.location.hash.includes('portal=field');
+      setIsFieldPortal(hasPortal);
+    };
+    window.addEventListener('popstate', handleUrlChange);
+    window.addEventListener('hashchange', handleUrlChange);
+    // Initial sync
+    handleUrlChange();
+    return () => {
+      window.removeEventListener('popstate', handleUrlChange);
+      window.removeEventListener('hashchange', handleUrlChange);
+    };
+  }, []);
 
 
   // --- CONFIRMATION MODAL STATE ---
@@ -378,6 +394,20 @@ export default function App() {
     try {
       await dbApi.delete('projects', id);
       setProjects(prev => prev.filter(p => p.id !== id));
+
+      // Cascade delete related entities locally
+      setWorkItems(prev => prev.filter(wi => wi.projectId !== id));
+      setActivities(prev => prev.filter(a => {
+        const wi = workItems.find(w => w.id === a.workItemId);
+        return wi?.projectId !== id;
+      }));
+      setProgressUpdates(prev => prev.filter(p => p.projectId !== id));
+      setAttendanceRecords(prev => prev.filter(a => a.projectId !== id));
+      setCheckIns(prev => prev.filter(c => c.projectId !== id));
+      setIssues(prev => prev.filter(i => i.projectId !== id));
+      setDelays(prev => prev.filter(d => d.projectId !== id));
+      setSafetyRecords(prev => prev.filter(s => s.projectId !== id));
+
       logSystemAction('DELETE_PROJECT', `Ejected project id: ${id}`);
     } catch (e) {
       alert("Error deleting project");
@@ -1011,7 +1041,7 @@ export default function App() {
           {/* Dedicated Field Portal Quick Access */}
           <button 
             onClick={() => {
-              const portalUrl = `${window.location.origin}${window.location.pathname}?portal=field`;
+              const portalUrl = `${window.location.origin}${window.location.pathname}?portal=field#portal=field`;
               window.history.replaceState({}, document.title, portalUrl);
               setIsFieldPortal(true);
             }}

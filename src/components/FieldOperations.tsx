@@ -1450,7 +1450,7 @@ export default function FieldOperations({
                   </div>
                   <button
                     onClick={() => {
-                      const portalUrl = `${window.location.origin}${window.location.pathname}?portal=field`;
+                      const portalUrl = `${window.location.origin}${window.location.pathname}?portal=field#portal=field`;
                       window.open(portalUrl, '_blank');
                     }}
                     className="shrink-0 bg-[#040957] hover:bg-blue-800 text-white font-bold text-[10px] py-1.5 px-3 rounded-lg transition font-sans flex items-center justify-center gap-1 shadow-sm self-start"
@@ -1464,13 +1464,13 @@ export default function FieldOperations({
                   <input
                     type="text"
                     readOnly
-                    value={`${window.location.origin}${window.location.pathname}?portal=field`}
+                    value={`${window.location.origin}${window.location.pathname}?portal=field#portal=field`}
                     className="flex-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-2 text-[11px] font-mono font-bold text-gray-500 dark:text-gray-350"
                     onClick={(e) => (e.target as HTMLInputElement).select()}
                   />
                   <button
                     onClick={() => {
-                      const portalUrl = `${window.location.origin}${window.location.pathname}?portal=field`;
+                      const portalUrl = `${window.location.origin}${window.location.pathname}?portal=field#portal=field`;
                       try {
                         if (navigator.clipboard && navigator.clipboard.writeText) {
                           navigator.clipboard.writeText(portalUrl).then(() => {

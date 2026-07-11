@@ -730,8 +730,8 @@ export default function KPIDashboard({
     companyEmail: "info@rshc.com.sa",
     officialAddressEn: "Olaya District, Riyadh, KSA",
     officialAddressAr: "حي العليا، الرياض، المملكة العربية السعودية",
-    commercialRegistration: "1010987654",
-    taxNumber: "300098765400003",
+    commercialRegistration: "",
+    taxNumber: "",
     companyWebsite: "www.rshc.com.sa",
     managerNameEn: "Eng. Fahad Al-Otaibi",
     managerNameAr: "م. فهد العتيبي",
@@ -1136,7 +1136,7 @@ export default function KPIDashboard({
                     </div>
                     <div className="flex justify-between items-center py-2.5 border-b border-gray-100 text-xs text-gray-700">
                       <span className="font-semibold text-gray-500">{isRtl ? 'انحراف التكلفة المالي (CV)' : 'CV(cost variance)'}</span>
-                      <span className="font-extrabold text-emerald-600 font-mono">+12.4%</span>
+                      
                     </div>
                     <div className="flex justify-between items-center py-2.5 border-b border-gray-100 text-xs text-gray-700">
                       <span className="font-semibold text-gray-500">{isRtl ? 'معدل الحوادث (LTIFR)' : 'Incident rate (LTIFR)'}</span>
@@ -1521,8 +1521,8 @@ export default function KPIDashboard({
                     <p className="font-bold text-emerald-900 mb-2">{isRtl ? 'توقعات تقدم الأعمال القادم:' : 'Schedule Variance Forecast:'}</p>
                     <p className="text-gray-700 font-semibold">
                       {isRtl 
-                        ? 'من المتوقع الحفاظ على مستوى الإنتاجية الحالي بمعدل لا يقل عن ' + dailyProductivityPercentage + '% خلال الدورة التشغيلية القادمة، مع توقع زيادة في جاهزية أسطول المعدات بنسبة تتجاوز 4.5% مقارنة بالإحصائية السابقة.'
-                        : 'Projections show a steady baseline progress index of ' + dailyProductivityPercentage + '% through the upcoming operational cycles. Fleet availability is expected to optimize by an additional 4.5%.'}
+                        ? 'من المتوقع الحفاظ على مستوى الإنتاجية الحالي بمعدل لا يقل عن ' + dailyProductivityPercentage + '% خلال الدورة التشغيلية القادمة، مع توقع زيادة في جاهزية أسطول المعدات '
+                        : 'Projections show a steady baseline progress index of ' + dailyProductivityPercentage + '% through the upcoming operational cycles. Fleet availability is expected to optimize '}
                     </p>
                   </div>
                 </div>

@@ -668,11 +668,11 @@ export default function Dashboard({
   
   const finalDailyProd = totalDailyTarget > 0 
     ? `${totalActualToday}/${totalDailyTarget}`
-    : "87.3%";
+    : "0/0";
 
   const dailyProdSub = totalDailyTarget > 0
     ? (isRtl ? `نسبة الإنجاز: ${dailyProdPercentage}%` : `Achievement: ${dailyProdPercentage}%`)
-    : (isRtl ? '+٣.٤٪ زيادة عن الأمس' : '+3.4% rise');
+    : (isRtl ? 'لا يوجد هدف محدد' : 'No Target');
 
   // Sub-labels for KPI cards to make them more dynamic
   const projectsSub = isRtl
@@ -916,7 +916,7 @@ export default function Dashboard({
               <span className="text-[10px] text-gray-400 font-black uppercase tracking-widest">{isRtl ? 'صحة الجدولة' : 'Schedule Health'}</span>
               <div className="text-lg font-black text-emerald-600 flex items-center justify-center gap-1 font-sans">
                 <ShieldCheck className="w-5 h-5 text-emerald-500" />
-                <span>94.8%</span>
+                <span>{totalPlannedProgressAverage > 0 ? Math.min(100, Math.round((totalActualProgressAverage / totalPlannedProgressAverage) * 100)) : 100}%</span>
               </div>
             </div>
             <div className="text-center space-y-1 border-y sm:border-y-0 sm:border-x border-gray-200 py-2 sm:py-0">
@@ -928,7 +928,7 @@ export default function Dashboard({
             </div>
             <div className="text-center space-y-1">
               <span className="text-[10px] text-gray-400 font-black uppercase tracking-widest">{isRtl ? 'الهدر بالموارد' : 'Resource Waste'}</span>
-              <div className="text-lg font-black text-[#040957] font-sans">&lt; 0.4%</div>
+              <div className="text-lg font-black text-[#040957] font-sans">0%</div>
             </div>
           </div>
         </div>

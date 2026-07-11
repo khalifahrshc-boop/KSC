@@ -143,7 +143,7 @@ export default function FieldPortal({
 
   // Copy shareable portal link
   const handleCopyLink = () => {
-    const portalUrl = `${window.location.origin}${window.location.pathname}?portal=field`;
+    const portalUrl = `${window.location.origin}${window.location.pathname}?portal=field#portal=field`;
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(portalUrl).then(() => {
@@ -511,13 +511,6 @@ export default function FieldPortal({
             <Copy className="w-4 h-4" />
             <span>{isRtl ? 'نسخ رابط الجوال' : 'Copy Mobile Link'}</span>
           </button>
-          
-          <button 
-            onClick={onReturnToMain}
-            className="flex items-center gap-1.5 bg-amber-400 hover:bg-amber-500 px-3 py-2 rounded-xl text-xs font-black text-slate-950 transition"
-          >
-            {isRtl ? 'البرنامج الرئيسي 🏢' : 'Control Program 🏢'}
-          </button>
         </div>
       </div>
 
@@ -589,12 +582,6 @@ export default function FieldPortal({
               className="bg-[#040957] hover:bg-blue-800 text-white font-bold py-3 px-6 rounded-2xl text-xs transition"
             >
               {isRtl ? 'تقديم تقرير ميداني آخر' : 'Submit Another Report'}
-            </button>
-            <button
-              onClick={onReturnToMain}
-              className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 px-6 rounded-2xl text-xs transition"
-            >
-              {isRtl ? 'العودة للمنصة الرئيسية' : 'Return to Home'}
             </button>
           </div>
         </motion.div>

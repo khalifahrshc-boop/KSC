@@ -3189,7 +3189,7 @@ export default function ReportsPanel({
                   <tr className="bg-white">
                     <td className="border border-slate-200 p-2.5 font-semibold text-slate-600">Active Remedial Safety Tasks</td>
                     <td className="border border-slate-200 p-2.5 font-extrabold text-rose-500 num-font">{selectedArchivedReport.data.openIssuesCount} Issues</td>
-                    <td className="border border-slate-200 p-2.5 text-slate-500">0 Goals</td>
+                    <td className="border border-slate-200 p-2.5 text-slate-500">0 Target</td>
                   </tr>
                 </tbody>
               </table>
