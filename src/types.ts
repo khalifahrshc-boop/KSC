@@ -51,6 +51,8 @@ export interface Activity {
   materialIds: string[];
   equipmentIds: string[];
   workerIds: string[];
+  materialAllocations?: { id: string; quantity: number }[];
+  equipmentAllocations?: { id: string; quantity: number }[];
   // Smart planning fields calculated on run
   plannedDailyProduction?: number;
   expectedDurationDays?: number;

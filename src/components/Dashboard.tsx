@@ -143,11 +143,20 @@ export default function Dashboard({
     const end = new Date(proj.endDate);
     if (sysNow < start || sysNow > end) return acc;
 
-    // Calculate based on linked workers productivity
+    // Use the explicitly planned daily production for the activity if available
+    // Otherwise fallback to sum of linked workers' daily productivity.
+    if (act.plannedDailyProduction && act.plannedDailyProduction > 0) {
+      return acc + act.plannedDailyProduction;
+    }
     const activeWorkers = workers.filter(w => act.workerIds.includes(w.id));
     const sumProductivity = activeWorkers.reduce((wAcc, curr) => wAcc + (curr.dailyProductivity || 0), 0);
-    // If no workers, we assume a baseline for active projects
-    return acc + (sumProductivity || 10); 
+    
+    if (sumProductivity > 0) {
+      return acc + sumProductivity;
+    }
+    
+    const durationDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
+    return acc + (act.totalQuantity / durationDays);
   }, 0);
 
   const todayUpdates = progressUpdates.filter(u => {
@@ -661,16 +670,32 @@ export default function Dashboard({
       .slice(0, isFeedExpanded ? 50 : 10);
   }, [progressUpdates, activities, workItems, isRtl, isFeedExpanded, filterProjectId]);
   
-  // Ratio of achievement for today
-  const dailyProdPercentage = totalDailyTarget > 0 
-    ? Math.round((totalActualToday / totalDailyTarget) * 100) 
+  // Cumulative target calculation
+  const dailyWorkingHours = 10; // Standard shift hours
+  let maxHour = 7; // Shift starts at 7 AM
+  todayUpdates.forEach(u => {
+    const d = new Date(u.timestamp);
+    if (d.getHours() > maxHour) {
+      maxHour = d.getHours();
+    }
+  });
+  
+  // Calculate hours elapsed in increments (optional, or exact)
+  const hoursElapsed = Math.max(0, Math.min(dailyWorkingHours, maxHour - 7));
+  
+  // Target to date = Daily target × (Hours elapsed ÷ Daily working hours)
+  const cumulativeTargetToDate = totalDailyTarget * (hoursElapsed / dailyWorkingHours);
+  
+  // Percentage of completion = (Actual cumulative completion ÷ Cumulative target) × 100
+  const dailyProdPercentage = cumulativeTargetToDate > 0 
+    ? Math.round((totalActualToday / cumulativeTargetToDate) * 100) 
     : 0;
   
-  const finalDailyProd = totalDailyTarget > 0 
-    ? `${totalActualToday}/${totalDailyTarget}`
+  const finalDailyProd = cumulativeTargetToDate > 0 
+    ? `${totalActualToday}/${Math.round(cumulativeTargetToDate)}`
     : "0/0";
 
-  const dailyProdSub = totalDailyTarget > 0
+  const dailyProdSub = cumulativeTargetToDate > 0
     ? (isRtl ? `نسبة الإنجاز: ${dailyProdPercentage}%` : `Achievement: ${dailyProdPercentage}%`)
     : (isRtl ? 'لا يوجد هدف محدد' : 'No Target');
 

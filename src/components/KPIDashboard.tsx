@@ -293,12 +293,19 @@ export default function KPIDashboard({
       const end = new Date(proj.endDate);
       if (sysNow < start || sysNow > end) return acc;
 
-      // Sum of worker's daily productivity assigned to this activity
+      if (act.plannedDailyProduction && act.plannedDailyProduction > 0) {
+        return acc + act.plannedDailyProduction;
+      }
       const activeWorkers = workers.filter(w => act.workerIds.includes(w.id));
       const sumProductivity = activeWorkers.reduce((wAcc, curr) => wAcc + (curr.dailyProductivity || 0), 0);
       
-      // Fallback to average planned or 10 if no workers registered yet
-      return acc + (sumProductivity || act.plannedDailyProduction || 15);
+      if (sumProductivity > 0) {
+        return acc + sumProductivity;
+      }
+      
+      // Fallback: Total quantity divided by duration in days
+      const durationDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
+      return acc + (act.totalQuantity / durationDays);
     }, 0);
   }, [filteredActivities, workItems, projects, workers, sysNow]);
 
@@ -314,9 +321,21 @@ export default function KPIDashboard({
   }, [todayUpdates]);
 
   const dailyProductivityPercentage = useMemo(() => {
-    if (totalDailyTarget === 0) return 0;
-    return Math.round((totalActualToday / totalDailyTarget) * 100);
-  }, [totalActualToday, totalDailyTarget]);
+    const dailyWorkingHours = 10;
+    let maxHour = 7;
+    todayUpdates.forEach(u => {
+      const d = new Date(u.timestamp);
+      if (d.getHours() > maxHour) {
+        maxHour = d.getHours();
+      }
+    });
+    
+    const hoursElapsed = Math.max(0, Math.min(dailyWorkingHours, maxHour - 7));
+    const cumulativeTargetToDate = totalDailyTarget * (hoursElapsed / dailyWorkingHours);
+    
+    if (cumulativeTargetToDate === 0) return 0;
+    return Math.round((totalActualToday / cumulativeTargetToDate) * 100);
+  }, [totalActualToday, totalDailyTarget, sysNow]);
 
   // 3. Project performance grid (Planned vs Actual)
   const projectMetricsData = useMemo(() => {

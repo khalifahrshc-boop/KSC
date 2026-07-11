@@ -489,8 +489,37 @@ export default function App() {
     const saved = await dbApi.save('activities', act);
     setActivities(prev => [...prev, saved]);
     
-    // Auto deduct inventory stocks - for simplicity in this turn, we just log the action
-    // In a real app we'd trigger a cloud transaction
+    // Auto deduct inventory stocks
+    if (act.materialAllocations) {
+      for (const alloc of act.materialAllocations) {
+        const mat = materials.find(m => m.id === alloc.id);
+        if (mat) {
+          const updMat = { 
+            ...mat, 
+            quantity: Math.max(0, mat.quantity - alloc.quantity),
+            reservedStock: (mat.reservedStock || 0) + alloc.quantity
+          };
+          await dbApi.save('warehouseMaterials', updMat);
+          setMaterials(prev => prev.map(m => m.id === mat.id ? updMat : m));
+        }
+      }
+    }
+
+    if (act.equipmentAllocations) {
+      for (const alloc of act.equipmentAllocations) {
+        const eq = equipment.find(e => e.id === alloc.id);
+        if (eq) {
+          const updEq = {
+            ...eq,
+            totalQuantity: Math.max(0, eq.totalQuantity - alloc.quantity),
+            reservedQuantity: (eq.reservedQuantity || 0) + alloc.quantity
+          };
+          await dbApi.save('equipmentItems', updEq);
+          setEquipment(prev => prev.map(e => e.id === eq.id ? updEq : e));
+        }
+      }
+    }
+
     logSystemAction('ADD_ACTIVITY', `Created sub-activity: ${act.nameEn}`);
   };
 
