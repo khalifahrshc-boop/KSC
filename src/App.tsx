@@ -1016,6 +1016,7 @@ export default function App() {
               window.history.replaceState({}, document.title, newUrl);
               setIsFieldPortal(false);
             }}
+            onToggleLanguage={handleToggleLanguage}
           />
         </div>
       </div>

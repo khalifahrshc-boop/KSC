@@ -9,7 +9,9 @@ import {
   getProjectPlannedProgress, 
   getActivityProgress,
   getWorkItemProgress,
-  getProjectStatusDetails
+  getProjectStatusDetails,
+  getProjectProgressAtDate,
+  getProjectPlannedProgressAtDate
 } from '../utils/progressCalculations';
 import { 
   BarChart3, 
@@ -452,7 +454,7 @@ export default function KPIDashboard({
     ];
   }, [equipment, isRtl]);
 
-  // 8. Advanced Executive Metrics (SPI, Efficiency)
+  // 8. Advanced Executive Metrics (SPI, Efficiency, Indices)
   const advancedMetrics = useMemo(() => {
     const totalActual = projects.reduce((acc, p) => acc + getProjectProgress(p, workItems, activities, progressUpdates), 0);
     const totalPlanned = projects.reduce((acc, p) => acc + getProjectPlannedProgress(p), 0);
@@ -464,13 +466,33 @@ export default function KPIDashboard({
     const activeWorkersCount = workers.filter(w => w.status === 'Active').length;
     const efficiency = activeWorkersCount > 0 ? (totalActualToday / activeWorkersCount).toFixed(1) : '0';
 
+    // Forecast End of Day (FEOD)
+    const dailyWorkingHours = 10;
+    let maxHour = 7;
+    todayUpdates.forEach(u => {
+      const d = new Date(u.timestamp);
+      if (d.getHours() > maxHour) maxHour = d.getHours();
+    });
+    const hoursElapsed = Math.max(0, Math.min(dailyWorkingHours, maxHour - 7));
+    const forecastEndOfDay = hoursElapsed > 0 
+      ? Math.round((totalActualToday / hoursElapsed) * dailyWorkingHours) 
+      : totalActualToday;
+
+    // Productivity Index (PI) - Actual Today vs Full Target Today
+    const productivityIndex = totalDailyTarget > 0 
+      ? Math.round((totalActualToday / totalDailyTarget) * 100) 
+      : 0;
+
     return {
       spi: parseFloat(spi),
       efficiency: parseFloat(efficiency),
       isBehind: parseFloat(spi) < 0.95,
-      isAhead: parseFloat(spi) > 1.05
+      isAhead: parseFloat(spi) > 1.05,
+      dpi: dailyProductivityPercentage, // Performance vs linear target
+      pi: productivityIndex,             // Performance vs total day target
+      feod: forecastEndOfDay
     };
-  }, [projects, workItems, activities, progressUpdates, workers, totalActualToday]);
+  }, [projects, workItems, activities, progressUpdates, workers, totalActualToday, totalDailyTarget, dailyProductivityPercentage, todayUpdates]);
 
   // 9. Resource Distribution Metrics
   const resourceDistribution = useMemo(() => {
@@ -489,6 +511,41 @@ export default function KPIDashboard({
       };
     }).sort((a, b) => b.intensity - a.intensity);
   }, [projects, activities, workItems, isRtl]);
+
+  // 13. Dynamic Timeline Variance Data (Planned vs Actual S-Curve)
+  const varianceTimelineData = useMemo(() => {
+    const monthNamesEn = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const monthNamesAr = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+    
+    const now = sysNow;
+    const data = [];
+    
+    const targetProjects = selectedProjectId === 'all' 
+      ? projects 
+      : projects.filter(p => p.id === selectedProjectId);
+
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthIdx = d.getMonth();
+      const monthLabel = isRtl ? monthNamesAr[monthIdx] : monthNamesEn[monthIdx];
+      const endOfMonth = i === 0 ? now : new Date(d.getFullYear(), d.getMonth() + 1, 0);
+      
+      const actualSum = targetProjects.reduce((acc, p) => 
+        acc + getProjectProgressAtDate(p, workItems, activities, progressUpdates, endOfMonth), 0);
+      const plannedSum = targetProjects.reduce((acc, p) => 
+        acc + getProjectPlannedProgressAtDate(p, endOfMonth), 0);
+        
+      const avgActual = targetProjects.length > 0 ? Math.round(actualSum / targetProjects.length) : 0;
+      const avgPlanned = targetProjects.length > 0 ? Math.round(plannedSum / targetProjects.length) : 0;
+      
+      data.push({
+        name: monthLabel,
+        planned: avgPlanned,
+        actual: avgActual
+      });
+    }
+    return data;
+  }, [projects, workItems, activities, progressUpdates, isRtl, selectedProjectId, sysNow]);
 
     // 10. Safety & Compliance Stats
     const safetyStats = useMemo(() => {
@@ -1120,6 +1177,18 @@ export default function KPIDashboard({
                     <div className="flex justify-between items-center py-2.5 border-b border-gray-100 text-xs text-gray-700">
                       <span className="font-semibold text-gray-500">{isRtl ? 'مؤشر كفاءة الجدول (SPI)' : 'Schedule Perf.index (SPI)'}</span>
                       <span className="font-extrabold">{advancedMetrics.spi || "N/A"}</span>
+                    </div>
+                    <div className="flex justify-between items-center py-2.5 border-b border-gray-100 text-xs text-gray-700">
+                      <span className="font-semibold text-gray-500">{isRtl ? 'مؤشر الإنتاج اليومي (DPI)' : 'Daily Production Index (DPI)'}</span>
+                      <span className="font-extrabold">{advancedMetrics.dpi}%</span>
+                    </div>
+                    <div className="flex justify-between items-center py-2.5 border-b border-gray-100 text-xs text-gray-700">
+                      <span className="font-semibold text-gray-500">{isRtl ? 'مؤشر الإنتاجية (PI)' : 'Productivity Index (PI)'}</span>
+                      <span className="font-extrabold">{advancedMetrics.pi}%</span>
+                    </div>
+                    <div className="flex justify-between items-center py-2.5 border-b border-gray-100 text-xs text-gray-700">
+                      <span className="font-semibold text-gray-500">{isRtl ? 'توقعات نهاية اليوم' : 'Forecast End of Day'}</span>
+                      <span className="font-extrabold">{advancedMetrics.feod}</span>
                     </div>
                     <div className="flex justify-between items-center py-2.5 border-b border-gray-100 text-xs text-gray-700">
                       <span className="font-semibold text-gray-500">{isRtl ? 'مؤشر سلامة وصحة الموقع' : 'HSE health index'}</span>
@@ -1834,7 +1903,94 @@ export default function KPIDashboard({
             </motion.div>
           </div>
 
+          {/* New Executive Indices Row for KPIDashboard */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+            {[
+              { label: isRtl ? 'مؤشر الإنتاج اليومي' : 'Daily Production Index', val: `${advancedMetrics.dpi}%`, icon: Zap, color: 'text-amber-500', bg: 'bg-amber-50' },
+              { label: isRtl ? 'مؤشر الإنتاجية (PI)' : 'Productivity Index (PI)', val: `${advancedMetrics.pi}%`, icon: ActivityIcon, color: 'text-indigo-500', bg: 'bg-indigo-50' },
+              { label: isRtl ? 'توقعات نهاية اليوم' : 'Forecast End of Day', val: advancedMetrics.feod, icon: Clock, color: 'text-blue-500', bg: 'bg-blue-50' },
+              { label: isRtl ? 'مؤشر أداء الجدول (SPI)' : 'Schedule Index (SPI)', val: advancedMetrics.spi, icon: Target, color: 'text-emerald-500', bg: 'bg-emerald-50' },
+            ].map((idx, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 + (i * 0.05) }}
+                className="bg-white px-4 py-3 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-3 hover:shadow-md transition-all duration-300"
+              >
+                <div className={`p-2 rounded-xl ${idx.bg} ${idx.color}`}>
+                  <idx.icon className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-[9px] font-black text-gray-400 uppercase tracking-tighter">{idx.label}</p>
+                  <p className="text-base font-black text-[#040957] font-mono leading-none">{idx.val}</p>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Dynamic Timeline Variances (S-Curve) */}
+            <motion.div 
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col lg:col-span-2"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5 text-blue-500" />
+                  <h3 className="font-bold text-[#040957] text-sm">
+                    {isRtl ? 'التحليل الزمني للتقدم (S-Curve)' : 'Planned vs Actual (Dynamic Timeline Variances)'}
+                  </h3>
+                </div>
+                <div className="flex gap-4 text-[9px] font-black uppercase tracking-wider">
+                  <span className="flex items-center gap-1.5 text-gray-400">
+                    <span className="w-2.5 h-0.5 bg-gray-300 border-dashed border-t-2 inline-block"></span>
+                    {isRtl ? 'المخطط' : 'Planned'}
+                  </span>
+                  <span className="flex items-center gap-1.5 text-blue-600">
+                    <span className="w-2.5 h-2.5 bg-blue-500 rounded-full inline-block"></span>
+                    {isRtl ? 'الفعلي' : 'Actual'}
+                  </span>
+                </div>
+              </div>
+              <div className="h-72 w-full flex-1">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={varianceTimelineData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="colorActualKpi" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#0080FF" stopOpacity={0.1}/>
+                        <stop offset="95%" stopColor="#0080FF" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="name" tick={{ fontSize: 9 }} tickLine={false} axisLine={{ stroke: '#e2e8f0' }} />
+                    <YAxis tick={{ fontSize: 9 }} tickLine={false} axisLine={false} domain={[0, 100]} />
+                    <Tooltip content={<CustomKpiTooltip />} />
+                    <Area 
+                      type="monotone" 
+                      dataKey="planned" 
+                      name={isRtl ? 'التقدم المخطط له %' : 'Planned Progress %'} 
+                      stroke="#94A3B8" 
+                      strokeWidth={2} 
+                      strokeDasharray="5 5" 
+                      fill="transparent"
+                    />
+                    <Area 
+                      type="monotone" 
+                      dataKey="actual" 
+                      name={isRtl ? 'التقدم الفعلي %' : 'Actual Progress %'} 
+                      stroke="#0080FF" 
+                      strokeWidth={3} 
+                      fillOpacity={1} 
+                      fill="url(#colorActualKpi)" 
+                      dot={{ r: 4, fill: '#0080FF' }}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </motion.div>
+
             <motion.div 
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}

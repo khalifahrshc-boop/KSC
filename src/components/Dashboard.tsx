@@ -10,6 +10,7 @@ import {
   Workflow, 
   TrendingUp, 
   Clock, 
+  Target,
   AlertTriangle, 
   CheckCircle, 
   ChevronRight, 
@@ -104,6 +105,9 @@ export default function Dashboard({
   const isRtl = lang === 'ar';
   const [searchTerm, setSearchTerm] = useState('');
   const [activeFilter, setActiveFilter] = useState<'all' | 'Ahead' | 'On Track' | 'Delayed'>('all');
+  const [filterProjectId, setFilterProjectId] = useState<string>('all');
+  const [isFeedExpanded, setIsFeedExpanded] = useState(false);
+  const [isDeleteMode, setIsDeleteMode] = useState(false);
 
   // Compute stats
   const totalProjCount = projects.length;
@@ -114,14 +118,18 @@ export default function Dashboard({
   const onTrackCount = projects.filter(p => p.status === 'On Track').length;
   const delayedCount = projects.filter(p => p.status === 'Delayed').length;
 
+  const targetProjectsForStats = filterProjectId === 'all' 
+    ? projects 
+    : projects.filter(p => p.id === filterProjectId);
+
   // Let's compute average progress based on actual project metrics
-  const totalPlannedProgressAverage = projects.length > 0
-    ? Math.round(projects.reduce((acc, p) => acc + getProjectPlannedProgress(p), 0) / projects.length)
+  const totalPlannedProgressAverage = targetProjectsForStats.length > 0
+    ? Math.round(targetProjectsForStats.reduce((acc, p) => acc + getProjectPlannedProgress(p), 0) / targetProjectsForStats.length)
     : 0;
   
-  const projectProgressValues = projects.map(p => getProjectProgress(p, workItems, activities, progressUpdates));
-  const totalActualProgressAverage = projects.length > 0
-    ? projectProgressValues.reduce((acc, val) => acc + val, 0) / projects.length
+  const projectProgressValues = targetProjectsForStats.map(p => getProjectProgress(p, workItems, activities, progressUpdates));
+  const totalActualProgressAverage = targetProjectsForStats.length > 0
+    ? projectProgressValues.reduce((acc, val) => acc + val, 0) / targetProjectsForStats.length
     : 0;
 
   const roundedActualProgress = Math.round(totalActualProgressAverage);
@@ -137,6 +145,9 @@ export default function Dashboard({
     if (!wi) return acc;
     const proj = projects.find(p => p.id === wi.projectId);
     if (!proj) return acc;
+    
+    // Apply Project Filter
+    if (filterProjectId !== 'all' && proj.id !== filterProjectId) return acc;
     
     // Check if project is currently active
     const start = new Date(proj.startDate);
@@ -161,13 +172,19 @@ export default function Dashboard({
 
   const todayUpdates = progressUpdates.filter(u => {
     const d = new Date(u.timestamp);
-    return d.toDateString() === sysNow.toDateString();
+    if (d.toDateString() !== sysNow.toDateString()) return false;
+    
+    // Apply Project Filter
+    if (filterProjectId !== 'all') {
+      const activity = activities.find(a => a.id === u.activityId);
+      const wi = workItems.find(w => w.id === activity?.workItemId);
+      if (wi?.projectId !== filterProjectId) return false;
+    }
+    
+    return true;
   });
   
   const totalActualToday = todayUpdates.reduce((acc, u) => acc + u.completedQuantity, 0);
-  
-  const [isFeedExpanded, setIsFeedExpanded] = useState(false);
-  const [filterProjectId, setFilterProjectId] = useState<string>('all');
   
   const selectedProjectName = filterProjectId === 'all' 
     ? (isRtl ? 'جميع المشاريع النشطة' : 'All Active Projects')
@@ -686,10 +703,25 @@ export default function Dashboard({
   // Target to date = Daily target × (Hours elapsed ÷ Daily working hours)
   const cumulativeTargetToDate = totalDailyTarget * (hoursElapsed / dailyWorkingHours);
   
-  // Percentage of completion = (Actual cumulative completion ÷ Cumulative target) × 100
+  // 1. Daily Production Index (DPI) - Performance against linear target to date
   const dailyProdPercentage = cumulativeTargetToDate > 0 
     ? Math.round((totalActualToday / cumulativeTargetToDate) * 100) 
     : 0;
+  
+  // 2. Productivity Index (PI) - Total efficiency vs full day target
+  const productivityIndex = totalDailyTarget > 0 
+    ? Math.round((totalActualToday / totalDailyTarget) * 100) 
+    : 0;
+
+  // 3. Forecast End of Day (FEOD) - Expected output by shift end
+  const forecastEndOfDay = hoursElapsed > 0 
+    ? Math.round((totalActualToday / hoursElapsed) * dailyWorkingHours) 
+    : 0;
+
+  // 4. Schedule Performance Index (SPI) - Actual progress / Planned progress
+  const spiValue = totalPlannedProgressAverage > 0 
+    ? (totalActualProgressAverage / totalPlannedProgressAverage).toFixed(2) 
+    : "1.00";
   
   const finalDailyProd = cumulativeTargetToDate > 0 
     ? `${totalActualToday}/${Math.round(cumulativeTargetToDate)}`
@@ -733,6 +765,11 @@ export default function Dashboard({
     const now = realNow.getFullYear() === 2026 ? realNow : new Date('2026-06-25');
     const data = [];
     
+    // Use target projects for dynamic chart
+    const targetProjects = filterProjectId === 'all' 
+      ? projects 
+      : projects.filter(p => p.id === filterProjectId);
+    
     for (let i = 5; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const monthIdx = d.getMonth();
@@ -741,14 +778,14 @@ export default function Dashboard({
       // End of this specific month (or "now" if it's the current month)
       const endOfMonth = i === 0 ? now : new Date(d.getFullYear(), d.getMonth() + 1, 0);
       
-      // Calculate total progress across all projects at this date
-      const actualSum = projects.reduce((acc, p) => 
+      // Calculate total progress across target projects at this date
+      const actualSum = targetProjects.reduce((acc, p) => 
         acc + getProjectProgressAtDate(p, workItems, activities, progressUpdates, endOfMonth), 0);
-      const plannedSum = projects.reduce((acc, p) => 
+      const plannedSum = targetProjects.reduce((acc, p) => 
         acc + getProjectPlannedProgressAtDate(p, endOfMonth), 0);
         
-      const avgActual = projects.length > 0 ? Math.round(actualSum / projects.length) : 0;
-      const avgPlanned = projects.length > 0 ? Math.round(plannedSum / projects.length) : 0;
+      const avgActual = targetProjects.length > 0 ? Math.round(actualSum / targetProjects.length) : 0;
+      const avgPlanned = targetProjects.length > 0 ? Math.round(plannedSum / targetProjects.length) : 0;
       
       data.push({
         name: monthLabel,
@@ -794,39 +831,59 @@ export default function Dashboard({
   return (
     <div id="dashboard-module-root" className="relative min-h-screen dashboard-root-container">
       <div className={`space-y-6 ${isFeedExpanded ? 'print:hidden' : ''}`}>
-      {/* Welcome Banner */}
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="bg-gradient-to-r from-[#040957] to-[#0080FF] text-white p-6 rounded-2xl shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative overflow-hidden"
-      >
-        <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-32 -mt-32 blur-3xl"></div>
-        <div className="relative z-10">
-          <span className="text-xs bg-[#0080FF]/30 text-blue-200 px-3 py-1 rounded-full font-semibold uppercase tracking-wider">
-            {t.welcomeBack} - {currentUser.name}
-          </span>
-          <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight mt-2 font-sans">
-            {isRtl ? 'بوابة الرقابة التنفيذية الشاملة' : 'Executive Operations Command Portal'}
-          </h1>
-          <p className="text-blue-100 text-sm mt-1 max-w-xl">
-            {isRtl 
-              ? 'تتبع المشاريع الكبرى، تقدم الخرسانة والحديد، جدولة العمال والآليات الميدانية، ومؤشرات السلامة على مدار ٢٤ ساعة.' 
-              : 'Monitor megaprojects, concrete pours, steelwork, workforce dispatch, and environmental safety indicators 24/7.'}
-          </p>
-        </div>
-        <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/10 flex items-center gap-3 relative z-10">
-          <div className="w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-            <ActivityIcon className="w-5 h-5 text-white animate-pulse" />
+      {/* Welcome Banner & Global Scope Filter */}
+      <div className="space-y-4">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-gradient-to-r from-[#040957] to-[#0080FF] text-white p-6 rounded-2xl shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative overflow-hidden"
+        >
+          <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-32 -mt-32 blur-3xl"></div>
+          <div className="relative z-10">
+            <span className="text-xs bg-[#0080FF]/30 text-blue-200 px-3 py-1 rounded-full font-semibold uppercase tracking-wider">
+              {t.welcomeBack} - {currentUser.name}
+            </span>
+            <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight mt-2 font-sans">
+              {isRtl ? 'بوابة الرقابة التنفيذية الشاملة' : 'Executive Operations Command Portal'}
+            </h1>
+            <p className="text-blue-100 text-sm mt-1 max-w-xl">
+              {isRtl 
+                ? 'تتبع المشاريع الكبرى، تقدم الخرسانة والحديد، جدولة العمال والآليات الميدانية، ومؤشرات السلامة على مدار ٢٤ ساعة.' 
+                : 'Monitor megaprojects, concrete pours, steelwork, workforce dispatch, and environmental safety indicators 24/7.'}
+            </p>
           </div>
-          <div>
-            <div className="text-xs text-blue-200">{isRtl ? 'الحالة الميدانية' : 'Field Operations Sync'}</div>
-            <div className="text-sm font-bold text-white flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping"></span>
-              {isRtl ? 'نشط متصل' : 'Active Live'}
+          
+          <div className="flex flex-col gap-3 relative z-10">
+            <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/10 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                <ActivityIcon className="w-5 h-5 text-white animate-pulse" />
+              </div>
+              <div>
+                <div className="text-xs text-blue-200">{isRtl ? 'الحالة الميدانية' : 'Field Operations Sync'}</div>
+                <div className="text-sm font-bold text-white flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping"></span>
+                  {isRtl ? 'نشط متصل' : 'Active Live'}
+                </div>
+              </div>
+            </div>
+
+            {/* Global Project Filter */}
+            <div className="bg-white/10 backdrop-blur-md rounded-xl p-2 border border-white/10">
+              <div className="text-[8px] font-black text-blue-200 uppercase tracking-widest mb-1 px-1">{isRtl ? 'نطاق العرض' : 'Operational Scope'}</div>
+              <select 
+                value={filterProjectId}
+                onChange={(e) => setFilterProjectId(e.target.value)}
+                className="w-full bg-transparent border-none text-white font-bold text-xs outline-none cursor-pointer"
+              >
+                <option value="all" className="text-gray-900">{isRtl ? 'كافة المشاريع' : 'All Enterprise Projects'}</option>
+                {projects.map(p => (
+                  <option key={p.id} value={p.id} className="text-gray-900">{isRtl ? p.nameAr : p.nameEn}</option>
+                ))}
+              </select>
             </div>
           </div>
-        </div>
-      </motion.div>
+        </motion.div>
+      </div>
 
       {/* Grid of Main KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -852,6 +909,32 @@ export default function Dashboard({
             </div>
             <div className={`p-3 ${kpi.bg} ${kpi.color} rounded-xl group-hover:rotate-12 transition-transform`}>
               <kpi.icon className="w-8 h-8" />
+            </div>
+          </motion.div>
+        ))}
+      </div>
+
+      {/* New Executive Indices Row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { label: isRtl ? 'مؤشر الإنتاج اليومي' : 'Daily Production Index', val: `${dailyProdPercentage}%`, icon: Zap, color: 'text-amber-500', bg: 'bg-amber-50' },
+          { label: isRtl ? 'مؤشر الإنتاجية (PI)' : 'Productivity Index (PI)', val: `${productivityIndex}%`, icon: ActivityIcon, color: 'text-indigo-500', bg: 'bg-indigo-50' },
+          { label: isRtl ? 'توقعات نهاية اليوم' : 'Forecast End of Day', val: forecastEndOfDay, icon: Clock, color: 'text-blue-500', bg: 'bg-blue-50' },
+          { label: isRtl ? 'مؤشر أداء الجدول (SPI)' : 'Schedule Index (SPI)', val: spiValue, icon: Target, color: 'text-emerald-500', bg: 'bg-emerald-50' },
+        ].map((idx, i) => (
+          <motion.div
+            key={i}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 + (i * 0.05) }}
+            className="bg-white px-4 py-3 rounded-xl border border-gray-100 shadow-sm flex items-center gap-3"
+          >
+            <div className={`p-2 rounded-lg ${idx.bg} ${idx.color}`}>
+              <idx.icon className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-[9px] font-black text-gray-400 uppercase tracking-tighter">{idx.label}</p>
+              <p className="text-base font-black text-[#040957] font-mono leading-none">{idx.val}</p>
             </div>
           </motion.div>
         ))}
@@ -1047,6 +1130,14 @@ export default function Dashboard({
               </div>
               <div className="flex items-center gap-2">
                 <button 
+                  onClick={() => setIsDeleteMode(!isDeleteMode)}
+                  className={`px-2 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${isDeleteMode ? 'bg-red-600 text-white shadow-lg shadow-red-200' : 'hover:bg-gray-100 text-gray-400'}`}
+                  title={isRtl ? 'إدارة التحديثات' : 'Manage Updates'}
+                >
+                  <Trash2 className="w-4 h-4" />
+                  {isDeleteMode && <span className="text-[9px] font-black uppercase">{isRtl ? 'إلغاء الحذف' : 'Exit Delete Mode'}</span>}
+                </button>
+                <button 
                   onClick={() => setIsFeedExpanded(true)}
                   className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-blue-600 transition-colors"
                   title={isRtl ? 'تكبير الشاشة' : 'Full Screen'}
@@ -1059,14 +1150,46 @@ export default function Dashboard({
 
             <div className="flex-1 overflow-y-auto max-h-[380px] space-y-3 pr-1 scrollbar-thin scrollbar-thumb-gray-200">
               {productionFeed.map((upd) => (
-                <div key={upd.id} className="bg-gray-50/50 border border-gray-100 p-4 rounded-xl space-y-3 hover:bg-white hover:border-blue-200 hover:shadow-md transition-all group relative">
-                  <button 
-                    onClick={() => onDeleteProgressUpdate?.(upd.id)}
-                    className="absolute top-2 left-2 p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
-                    title={isRtl ? 'حذف' : 'Delete'}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                <div key={upd.id} className={`bg-gray-50/50 border p-4 rounded-xl space-y-3 hover:bg-white hover:border-blue-200 hover:shadow-md transition-all group relative ${isDeleteMode ? 'border-red-200 bg-red-50/30' : 'border-gray-100'}`}>
+                  {/* Delete Box Action */}
+                  <AnimatePresence>
+                    {isDeleteMode && (
+                      <motion.div 
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.8 }}
+                        className="absolute top-1 right-1 z-30"
+                      >
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (window.confirm(isRtl ? 'هل أنت متأكد من حذف هذا التحديث؟' : 'Are you sure you want to delete this update?')) {
+                              onDeleteProgressUpdate?.(upd.id);
+                            }
+                          }}
+                          className="bg-red-600 text-white p-2 rounded-xl shadow-lg hover:bg-red-700 transition-all active:scale-90 flex items-center justify-center border-2 border-white cursor-pointer"
+                          title={isRtl ? 'حذف نهائي' : 'Delete Permanently'}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                  
+                  {/* Original hover-only delete (kept for convenience when not in mode) */}
+                  {!isDeleteMode && (
+                    <button 
+                      onClick={() => {
+                        if (window.confirm(isRtl ? 'هل أنت متأكد من حذف هذا التحديث؟' : 'Are you sure you want to delete this update?')) {
+                          onDeleteProgressUpdate?.(upd.id);
+                        }
+                      }}
+                      className="absolute top-2 left-2 p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all z-10"
+                      title={isRtl ? 'حذف' : 'Delete'}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   
                   <div className="flex justify-between items-start">
                     <span className="text-[10px] font-black text-blue-600 truncate max-w-[150px] uppercase leading-tight">{upd.activityName}</span>
@@ -1709,7 +1832,8 @@ export default function Dashboard({
                             <th className="py-2.5 px-3 text-center" style={{ width: '14%' }}>{isRtl ? 'الكمية المنفذة' : 'Qty'}</th>
                             <th className="py-2.5 px-3 text-center" style={{ width: '12%' }}>{isRtl ? 'إنجاز الفترة' : 'Interval'}</th>
                             <th className="py-2.5 px-3 text-center" style={{ width: '12%' }}>{isRtl ? 'الإجمالي التراكمي' : 'Total %'}</th>
-                            <th className="py-2.5 px-3 rounded-r-lg rtl:rounded-r-none rtl:rounded-l-lg text-left rtl:text-right" style={{ width: '16%' }}>{isRtl ? 'المشرف' : 'Supervisor'}</th>
+                            <th className="py-2.5 px-3 text-left rtl:text-right" style={{ width: '16%' }}>{isRtl ? 'المشرف' : 'Supervisor'}</th>
+                            <th className="py-2.5 px-3 rounded-r-lg rtl:rounded-r-none rtl:rounded-l-lg text-center print:hidden" style={{ width: '8%' }}>{isRtl ? 'إدارة' : 'Manage'}</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
@@ -1729,6 +1853,19 @@ export default function Dashboard({
                                 <td className="py-3 px-3 text-center font-mono font-extrabold text-blue-600">{upd.shiftAchievement !== null ? `${upd.shiftAchievement}%` : '-'}</td>
                                 <td className="py-3 px-3 text-center font-mono font-extrabold text-emerald-600">{upd.completionPercentage}%</td>
                                 <td className="py-3 px-3 text-left rtl:text-right text-gray-500 font-bold">{upd.reporterName || (isRtl ? 'مشرف ميداني' : 'Field Supervisor')}</td>
+                                <td className="py-3 px-3 text-center print:hidden">
+                                  <button 
+                                    onClick={() => {
+                                      if (window.confirm(isRtl ? 'هل أنت متأكد من حذف هذا التحديث؟' : 'Are you sure you want to delete this update?')) {
+                                        onDeleteProgressUpdate?.(upd.id);
+                                      }
+                                    }}
+                                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                    title={isRtl ? 'حذف' : 'Delete'}
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </td>
                               </tr>
                             ))
                           )}

@@ -28,8 +28,11 @@ import {
   Square, 
   AlertCircle, 
   X, 
-  CornerDownRight 
+  CornerDownRight,
+  LayoutGrid,
+  GanttChartSquare
 } from 'lucide-react';
+import GanttChart from './GanttChart';
 
 interface ProjectListProps {
   lang: 'ar' | 'en';
@@ -73,6 +76,7 @@ export default function ProjectList({
   const [statusFilter, setStatusFilter] = useState<'all' | 'Ahead' | 'On Track' | 'Delayed'>('all');
   const [sortField, setSortField] = useState<keyof Project>('projectNumber');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [viewMode, setViewMode] = useState<'table' | 'gantt'>('table');
   
   // Multi Select State
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -451,6 +455,22 @@ export default function ProjectList({
 
         {/* Action triggers */}
         <div className="flex gap-2 justify-end">
+          <div className="flex bg-white border border-gray-200 rounded-xl p-1 mr-2">
+            <button 
+              onClick={() => setViewMode('table')}
+              className={`p-1.5 rounded-lg transition-all ${viewMode === 'table' ? 'bg-[#040957] text-white shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+              title={isRtl ? 'عرض الجدول' : 'Table View'}
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={() => setViewMode('gantt')}
+              className={`p-1.5 rounded-lg transition-all ${viewMode === 'gantt' ? 'bg-[#040957] text-white shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+              title={isRtl ? 'مخطط غانت' : 'Gantt Chart'}
+            >
+              <GanttChartSquare className="w-4 h-4" />
+            </button>
+          </div>
           <button 
             onClick={handleExportCSV}
             title={t.exportExcel}
@@ -496,205 +516,215 @@ export default function ProjectList({
         </div>
       )}
 
-      {/* Projects Advanced Table Layout */}
-      <div className="overflow-x-auto rounded-xl border border-gray-100">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="bg-gray-50 text-gray-500 text-[10px] font-black uppercase tracking-wider border-b border-gray-100">
-              <th className="p-4 w-10 text-center">
-                <button onClick={handleToggleSelectAll} className="hover:opacity-80 transition">
-                  {selectedIds.length === sortedProjects.length && sortedProjects.length > 0 ? (
-                    <CheckSquare className="w-4.5 h-4.5 text-[#0080FF]" />
-                  ) : (
-                    <Square className="w-4.5 h-4.5 text-gray-300" />
-                  )}
-                </button>
-              </th>
-              
-              <th className="p-4 cursor-pointer hover:text-[#0080FF]" onClick={() => handleSort('projectNumber')}>
-                <div className="flex items-center gap-1">
-                  <span>{isRtl ? 'الرمز الفريد' : 'Project Number'}</span>
-                  <ArrowUpDown className="w-3 h-3" />
-                </div>
-              </th>
+      {/* Projects Advanced Table Layout / Gantt View */}
+      {viewMode === 'table' ? (
+        <div className="overflow-x-auto rounded-xl border border-gray-100">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-gray-50 text-gray-500 text-[10px] font-black uppercase tracking-wider border-b border-gray-100">
+                <th className="p-4 w-10 text-center">
+                  <button onClick={handleToggleSelectAll} className="hover:opacity-80 transition">
+                    {selectedIds.length === sortedProjects.length && sortedProjects.length > 0 ? (
+                      <CheckSquare className="w-4.5 h-4.5 text-[#0080FF]" />
+                    ) : (
+                      <Square className="w-4.5 h-4.5 text-gray-300" />
+                    )}
+                  </button>
+                </th>
+                
+                <th className="p-4 cursor-pointer hover:text-[#0080FF]" onClick={() => handleSort('projectNumber')}>
+                  <div className="flex items-center gap-1">
+                    <span>{isRtl ? 'الرمز الفريد' : 'Project Number'}</span>
+                    <ArrowUpDown className="w-3 h-3" />
+                  </div>
+                </th>
 
-              <th className="p-4 cursor-pointer hover:text-[#0080FF]" onClick={() => handleSort('nameAr')}>
-                <div className="flex items-center gap-1">
-                  <span>{t.projectName}</span>
-                  <ArrowUpDown className="w-3 h-3" />
-                </div>
-              </th>
+                <th className="p-4 cursor-pointer hover:text-[#0080FF]" onClick={() => handleSort('nameAr')}>
+                  <div className="flex items-center gap-1">
+                    <span>{t.projectName}</span>
+                    <ArrowUpDown className="w-3 h-3" />
+                  </div>
+                </th>
 
-              <th className="p-4 cursor-pointer hover:text-[#0080FF]" onClick={() => handleSort('clientAr')}>
-                <div className="flex items-center gap-1">
-                  <span>{t.client}</span>
-                  <ArrowUpDown className="w-3 h-3" />
-                </div>
-              </th>
+                <th className="p-4 cursor-pointer hover:text-[#0080FF]" onClick={() => handleSort('clientAr')}>
+                  <div className="flex items-center gap-1">
+                    <span>{t.client}</span>
+                    <ArrowUpDown className="w-3 h-3" />
+                  </div>
+                </th>
 
-              <th className="p-4 cursor-pointer hover:text-[#0080FF]" onClick={() => handleSort('startDate')}>
-                <div className="flex items-center gap-1">
-                  <span>{isRtl ? 'مدة العقد' : 'Term Duration'}</span>
-                  <ArrowUpDown className="w-3 h-3" />
-                </div>
-              </th>
+                <th className="p-4 cursor-pointer hover:text-[#0080FF]" onClick={() => handleSort('startDate')}>
+                  <div className="flex items-center gap-1">
+                    <span>{isRtl ? 'مدة العقد' : 'Term Duration'}</span>
+                    <ArrowUpDown className="w-3 h-3" />
+                  </div>
+                </th>
 
-              <th className="p-4 cursor-pointer text-right hover:text-[#0080FF]" onClick={() => handleSort('budget')}>
-                <div className="flex items-center justify-end gap-1">
-                  <span>{t.budget}</span>
-                  <ArrowUpDown className="w-3 h-3" />
-                </div>
-              </th>
+                <th className="p-4 cursor-pointer text-right hover:text-[#0080FF]" onClick={() => handleSort('budget')}>
+                  <div className="flex items-center justify-end gap-1">
+                    <span>{t.budget}</span>
+                    <ArrowUpDown className="w-3 h-3" />
+                  </div>
+                </th>
 
-              <th className="p-4 text-center">{isRtl ? 'نسبة الإنجاز الفعلية' : 'Actual Completion %'}</th>
-              <th className="p-4 text-center">{t.status}</th>
-              <th className="p-4 text-right w-36">{t.actions}</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100 text-xs">
-            {sortedProjects.map(p => {
-              const isSelected = selectedIds.includes(p.id);
-              let statusLabel = t.onTrack;
-              let statusClass = 'bg-blue-50 text-blue-700 border-blue-100';
-              if (p.status === 'Ahead') {
-                statusLabel = t.ahead;
-                statusClass = 'bg-emerald-50 text-emerald-700 border-emerald-100';
-              } else if (p.status === 'Delayed') {
-                statusLabel = t.delayed;
-                statusClass = 'bg-red-50 text-red-700 border-red-100';
-              }
+                <th className="p-4 text-center">{isRtl ? 'نسبة الإنجاز الفعلية' : 'Actual Completion %'}</th>
+                <th className="p-4 text-center">{t.status}</th>
+                <th className="p-4 text-right w-36">{t.actions}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 text-xs">
+              {sortedProjects.map(p => {
+                const isSelected = selectedIds.includes(p.id);
+                let statusLabel = t.onTrack;
+                let statusClass = 'bg-blue-50 text-blue-700 border-blue-100';
+                if (p.status === 'Ahead') {
+                  statusLabel = t.ahead;
+                  statusClass = 'bg-emerald-50 text-emerald-700 border-emerald-100';
+                } else if (p.status === 'Delayed') {
+                  statusLabel = t.delayed;
+                  statusClass = 'bg-red-50 text-red-700 border-red-100';
+                }
 
-              return (
-                <tr 
-                  key={p.id} 
-                  className={`hover:bg-blue-50/20 transition-colors ${isSelected ? 'bg-blue-50/10' : ''}`}
-                >
-                  {/* Row Select Check */}
-                  <td className="p-4 text-center">
-                    <button onClick={() => handleToggleSelectRow(p.id)} className="hover:opacity-85">
-                      {isSelected ? (
-                        <CheckSquare className="w-4.5 h-4.5 text-[#0080FF]" />
-                      ) : (
-                        <Square className="w-4.5 h-4.5 text-gray-200" />
-                      )}
-                    </button>
-                  </td>
-
-                  {/* Number */}
-                  <td className="p-4 font-mono font-bold text-gray-800">
-                    <div className="flex items-center gap-1.5">
-                      <span>{p.projectNumber}</span>
-                      <button 
-                        onClick={() => handleCopyClipboard(p.projectNumber)}
-                        title={isRtl ? 'نسخ الرمز' : 'Copy referral'}
-                        className="text-gray-300 hover:text-[#0080FF] transition"
-                      >
-                        <Copy className="w-3 h-3" />
+                return (
+                  <tr 
+                    key={p.id} 
+                    className={`hover:bg-blue-50/20 transition-colors ${isSelected ? 'bg-blue-50/10' : ''}`}
+                  >
+                    {/* Row Select Check */}
+                    <td className="p-4 text-center">
+                      <button onClick={() => handleToggleSelectRow(p.id)} className="hover:opacity-85">
+                        {isSelected ? (
+                          <CheckSquare className="w-4.5 h-4.5 text-[#0080FF]" />
+                        ) : (
+                          <Square className="w-4.5 h-4.5 text-gray-200" />
+                        )}
                       </button>
-                    </div>
-                  </td>
+                    </td>
 
-                  {/* Name */}
-                  <td className="p-4">
-                    <div className="font-bold text-[#040957] font-sans">
-                      {isRtl ? p.nameAr : p.nameEn}
-                    </div>
-                    <div className="text-[10px] text-gray-400 mt-0.5 max-w-xs truncate">
-                      📍 {isRtl ? p.locationAr : p.locationEn}
-                    </div>
-                  </td>
+                    {/* Number */}
+                    <td className="p-4 font-mono font-bold text-gray-800">
+                      <div className="flex items-center gap-1.5">
+                        <span>{p.projectNumber}</span>
+                        <button 
+                          onClick={() => handleCopyClipboard(p.projectNumber)}
+                          title={isRtl ? 'نسخ الرمز' : 'Copy referral'}
+                          className="text-gray-300 hover:text-[#0080FF] transition"
+                        >
+                          <Copy className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </td>
 
-                  {/* Client */}
-                  <td className="p-4 font-medium text-gray-600">
-                    {isRtl ? p.clientAr : p.clientEn}
-                  </td>
+                    {/* Name */}
+                    <td className="p-4">
+                      <div className="font-bold text-[#040957] font-sans">
+                        {isRtl ? p.nameAr : p.nameEn}
+                      </div>
+                      <div className="text-[10px] text-gray-400 mt-0.5 max-w-xs truncate">
+                        📍 {isRtl ? p.locationAr : p.locationEn}
+                      </div>
+                    </td>
 
-                  {/* Dates */}
-                  <td className="p-4 space-y-0.5">
-                    <div className="text-[11px] text-gray-500 font-mono">
-                      {isRtl ? 'البدء' : 'St'}: {p.startDate}
-                    </div>
-                    <div className="text-[11px] text-[#040957] font-extrabold font-mono">
-                      {isRtl ? 'التسليم' : 'Dl'}: {p.endDate}
-                    </div>
-                  </td>
+                    {/* Client */}
+                    <td className="p-4 font-medium text-gray-600">
+                      {isRtl ? p.clientAr : p.clientEn}
+                    </td>
 
-                  {/* Budget */}
-                  <td className="p-4 text-right font-bold text-gray-700 font-mono">
-                    {p.budget ? p.budget.toLocaleString() : '---'}
-                  </td>
+                    {/* Dates */}
+                    <td className="p-4 space-y-0.5">
+                      <div className="text-[11px] text-gray-500 font-mono">
+                        {isRtl ? 'البدء' : 'St'}: {p.startDate}
+                      </div>
+                      <div className="text-[11px] text-[#040957] font-extrabold font-mono">
+                        {isRtl ? 'التسليم' : 'Dl'}: {p.endDate}
+                      </div>
+                    </td>
 
-                  {/* Actual Progress Column */}
-                  <td className="p-4 text-center">
-                    {(() => {
-                      const progress = getProjectProgress(p, workItems, activities, progressUpdates);
-                      return (
-                        <div className="flex flex-col items-center gap-1 min-w-[80px]">
-                          <span className="font-bold font-mono text-emerald-600 text-[11px]">{progress}%</span>
-                          <div className="w-16 bg-gray-100 rounded-full h-1.5 overflow-hidden">
-                            <div className="bg-emerald-500 h-1.5 rounded-full" style={{ width: `${progress}%` }}></div>
+                    {/* Budget */}
+                    <td className="p-4 text-right font-bold text-gray-700 font-mono">
+                      {p.budget ? p.budget.toLocaleString() : '---'}
+                    </td>
+
+                    {/* Actual Progress Column */}
+                    <td className="p-4 text-center">
+                      {(() => {
+                        const progress = getProjectProgress(p, workItems, activities, progressUpdates);
+                        return (
+                          <div className="flex flex-col items-center gap-1 min-w-[80px]">
+                            <span className="font-bold font-mono text-emerald-600 text-[11px]">{progress}%</span>
+                            <div className="w-16 bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                              <div className="bg-emerald-500 h-1.5 rounded-full" style={{ width: `${progress}%` }}></div>
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })()}
-                  </td>
+                        );
+                      })()}
+                    </td>
 
-                  {/* Status Badge */}
-                  <td className="p-4 text-center">
-                    <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${statusClass}`}>
-                      {statusLabel}
-                    </span>
-                  </td>
+                    {/* Status Badge */}
+                    <td className="p-4 text-center">
+                      <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${statusClass}`}>
+                        {statusLabel}
+                      </span>
+                    </td>
 
-                  {/* Actions Column */}
-                  <td className="p-4 text-right">
-                    <div className="flex justify-end gap-1">
-                      <button 
-                        onClick={() => onNavigate && onNavigate('reports')}
-                        title={isRtl ? 'عرض التقارير' : 'View Reports'}
-                        className="text-gray-400 hover:text-blue-600 p-1.5 hover:bg-blue-50 rounded-lg transition"
-                      >
-                        <Printer className="w-3.5 h-3.5" />
-                      </button>
-                      <button 
-                        onClick={() => handleRowDuplicate(p.id)}
-                        disabled={isReadOnly}
-                        title={t.duplicate}
-                        className={`text-gray-400 hover:text-teal-600 p-1.5 hover:bg-teal-50 rounded-lg transition ${isReadOnly ? 'opacity-35 cursor-not-allowed' : ''}`}
-                      >
-                        <Files className="w-3.5 h-3.5" />
-                      </button>
-                      <button 
-                        onClick={() => handleOpenEdit(p)}
-                        disabled={isReadOnly}
-                        title={t.edit}
-                        className={`text-gray-400 hover:text-indigo-600 p-1.5 hover:bg-indigo-50 rounded-lg transition ${isReadOnly ? 'opacity-35 cursor-not-allowed' : ''}`}
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button 
-                        onClick={() => handleRowDelete(p.id)}
-                        disabled={isReadOnly}
-                        title={t.delete}
-                        className={`text-gray-400 hover:text-red-600 p-1.5 hover:bg-red-50 rounded-lg transition ${isReadOnly ? 'opacity-35 cursor-not-allowed' : ''}`}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                    {/* Actions Column */}
+                    <td className="p-4 text-right">
+                      <div className="flex justify-end gap-1">
+                        <button 
+                          onClick={() => onNavigate && onNavigate('reports')}
+                          title={isRtl ? 'عرض التقارير' : 'View Reports'}
+                          className="text-gray-400 hover:text-blue-600 p-1.5 hover:bg-blue-50 rounded-lg transition"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                        </button>
+                        <button 
+                          onClick={() => handleRowDuplicate(p.id)}
+                          disabled={isReadOnly}
+                          title={t.duplicate}
+                          className={`text-gray-400 hover:text-teal-600 p-1.5 hover:bg-teal-50 rounded-lg transition ${isReadOnly ? 'opacity-35 cursor-not-allowed' : ''}`}
+                        >
+                          <Files className="w-3.5 h-3.5" />
+                        </button>
+                        <button 
+                          onClick={() => handleOpenEdit(p)}
+                          disabled={isReadOnly}
+                          title={t.edit}
+                          className={`text-gray-400 hover:text-indigo-600 p-1.5 hover:bg-indigo-50 rounded-lg transition ${isReadOnly ? 'opacity-35 cursor-not-allowed' : ''}`}
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button 
+                          onClick={() => handleRowDelete(p.id)}
+                          disabled={isReadOnly}
+                          title={t.delete}
+                          className={`text-gray-400 hover:text-red-600 p-1.5 hover:bg-red-50 rounded-lg transition ${isReadOnly ? 'opacity-35 cursor-not-allowed' : ''}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {sortedProjects.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="p-10 text-center text-gray-400 font-medium">
+                    {isRtl ? 'لا توجد مشاريع مسجلة حالياً تطابق الاستعلام.' : 'No active projects catalogued matching this state query.'}
                   </td>
                 </tr>
-              );
-            })}
-            {sortedProjects.length === 0 && (
-              <tr>
-                <td colSpan={8} className="p-10 text-center text-gray-400 font-medium">
-                  {isRtl ? 'لا توجد مشاريع مسجلة حالياً تطابق الاستعلام.' : 'No active projects catalogued matching this state query.'}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <GanttChart 
+          lang={lang}
+          projects={sortedProjects}
+          workItems={workItems}
+          activities={activities}
+          progressUpdates={progressUpdates}
+        />
+      )}
 
       </div>
 

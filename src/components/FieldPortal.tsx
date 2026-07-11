@@ -40,7 +40,8 @@ import {
   FileText,
   Menu,
   X,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Globe
 } from 'lucide-react';
 import { dbApi } from '../lib/api';
 
@@ -53,6 +54,7 @@ interface FieldPortalProps {
   workers: Worker[];
   onAddPendingSubmission: (submission: FieldWorkSubmission) => Promise<void>;
   onReturnToMain: () => void;
+  onToggleLanguage: () => void;
 }
 
 export default function FieldPortal({
@@ -63,7 +65,8 @@ export default function FieldPortal({
   activities,
   workers,
   onAddPendingSubmission,
-  onReturnToMain
+  onReturnToMain,
+  onToggleLanguage
 }: FieldPortalProps) {
   const isRtl = lang === 'ar';
   
@@ -504,6 +507,16 @@ export default function FieldPortal({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Language Toggle */}
+          <button 
+            onClick={onToggleLanguage}
+            className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 px-3 py-2 rounded-xl text-xs font-bold transition text-white border border-white/20"
+            title={isRtl ? 'Switch to English' : 'تغيير للغة العربية'}
+          >
+            <Globe className="w-4 h-4 text-amber-400" />
+            <span>{isRtl ? 'English' : 'العربية'}</span>
+          </button>
+
           <button 
             onClick={handleCopyLink}
             className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 px-3 py-2 rounded-xl text-xs font-bold transition text-amber-300"

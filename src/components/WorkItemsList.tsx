@@ -110,6 +110,7 @@ export default function WorkItemsList({
   const [materialAllocations, setMaterialAllocations] = useState<{id: string, quantity: number}[]>([]);
   const [equipmentAllocations, setEquipmentAllocations] = useState<{id: string, quantity: number}[]>([]);
   const [selectedWorkerIds, setSelectedWorkerIds] = useState<string[]>([]);
+  const [dependsOnId, setDependsOnId] = useState<string>('');
 
   // Active planning inspection
   const [inspectedActivityId, setInspectedActivityId] = useState<string | null>(null);
@@ -215,6 +216,7 @@ export default function WorkItemsList({
       setMaterialAllocations([]);
       setEquipmentAllocations([]);
     setSelectedWorkerIds([]);
+    setDependsOnId('');
     setIsAddActOpen(true);
   };
 
@@ -239,7 +241,8 @@ export default function WorkItemsList({
       equipmentIds: selectedEquipmentIds,
       materialAllocations: materialAllocations,
       equipmentAllocations: equipmentAllocations,
-      workerIds: selectedWorkerIds
+      workerIds: selectedWorkerIds,
+      dependsOnActivityId: dependsOnId || undefined
     };
 
     onAddActivity(newAct);
@@ -857,6 +860,21 @@ export default function WorkItemsList({
                       );
                     })}
                   </div>
+                </div>
+
+                {/* Dependency Selector */}
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-bold text-gray-500">{isRtl ? 'يعتمد على نشاط (تبعية)' : 'Depends on Activity (Dependency)'}</label>
+                  <select 
+                    value={dependsOnId}
+                    onChange={(e) => setDependsOnId(e.target.value)}
+                    className="w-full border border-gray-200 rounded-xl p-2.5 text-xs outline-none focus:ring-2 focus:ring-[#0080FF] bg-gray-50 font-medium"
+                  >
+                    <option value="">{isRtl ? 'بدون تبعية' : 'No Dependency'}</option>
+                    {activities.filter(a => a.workItemId === selectedWiIdForActivity).map(a => (
+                      <option key={a.id} value={a.id}>{isRtl ? a.nameAr : a.nameEn}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
