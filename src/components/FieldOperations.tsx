@@ -245,6 +245,13 @@ export default function FieldOperations({
   
   const remainingQty = currentActivity ? Math.max(0, currentActivity.totalQuantity - activityProgress) : 0;
 
+  // Clamp and validate completed quantity input to remain within remainingQty
+  useEffect(() => {
+    if (prodCompletedQty > remainingQty) {
+      setProdCompletedQty(remainingQty);
+    }
+  }, [prodActId, remainingQty, prodCompletedQty]);
+
   // Sync state on project change
   useEffect(() => {
     if (projectWorkItems.length > 0) {
@@ -1843,8 +1850,18 @@ export default function FieldOperations({
                         type="number"
                         value={prodCompletedQty}
                         max={remainingQty}
-                        onChange={(e) => setProdCompletedQty(Number(e.target.value))}
-                        className="w-full border border-gray-200 rounded-xl p-2.5 text-xs font-semibold"
+                        min={0}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          if (val > remainingQty) {
+                            setProdCompletedQty(remainingQty);
+                          } else if (val < 0) {
+                            setProdCompletedQty(0);
+                          } else {
+                            setProdCompletedQty(val);
+                          }
+                        }}
+                        className="w-full border border-gray-200 rounded-xl p-2.5 text-xs font-semibold focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
 
@@ -1868,6 +1885,62 @@ export default function FieldOperations({
                           <span className="text-blue-600 ml-1">
                             {Math.round((Number(prodCompletedQty) / (currentActivity.plannedDailyProduction / 4)) * 100)}%
                           </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Remaining Balance breakdown panel */}
+                    <div className="sm:col-span-3 bg-gradient-to-r from-blue-50/50 to-indigo-50/30 border border-blue-100 rounded-2xl p-4 mt-1">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-[11px] font-black uppercase text-[#040957] tracking-wider flex items-center gap-1.5">
+                          🎯 {isRtl ? 'حالة التوازن والمطابقة للنشاط' : 'Sub-Activity Balance Tracker'}
+                        </span>
+                        <span className="bg-blue-100 text-[#040957] text-[9px] font-black px-2 py-0.5 rounded-full uppercase">
+                          {currentActivity?.unit}
+                        </span>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                        <div className="bg-white rounded-xl border border-slate-100 p-2.5 shadow-sm">
+                          <span className="block text-[14px] font-black text-slate-800 font-mono leading-none">
+                            {currentActivity?.totalQuantity || 0}
+                          </span>
+                          <span className="text-[8px] font-black text-gray-400 uppercase tracking-wider mt-1 block">
+                            {isRtl ? 'إجمالي المخطط' : 'Total Planned'}
+                          </span>
+                        </div>
+                        
+                        <div className="bg-white rounded-xl border border-slate-100 p-2.5 shadow-sm">
+                          <span className="block text-[14px] font-black text-indigo-600 font-mono leading-none">
+                            {activityProgress}
+                          </span>
+                          <span className="text-[8px] font-black text-gray-400 uppercase tracking-wider mt-1 block">
+                            {isRtl ? 'المنجز مسبقاً' : 'Previously Done'}
+                          </span>
+                        </div>
+
+                        <div className="bg-[#040957] rounded-xl p-2.5 shadow-sm text-white">
+                          <span className="block text-[14px] font-black font-mono leading-none text-amber-400">
+                            {remainingQty}
+                          </span>
+                          <span className="text-[8px] font-black text-slate-300 uppercase tracking-wider mt-1 block">
+                            {isRtl ? 'الرصيد المتبقي الحالي' : 'Current Remaining'}
+                          </span>
+                        </div>
+
+                        <div className="bg-emerald-50 rounded-xl border border-emerald-100 p-2.5 shadow-sm">
+                          <span className="block text-[14px] font-black text-emerald-700 font-mono leading-none">
+                            {Math.max(0, remainingQty - Number(prodCompletedQty))}
+                          </span>
+                          <span className="text-[8px] font-black text-emerald-600 uppercase tracking-wider mt-1 block">
+                            {isRtl ? 'المتبقي المتوقع بعد الحفظ' : 'Projected After Save'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {Number(prodCompletedQty) >= remainingQty && remainingQty > 0 && (
+                        <div className="bg-amber-50 text-amber-800 rounded-lg p-2 mt-2 text-[10px] font-bold flex items-center gap-1 border border-amber-200">
+                          ⚠️ {isRtl ? `تنبيه: لقد استهلكت كامل الرصيد المتبقي المتاح (${remainingQty} ${currentActivity?.unit})` : `Warning: You are recording the entire remaining scope (${remainingQty} ${currentActivity?.unit})`}
                         </div>
                       )}
                     </div>

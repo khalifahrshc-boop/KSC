@@ -1014,6 +1014,7 @@ export default function App() {
             workItems={workItems}
             activities={activities}
             workers={workers}
+            progressUpdates={progressUpdates}
             onAddPendingSubmission={handleAddPendingSubmission}
             onReturnToMain={() => {
               const newUrl = window.location.origin + window.location.pathname;

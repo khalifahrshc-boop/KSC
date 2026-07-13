@@ -35,7 +35,8 @@ import {
   Phone,
   Mail,
   FileText,
-  CheckCircle2
+  CheckCircle2,
+  Calendar
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { runWithOklchSanitizer } from '../utils/pdfSanitizer';
@@ -216,6 +217,15 @@ export default function Dashboard({
   const [isMetricsAccordionOpen, setIsMetricsAccordionOpen] = useState(true);
   const [isConfigAccordionOpen, setIsConfigAccordionOpen] = useState(true);
   const [isSignaturesAccordionOpen, setIsSignaturesAccordionOpen] = useState(true);
+  const [isDateAccordionOpen, setIsDateAccordionOpen] = useState(true);
+
+  // States for Date filtering / Grouping of Live Production Feed
+  const [selectedFeedDateFilter, setSelectedFeedDateFilter] = useState<'all' | 'today' | 'yesterday' | 'custom'>('all');
+  const [customFeedDate, setCustomFeedDate] = useState<string>(() => {
+    const rNow = new Date();
+    const sNow = rNow.getFullYear() === 2026 ? rNow : new Date('2026-06-25');
+    return sNow.toISOString().split('T')[0];
+  });
 
   // Custom metadata states to make the report fully custom and professional
   const [customReportTitleEn, setCustomReportTitleEn] = useState('Live Field Production Feed Report');
@@ -252,20 +262,70 @@ export default function Dashboard({
         : (projects.find(p => p.id === filterProjectId)?.nameEn || '-');
 
       let productionRowsHtml = '';
-      if (productionFeed.length === 0) {
+      if (filteredProductionFeed.length === 0) {
         productionRowsHtml = `<tr><td colspan="7" style="text-align: center; padding: 25px; color: #64748b; font-style: italic; font-weight: 500;">${isRtl ? 'لا يوجد بيانات مسجلة في هذه الفترة' : 'No operational feed updates registered in this interval'}</td></tr>`;
       } else {
-        productionRowsHtml = productionFeed.map((upd, i) => `
-          <tr style="background-color: ${i % 2 === 0 ? '#ffffff' : '#f8fafc'}; transition: background-color 0.2s;">
-            <td class="num-font" style="text-align: center; padding: 10px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: 600;">${i + 1}</td>
-            <td style="text-align: ${isRtl ? 'right' : 'left'}; padding: 10px; border-bottom: 1px solid #e2e8f0; font-weight: 700; color: #0f172a;">${upd.activityName}</td>
-            <td class="num-font" style="text-align: center; padding: 10px; border-bottom: 1px solid #e2e8f0; font-weight: 600; color: #475569;">${upd.time}</td>
-            <td class="num-font" style="text-align: center; padding: 10px; border-bottom: 1px solid #e2e8f0; font-weight: 700; color: #0f172a;">+${upd.completedQuantity} ${upd.unit}</td>
-            <td class="num-font" style="text-align: center; padding: 10px; border-bottom: 1px solid #e2e8f0; font-weight: 700; color: #2563eb;">${upd.shiftAchievement !== null ? upd.shiftAchievement + '%' : '-'}</td>
-            <td class="num-font" style="text-align: center; padding: 10px; border-bottom: 1px solid #e2e8f0; font-weight: 700; color: #10b981;">${upd.completionPercentage}%</td>
-            <td style="text-align: ${isRtl ? 'right' : 'left'}; padding: 10px; border-bottom: 1px solid #e2e8f0; font-weight: 600; color: #475569; font-size: 11px;">${upd.reporterName || (isRtl ? 'مشرف ميداني' : 'Field Supervisor')}</td>
-          </tr>
-        `).join('');
+        // Group filteredProductionFeed by date
+        const printGroups: Record<string, typeof filteredProductionFeed> = {};
+        filteredProductionFeed.forEach(item => {
+          const dateKey = item.timestamp ? item.timestamp.split('T')[0] : 'unknown';
+          if (!printGroups[dateKey]) {
+            printGroups[dateKey] = [];
+          }
+          printGroups[dateKey].push(item);
+        });
+        
+        const sortedPrintDateKeys = Object.keys(printGroups).sort((a, b) => b.localeCompare(a));
+        
+        productionRowsHtml = sortedPrintDateKeys.map(dateKey => {
+          const groupItems = printGroups[dateKey];
+          const formattedDate = () => {
+            try {
+              const dateObj = new Date(dateKey);
+              if (dateKey === todayStr) {
+                return isRtl ? `اليوم - ${dateKey}` : `Today - ${dateKey}`;
+              } else if (dateKey === yesterdayStr) {
+                return isRtl ? `الأمس - ${dateKey}` : `Yesterday - ${dateKey}`;
+              }
+              return dateObj.toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+              });
+            } catch {
+              return dateKey;
+            }
+          };
+
+          const headerRow = `
+            <tr style="background-color: #f1f5f9; font-weight: bold; border-top: 2px solid #cbd5e1; border-bottom: 2px solid #cbd5e1;">
+              <td colspan="7" style="padding: 10px; font-weight: 800; color: #040957; font-size: 11px; text-align: ${isRtl ? 'right' : 'left'};">
+                <span style="font-weight: 900; margin-right: 5px;">📅 ${formattedDate()}</span>
+                <span style="background-color: #dbeafe; color: #1e40af; font-size: 9px; padding: 2px 6px; border-radius: 9999px; margin: 0 5px; font-weight: 900;">
+                  ${groupItems.length} ${isRtl ? 'تحديثات' : 'updates'}
+                </span>
+                <span style="background-color: #d1fae5; color: #065f46; font-size: 9px; padding: 2px 6px; border-radius: 9999px; margin: 0 5px; font-weight: 900;">
+                  ${isRtl ? 'الإنتاج:' : 'Qty:'} +${groupItems.reduce((sum, item) => sum + item.completedQuantity, 0)}
+                </span>
+              </td>
+            </tr>
+          `;
+
+          const itemRows = groupItems.map((upd, i) => `
+            <tr style="background-color: #ffffff; border-bottom: 1px solid #e2e8f0;">
+              <td class="num-font" style="text-align: center; padding: 10px; color: #64748b; font-weight: 600;">${i + 1}</td>
+              <td style="text-align: ${isRtl ? 'right' : 'left'}; padding: 10px; font-weight: 700; color: #0f172a;">${upd.activityName}</td>
+              <td class="num-font" style="text-align: center; padding: 10px; font-weight: 600; color: #475569;">${upd.time}</td>
+              <td class="num-font" style="text-align: center; padding: 10px; font-weight: 700; color: #0f172a;">+${upd.completedQuantity} ${upd.unit}</td>
+              <td class="num-font" style="text-align: center; padding: 10px; font-weight: 700; color: #2563eb;">${upd.shiftAchievement !== null ? upd.shiftAchievement + '%' : '-'}</td>
+              <td class="num-font" style="text-align: center; padding: 10px; font-weight: 700; color: #10b981;">${upd.completionPercentage}%</td>
+              <td style="text-align: ${isRtl ? 'right' : 'left'}; padding: 10px; font-weight: 600; color: #475569; font-size: 11px;">${upd.reporterName || (isRtl ? 'مشرف ميداني' : 'Field Supervisor')}</td>
+            </tr>
+          `).join('');
+
+          return headerRow + itemRows;
+        }).join('');
       }
 
       const crNum = settings?.commercialRegistration || '-';
@@ -276,10 +336,10 @@ export default function Dashboard({
       const companyAddress = isRtl ? settings?.officialAddressAr : settings?.officialAddressEn;
 
       // Report Stats
-      const totalIntervals = productionFeed.length;
-      const totalQtyProduced = productionFeed.reduce((sum, item) => sum + item.completedQuantity, 0);
-      const avgIntervalProgress = productionFeed.length > 0 
-        ? Math.round(productionFeed.reduce((sum, item) => sum + (item.shiftAchievement || 0), 0) / productionFeed.length) 
+      const totalIntervals = filteredProductionFeed.length;
+      const totalQtyProduced = filteredProductionFeed.reduce((sum, item) => sum + item.completedQuantity, 0);
+      const avgIntervalProgress = filteredProductionFeed.length > 0 
+        ? Math.round(filteredProductionFeed.reduce((sum, item) => sum + (item.shiftAchievement || 0), 0) / filteredProductionFeed.length) 
         : 0;
 
       const htmlContent = `
@@ -686,6 +746,52 @@ export default function Dashboard({
       .reverse()
       .slice(0, isFeedExpanded ? 50 : 10);
   }, [progressUpdates, activities, workItems, isRtl, isFeedExpanded, filterProjectId]);
+
+  // Date calculations based on simulation day
+  const todayStr = useMemo(() => {
+    return sysNow.toISOString().split('T')[0];
+  }, [sysNow]);
+
+  const yesterdayStr = useMemo(() => {
+    const d = new Date(sysNow);
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().split('T')[0];
+  }, [sysNow]);
+
+  // Dynamically filter productionFeed based on selected date filter
+  const filteredProductionFeed = useMemo(() => {
+    return productionFeed.filter(upd => {
+      if (!upd.timestamp) return true;
+      const itemDateStr = upd.timestamp.split('T')[0];
+      
+      if (selectedFeedDateFilter === 'today') {
+        return itemDateStr === todayStr;
+      } else if (selectedFeedDateFilter === 'yesterday') {
+        return itemDateStr === yesterdayStr;
+      } else if (selectedFeedDateFilter === 'custom') {
+        return itemDateStr === customFeedDate;
+      }
+      return true; // 'all'
+    });
+  }, [productionFeed, selectedFeedDateFilter, todayStr, yesterdayStr, customFeedDate]);
+
+  // Group filtered updates by date for clean section layout
+  const groupedFeedByDate = useMemo(() => {
+    const groups: Record<string, typeof filteredProductionFeed> = {};
+    filteredProductionFeed.forEach(item => {
+      const dateKey = item.timestamp ? item.timestamp.split('T')[0] : 'unknown';
+      if (!groups[dateKey]) {
+        groups[dateKey] = [];
+      }
+      groups[dateKey].push(item);
+    });
+    return groups;
+  }, [filteredProductionFeed]);
+
+  // Sorted date keys in descending order (latest day first)
+  const sortedDateKeys = useMemo(() => {
+    return Object.keys(groupedFeedByDate).sort((a, b) => b.localeCompare(a));
+  }, [groupedFeedByDate]);
   
   // Cumulative target calculation
   const dailyWorkingHours = 10; // Standard shift hours
@@ -1424,11 +1530,52 @@ export default function Dashboard({
                 </div>
               </div>
               
-              <div className="flex items-center gap-2.5 w-full sm:w-auto">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+                {/* Print Day Selector */}
+                <div className="flex items-center gap-2 bg-slate-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-bold shadow-sm">
+                  <Calendar className="w-4 h-4 text-purple-600 shrink-0" />
+                  <span className="text-gray-500 whitespace-nowrap text-[10px] uppercase tracking-wider font-extrabold">
+                    {isRtl ? 'يوم الطباعة المستهدف:' : 'Print Target Day:'}
+                  </span>
+                  <select
+                    value={selectedFeedDateFilter}
+                    onChange={(e) => {
+                      const val = e.target.value as 'all' | 'today' | 'yesterday' | 'custom';
+                      setSelectedFeedDateFilter(val);
+                      if (val === 'today') {
+                        setSelectedReportDate(todayStr);
+                      } else if (val === 'yesterday') {
+                        setSelectedReportDate(yesterdayStr);
+                      } else if (val === 'custom') {
+                        setSelectedReportDate(customFeedDate);
+                      }
+                    }}
+                    className="bg-transparent border-0 font-black text-[#040957] outline-none cursor-pointer focus:ring-0 p-0 pr-6 text-[11px] uppercase"
+                  >
+                    <option value="all">🌐 {isRtl ? 'جميع التواريخ' : 'All Dates'}</option>
+                    <option value="today">📅 {isRtl ? 'اليوم فقط' : 'Today Only'}</option>
+                    <option value="yesterday">⏱️ {isRtl ? 'أمس فقط' : 'Yesterday Only'}</option>
+                    <option value="custom">✏️ {isRtl ? 'تاريخ محدد...' : 'Custom Date...'}</option>
+                  </select>
+
+                  {selectedFeedDateFilter === 'custom' && (
+                    <input
+                      type="date"
+                      value={customFeedDate}
+                      onChange={(e) => {
+                        const dateVal = e.target.value;
+                        setCustomFeedDate(dateVal);
+                        setSelectedReportDate(dateVal);
+                      }}
+                      className="bg-white border border-gray-200 rounded-lg px-2 py-1 text-[11px] font-bold font-mono text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  )}
+                </div>
+
                 <button 
                   onClick={handlePrintFeed}
                   disabled={isPrinting}
-                  className={`w-full sm:w-auto py-2.5 px-5 rounded-xl transition-all active:scale-95 shadow-lg flex items-center justify-center gap-2 font-extrabold text-xs group ${isPrinting ? 'bg-gray-400 cursor-not-allowed text-white' : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-100 text-white'}`}
+                  className={`py-2.5 px-5 rounded-xl transition-all active:scale-95 shadow-lg flex items-center justify-center gap-2 font-extrabold text-xs group shrink-0 ${isPrinting ? 'bg-gray-400 cursor-not-allowed text-white' : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-100 text-white'}`}
                 >
                   {isPrinting ? (
                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -1444,7 +1591,7 @@ export default function Dashboard({
 
                 <button 
                   onClick={() => setIsFeedExpanded(false)}
-                  className="p-2.5 bg-white hover:bg-red-50 text-gray-400 hover:text-red-500 rounded-xl transition-all border border-gray-200 active:scale-95"
+                  className="p-2.5 bg-white hover:bg-red-50 text-gray-400 hover:text-red-500 rounded-xl transition-all border border-gray-200 active:scale-95 shrink-0"
                   title={isRtl ? 'إغلاق المحرر' : 'Close Editor'}
                 >
                   <X className="w-5 h-5" />
@@ -1550,18 +1697,18 @@ export default function Dashboard({
                       <div className="space-y-2.5">
                         <div className="flex justify-between items-center p-3 bg-gray-50 rounded-xl border border-gray-100">
                           <span className="text-[10px] text-gray-500 font-bold">{isRtl ? 'إجمالي فترات التحديث' : 'Total Interval Records'}</span>
-                          <span className="text-xs font-black text-slate-800 font-mono bg-white px-2.5 py-1 rounded-lg border border-gray-200">{productionFeed.length}</span>
+                          <span className="text-xs font-black text-slate-800 font-mono bg-white px-2.5 py-1 rounded-lg border border-gray-200">{filteredProductionFeed.length}</span>
                         </div>
                         <div className="flex justify-between items-center p-3 bg-gray-50 rounded-xl border border-gray-100">
                           <span className="text-[10px] text-gray-500 font-bold">{isRtl ? 'الكمية الإجمالية المنجزة' : 'Total Output Quantity'}</span>
                           <span className="text-xs font-black text-blue-600 font-mono bg-white px-2.5 py-1 rounded-lg border border-gray-200">
-                            +{productionFeed.reduce((sum, item) => sum + item.completedQuantity, 0)}
+                            +{filteredProductionFeed.reduce((sum, item) => sum + item.completedQuantity, 0)}
                           </span>
                         </div>
                         <div className="flex justify-between items-center p-3 bg-gray-50 rounded-xl border border-gray-100">
                           <span className="text-[10px] text-gray-500 font-bold">{isRtl ? 'متوسط كفاءة الإنجاز للفترة' : 'Average Interval Efficiency'}</span>
                           <span className="text-xs font-black text-emerald-600 font-mono bg-white px-2.5 py-1 rounded-lg border border-gray-200">
-                            {productionFeed.length > 0 ? Math.round(productionFeed.reduce((sum, item) => sum + (item.shiftAchievement || 0), 0) / productionFeed.length) : 0}%
+                            {filteredProductionFeed.length > 0 ? Math.round(filteredProductionFeed.reduce((sum, item) => sum + (item.shiftAchievement || 0), 0) / filteredProductionFeed.length) : 0}%
                           </span>
                         </div>
                       </div>
@@ -1607,7 +1754,12 @@ export default function Dashboard({
                           <input 
                             type="date" 
                             value={selectedReportDate} 
-                            onChange={(e) => setSelectedReportDate(e.target.value)} 
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setSelectedReportDate(val);
+                              setSelectedFeedDateFilter('custom');
+                              setCustomFeedDate(val);
+                            }} 
                             className="w-full bg-white border border-gray-200 rounded-lg p-2 font-bold text-gray-700 focus:ring-1 focus:ring-blue-500" 
                           />
                         </div>
@@ -1665,6 +1817,103 @@ export default function Dashboard({
                           />
                         </div>
                       </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* ACCORDION 3.5: Date Distinction & Filtering */}
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                  <button
+                    onClick={() => setIsDateAccordionOpen(!isDateAccordionOpen)}
+                    type="button"
+                    className="w-full px-5 py-4 flex justify-between items-center bg-gray-50/50 hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Calendar className="w-5 h-5 text-purple-600 animate-pulse" />
+                      <span className="font-extrabold text-xs uppercase tracking-wider text-gray-700">
+                        {isRtl ? '٣.٥. فرز وتحديد التواريخ الميدانية' : '3.5. Date Filtering & Distinction'}
+                      </span>
+                    </div>
+                    {isDateAccordionOpen ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
+                  </button>
+
+                  {isDateAccordionOpen && (
+                    <div className="p-5 border-t border-gray-100 bg-white space-y-4 text-[11px]">
+                      <p className="text-[10px] text-gray-400 font-bold leading-relaxed">
+                        {isRtl ? 'اختر كيف تود تصفية واستعراض التحديثات الميدانية المسجلة داخل وثيقة التقرير المعتمد:' : 'Choose how you would like to isolate or group field progress updates inside the official document preview:'}
+                      </p>
+
+                      <div className="space-y-2">
+                        {/* Segmented control buttons */}
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            onClick={() => setSelectedFeedDateFilter('all')}
+                            type="button"
+                            className={`py-2 px-3 rounded-xl border text-[10px] font-black uppercase transition-all flex items-center justify-center gap-1.5 ${selectedFeedDateFilter === 'all' ? 'bg-[#040957] text-white border-[#040957] shadow-md' : 'bg-gray-50 hover:bg-gray-100 text-gray-600 border-gray-200'}`}
+                          >
+                            <span>🌐 {isRtl ? 'جميع التواريخ' : 'All Dates'}</span>
+                          </button>
+                          <button
+                            onClick={() => setSelectedFeedDateFilter('today')}
+                            type="button"
+                            className={`py-2 px-3 rounded-xl border text-[10px] font-black uppercase transition-all flex items-center justify-center gap-1.5 ${selectedFeedDateFilter === 'today' ? 'bg-[#040957] text-white border-[#040957] shadow-md' : 'bg-gray-50 hover:bg-gray-100 text-gray-600 border-gray-200'}`}
+                          >
+                            <span>📅 {isRtl ? 'اليوم فقط' : 'Today Only'}</span>
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            onClick={() => setSelectedFeedDateFilter('yesterday')}
+                            type="button"
+                            className={`py-2 px-3 rounded-xl border text-[10px] font-black uppercase transition-all flex items-center justify-center gap-1.5 ${selectedFeedDateFilter === 'yesterday' ? 'bg-[#040957] text-white border-[#040957] shadow-md' : 'bg-gray-50 hover:bg-gray-100 text-gray-600 border-gray-200'}`}
+                          >
+                            <span>⏱️ {isRtl ? 'أمس فقط' : 'Yesterday Only'}</span>
+                          </button>
+                          <button
+                            onClick={() => setSelectedFeedDateFilter('custom')}
+                            type="button"
+                            className={`py-2 px-3 rounded-xl border text-[10px] font-black uppercase transition-all flex items-center justify-center gap-1.5 ${selectedFeedDateFilter === 'custom' ? 'bg-[#040957] text-white border-[#040957] shadow-md' : 'bg-gray-50 hover:bg-gray-100 text-gray-600 border-gray-200'}`}
+                          >
+                            <span>✏️ {isRtl ? 'تاريخ محدد' : 'Custom Date'}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Display Info or Custom Date Picker */}
+                      {selectedFeedDateFilter === 'all' && (
+                        <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100/60 text-[10px] text-blue-800 font-bold leading-relaxed">
+                          📌 {isRtl 
+                            ? 'يتم الآن تجميع وعرض كافة التحديثات مصنفة بشكل تلقائي حسب اليوم والتاريخ مع تلوين فواصل المجموعات واحتساب مجاميعها بشكل منفصل.' 
+                            : 'All logs are currently consolidated and organized in clean sequential date sections with dynamic daily total summary counts.'}
+                        </div>
+                      )}
+
+                      {selectedFeedDateFilter === 'today' && (
+                        <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100 text-[10px] text-emerald-800 font-bold flex items-center justify-between">
+                          <span>📅 {isRtl ? `تاريخ اليوم المعتمد:` : `Active Today Date:`}</span>
+                          <span className="font-mono bg-white px-2 py-0.5 rounded border border-emerald-200 font-black">{todayStr}</span>
+                        </div>
+                      )}
+
+                      {selectedFeedDateFilter === 'yesterday' && (
+                        <div className="p-3 bg-amber-50 rounded-xl border border-amber-100 text-[10px] text-amber-800 font-bold flex items-center justify-between">
+                          <span>📅 {isRtl ? `تاريخ الأمس:` : `Yesterday Date:`}</span>
+                          <span className="font-mono bg-white px-2 py-0.5 rounded border-amber-200 font-black">{yesterdayStr}</span>
+                        </div>
+                      )}
+
+                      {selectedFeedDateFilter === 'custom' && (
+                        <div className="space-y-1.5 bg-slate-50 p-3 rounded-xl border border-slate-200/60">
+                          <label className="block text-[9px] font-black text-gray-400 uppercase">{isRtl ? 'اختر اليوم المستهدف:' : 'Select Target Calendar Date'}</label>
+                          <input 
+                            type="date"
+                            value={customFeedDate}
+                            onChange={(e) => setCustomFeedDate(e.target.value)}
+                            className="w-full bg-white border border-gray-200 rounded-lg p-2 font-bold font-mono text-gray-700 focus:ring-1 focus:ring-blue-500 text-xs"
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1798,18 +2047,18 @@ export default function Dashboard({
                     </div>
                     <div className="grid grid-cols-3 gap-4 text-center">
                       <div className="bg-slate-50/50 rounded-xl border border-slate-100 p-3">
-                        <span className="block text-[18px] font-extrabold text-slate-800 font-mono leading-none">{productionFeed.length}</span>
+                        <span className="block text-[18px] font-extrabold text-slate-800 font-mono leading-none">{filteredProductionFeed.length}</span>
                         <span className="text-[8px] font-black text-gray-400 uppercase tracking-wider mt-1 block">{isRtl ? 'سجلات التحديثات' : 'Interval Updates'}</span>
                       </div>
                       <div className="bg-slate-50/50 rounded-xl border border-slate-100 p-3">
                         <span className="block text-[18px] font-extrabold text-blue-600 font-mono leading-none">
-                          +{productionFeed.reduce((sum, item) => sum + item.completedQuantity, 0)}
+                          +{filteredProductionFeed.reduce((sum, item) => sum + item.completedQuantity, 0)}
                         </span>
                         <span className="text-[8px] font-black text-gray-400 uppercase tracking-wider mt-1 block">{isRtl ? 'الكمية الإجمالية للفترة' : 'Total Output Qty'}</span>
                       </div>
                       <div className="bg-slate-50/50 rounded-xl border border-slate-100 p-3">
                         <span className="block text-[18px] font-extrabold text-emerald-600 font-mono leading-none">
-                          {productionFeed.length > 0 ? Math.round(productionFeed.reduce((sum, item) => sum + (item.shiftAchievement || 0), 0) / productionFeed.length) : 0}%
+                          {filteredProductionFeed.length > 0 ? Math.round(filteredProductionFeed.reduce((sum, item) => sum + (item.shiftAchievement || 0), 0) / filteredProductionFeed.length) : 0}%
                         </span>
                         <span className="text-[8px] font-black text-gray-400 uppercase tracking-wider mt-1 block">{isRtl ? 'متوسط كفاءة الإنجاز' : 'Avg Interval Achievement'}</span>
                       </div>
@@ -1837,37 +2086,77 @@ export default function Dashboard({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                          {productionFeed.length === 0 ? (
+                          {filteredProductionFeed.length === 0 ? (
                             <tr>
-                              <td colSpan={7} className="text-center py-8 text-gray-400 italic">
+                              <td colSpan={8} className="text-center py-8 text-gray-400 italic">
                                 {isRtl ? 'لا يوجد تحديثات مسجلة لهذه الفترات' : 'No operational intervals recorded for the current filter'}
                               </td>
                             </tr>
                           ) : (
-                            productionFeed.map((upd, i) => (
-                              <tr key={upd.id} className="hover:bg-slate-50/50 transition-colors">
-                                <td className="py-3 px-3 text-center font-mono font-bold text-gray-400">{i + 1}</td>
-                                <td className="py-3 px-3 text-left rtl:text-right font-extrabold text-[#040957]">{upd.activityName}</td>
-                                <td className="py-3 px-3 text-center font-mono text-gray-500 font-bold">{upd.time}</td>
-                                <td className="py-3 px-3 text-center font-mono font-extrabold text-slate-800">+{upd.completedQuantity} {upd.unit}</td>
-                                <td className="py-3 px-3 text-center font-mono font-extrabold text-blue-600">{upd.shiftAchievement !== null ? `${upd.shiftAchievement}%` : '-'}</td>
-                                <td className="py-3 px-3 text-center font-mono font-extrabold text-emerald-600">{upd.completionPercentage}%</td>
-                                <td className="py-3 px-3 text-left rtl:text-right text-gray-500 font-bold">{upd.reporterName || (isRtl ? 'مشرف ميداني' : 'Field Supervisor')}</td>
-                                <td className="py-3 px-3 text-center print:hidden">
-                                  <button 
-                                    onClick={() => {
-                                      if (window.confirm(isRtl ? 'هل أنت متأكد من حذف هذا التحديث؟' : 'Are you sure you want to delete this update?')) {
-                                        onDeleteProgressUpdate?.(upd.id);
-                                      }
-                                    }}
-                                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                    title={isRtl ? 'حذف' : 'Delete'}
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                </td>
-                              </tr>
-                            ))
+                            sortedDateKeys.map((dateKey) => {
+                              const groupItems = groupedFeedByDate[dateKey];
+                              const formattedDate = () => {
+                                try {
+                                  const dateObj = new Date(dateKey);
+                                  if (dateKey === todayStr) {
+                                    return isRtl ? `اليوم - ${dateKey}` : `Today - ${dateKey}`;
+                                  } else if (dateKey === yesterdayStr) {
+                                    return isRtl ? `الأمس - ${dateKey}` : `Yesterday - ${dateKey}`;
+                                  }
+                                  return dateObj.toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', {
+                                    weekday: 'long',
+                                    year: 'numeric',
+                                    month: 'long',
+                                    day: 'numeric'
+                                  });
+                                } catch {
+                                  return dateKey;
+                                }
+                              };
+
+                              return (
+                                <React.Fragment key={dateKey}>
+                                  {/* Date Group Separation Header Row */}
+                                  <tr className="bg-slate-50 font-bold border-y border-slate-200">
+                                    <td colSpan={8} className="py-2 px-3 text-left rtl:text-right text-[#040957] text-[10px] uppercase font-black tracking-wider">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-blue-700">📅 {formattedDate()}</span>
+                                        <span className="bg-blue-100 text-blue-800 text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase">
+                                          {groupItems.length} {isRtl ? 'تحديثات' : 'updates'}
+                                        </span>
+                                        <span className="bg-emerald-100 text-emerald-800 text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase">
+                                          {isRtl ? 'الإنتاج:' : 'Qty:'} +{groupItems.reduce((sum, item) => sum + item.completedQuantity, 0)}
+                                        </span>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                  {groupItems.map((upd, index) => (
+                                    <tr key={upd.id} className="hover:bg-slate-50/50 transition-colors">
+                                      <td className="py-3 px-3 text-center font-mono font-bold text-gray-400">{index + 1}</td>
+                                      <td className="py-3 px-3 text-left rtl:text-right font-extrabold text-[#040957]">{upd.activityName}</td>
+                                      <td className="py-3 px-3 text-center font-mono text-gray-500 font-bold">{upd.time}</td>
+                                      <td className="py-3 px-3 text-center font-mono font-extrabold text-slate-800">+{upd.completedQuantity} {upd.unit}</td>
+                                      <td className="py-3 px-3 text-center font-mono font-extrabold text-blue-600">{upd.shiftAchievement !== null ? `${upd.shiftAchievement}%` : '-'}</td>
+                                      <td className="py-3 px-3 text-center font-mono font-extrabold text-emerald-600">{upd.completionPercentage}%</td>
+                                      <td className="py-3 px-3 text-left rtl:text-right text-gray-500 font-bold">{upd.reporterName || (isRtl ? 'مشرف ميداني' : 'Field Supervisor')}</td>
+                                      <td className="py-3 px-3 text-center print:hidden">
+                                        <button 
+                                          onClick={() => {
+                                            if (window.confirm(isRtl ? 'هل أنت متأكد من حذف هذا التحديث؟' : 'Are you sure you want to delete this update?')) {
+                                              onDeleteProgressUpdate?.(upd.id);
+                                            }
+                                          }}
+                                          className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                          title={isRtl ? 'حذف' : 'Delete'}
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </React.Fragment>
+                              );
+                            })
                           )}
                         </tbody>
                       </table>

@@ -52,6 +52,7 @@ interface FieldPortalProps {
   workItems: WorkItem[];
   activities: Activity[];
   workers: Worker[];
+  progressUpdates?: ProgressUpdate[];
   onAddPendingSubmission: (submission: FieldWorkSubmission) => Promise<void>;
   onReturnToMain: () => void;
   onToggleLanguage: () => void;
@@ -64,6 +65,7 @@ export default function FieldPortal({
   workItems,
   activities,
   workers,
+  progressUpdates = [],
   onAddPendingSubmission,
   onReturnToMain,
   onToggleLanguage
@@ -113,6 +115,24 @@ export default function FieldPortal({
   const [prodNotes, setProdNotes] = useState('');
   const [uploadedFiles, setUploadedFiles] = useState<{name: string, content: string}[]>([]);
   const [dragActive, setDragActive] = useState(false);
+
+  // Remaining Quantity calculations for selected sub-activity in FieldPortal
+  const currentActivity = activities.find(a => a.id === prodActId);
+  const dbProgress = (progressUpdates || [])
+    .filter(upd => upd.activityId === prodActId)
+    .reduce((sum, upd) => sum + upd.completedQuantity, 0);
+  const localSessionProgress = prodUpdates
+    .filter(upd => upd.activityId === prodActId)
+    .reduce((sum, upd) => sum + Number(upd.completedQuantity), 0);
+  const activityProgress = dbProgress + localSessionProgress;
+  const remainingQty = currentActivity ? Math.max(0, currentActivity.totalQuantity - activityProgress) : 0;
+
+  // Clamping prodCompletedQty if it exceeds remainingQty
+  useEffect(() => {
+    if (prodCompletedQty > remainingQty) {
+      setProdCompletedQty(remainingQty);
+    }
+  }, [prodActId, remainingQty, prodCompletedQty]);
 
   // 4. Safety Audit
   const [hasSafetyRecord, setHasSafetyRecord] = useState(false);
@@ -289,16 +309,29 @@ export default function FieldPortal({
     const activityObj = activities.find(a => a.id === prodActId);
     if (!activityObj) return;
 
+    const qtyToAdd = Number(prodCompletedQty);
+    if (qtyToAdd <= 0) {
+      alert(isRtl ? 'الرجاء إدخال كمية صحيحة' : 'Please enter a valid quantity');
+      return;
+    }
+
+    if (qtyToAdd > remainingQty) {
+      alert(isRtl 
+        ? `لا يمكن تجاوز الكمية المتبقية (${remainingQty} ${activityObj.unit}).` 
+        : `Cannot exceed remaining quantity (${remainingQty} ${activityObj.unit}).`);
+      return;
+    }
+
     const fileList = uploadedFiles.map(f => f.content);
 
     const newUpdate = {
       workItemId: prodWiId,
       activityId: prodActId,
       time: prodTime,
-      completedQuantity: prodCompletedQty,
+      completedQuantity: qtyToAdd,
       numberOfWorkers: prodWorkersUsed,
       equipmentUsed: [],
-      completionPercentage: Math.round((prodCompletedQty / activityObj.totalQuantity) * 100),
+      completionPercentage: Math.round(((activityProgress + qtyToAdd) / activityObj.totalQuantity) * 100),
       notes: prodNotes,
       photos: fileList,
       documents: []
@@ -969,11 +1002,27 @@ export default function FieldPortal({
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="space-y-1">
-                        <label className="text-xs font-bold text-gray-500">{isRtl ? 'الكمية المنجزة الفعلية:' : 'Completed Quantity:'}</label>
+                        <label className="text-xs font-bold text-gray-500 flex justify-between items-center">
+                          <span>{isRtl ? 'الكمية المنجزة الفعلية:' : 'Completed Quantity:'}</span>
+                          <span className="text-blue-500 font-mono text-[10px]">
+                            ({isRtl ? 'المتبقي:' : 'Remaining:'} {remainingQty} {currentActivity?.unit})
+                          </span>
+                        </label>
                         <input 
                           type="number" 
                           value={prodCompletedQty}
-                          onChange={(e) => setProdCompletedQty(Number(e.target.value))}
+                          max={remainingQty}
+                          min={0}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            if (val > remainingQty) {
+                              setProdCompletedQty(remainingQty);
+                            } else if (val < 0) {
+                              setProdCompletedQty(0);
+                            } else {
+                              setProdCompletedQty(val);
+                            }
+                          }}
                           className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white dark:bg-gray-800 text-gray-800 dark:text-white font-bold"
                         />
                       </div>
@@ -1002,6 +1051,62 @@ export default function FieldPortal({
                           <option value="05:00 PM">05:00 PM</option>
                         </select>
                       </div>
+                    </div>
+
+                    {/* Remaining Balance breakdown panel */}
+                    <div className="bg-gradient-to-r from-blue-50/50 to-indigo-50/30 dark:from-blue-950/20 dark:to-indigo-950/10 border border-blue-100 dark:border-blue-900 rounded-2xl p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-[11px] font-black uppercase text-[#040957] dark:text-blue-300 tracking-wider flex items-center gap-1.5">
+                          🎯 {isRtl ? 'حالة التوازن والمطابقة للنشاط' : 'Sub-Activity Balance Tracker'}
+                        </span>
+                        <span className="bg-blue-100 dark:bg-blue-900/50 text-[#040957] dark:text-blue-200 text-[9px] font-black px-2 py-0.5 rounded-full uppercase">
+                          {currentActivity?.unit}
+                        </span>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
+                        <div className="bg-white dark:bg-gray-800 rounded-xl border border-slate-100 dark:border-gray-700 p-2.5 shadow-sm">
+                          <span className="block text-[14px] font-black text-slate-800 dark:text-gray-200 font-mono leading-none">
+                            {currentActivity?.totalQuantity || 0}
+                          </span>
+                          <span className="text-[8px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-wider mt-1 block">
+                            {isRtl ? 'إجمالي المخطط' : 'Total Planned'}
+                          </span>
+                        </div>
+                        
+                        <div className="bg-white dark:bg-gray-800 rounded-xl border border-slate-100 dark:border-gray-700 p-2.5 shadow-sm">
+                          <span className="block text-[14px] font-black text-indigo-600 dark:text-indigo-400 font-mono leading-none">
+                            {activityProgress}
+                          </span>
+                          <span className="text-[8px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-wider mt-1 block">
+                            {isRtl ? 'المنجز الإجمالي' : 'Total Done'}
+                          </span>
+                        </div>
+
+                        <div className="bg-[#040957] dark:bg-indigo-950 rounded-xl p-2.5 shadow-sm text-white">
+                          <span className="block text-[14px] font-black font-mono leading-none text-amber-400">
+                            {remainingQty}
+                          </span>
+                          <span className="text-[8px] font-black text-slate-300 dark:text-gray-400 uppercase tracking-wider mt-1 block">
+                            {isRtl ? 'الرصيد المتبقي الحالي' : 'Current Remaining'}
+                          </span>
+                        </div>
+
+                        <div className="bg-emerald-50 dark:bg-emerald-950/20 rounded-xl border border-emerald-100 dark:border-emerald-900/30 p-2.5 shadow-sm">
+                          <span className="block text-[14px] font-black text-emerald-700 dark:text-emerald-400 font-mono leading-none">
+                            {Math.max(0, remainingQty - Number(prodCompletedQty))}
+                          </span>
+                          <span className="text-[8px] font-black text-emerald-600 dark:text-emerald-500 uppercase tracking-wider mt-1 block">
+                            {isRtl ? 'المتبقي بعد التحديث' : 'Projected Remaining'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {Number(prodCompletedQty) >= remainingQty && remainingQty > 0 && (
+                        <div className="bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-400 rounded-lg p-2 mt-2 text-[10px] font-bold flex items-center gap-1 border border-amber-200 dark:border-amber-900/30">
+                          ⚠️ {isRtl ? `تنبيه: لقد استهلكت كامل الرصيد المتبقي المتاح (${remainingQty} ${currentActivity?.unit})` : `Warning: You are recording the entire remaining scope (${remainingQty} ${currentActivity?.unit})`}
+                        </div>
+                      )}
                     </div>
 
                     <div className="space-y-1">
