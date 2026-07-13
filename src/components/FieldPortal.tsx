@@ -41,9 +41,11 @@ import {
   Menu,
   X,
   FileSpreadsheet,
-  Globe
+  Globe,
+  Printer
 } from 'lucide-react';
 import { dbApi } from '../lib/api';
+import { runWithOklchSanitizer } from '../utils/pdfSanitizer';
 
 interface FieldPortalProps {
   settings: SystemSettings;
@@ -91,6 +93,8 @@ export default function FieldPortal({
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [successSubmissionId, setSuccessSubmissionId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [lastSubmission, setLastSubmission] = useState<FieldWorkSubmission | null>(null);
+  const [isPrinting, setIsPrinting] = useState(false);
 
   // 2. Attendance state
   const [workerAttendanceState, setWorkerAttendanceState] = useState<Record<string, {
@@ -513,12 +517,497 @@ export default function FieldPortal({
 
       await onAddPendingSubmission(submission);
       setSuccessSubmissionId(submission.id);
-      triggerToast(isRtl ? 'تم تقديم التقرير بنجاح!' : 'Field report submitted successfully!');
+      setLastSubmission(submission);
+      triggerToast(isRtl ? 'تم تقديم التقرير بنجاح!' : 'Field Report Submitted Successfully!');
     } catch (e) {
       console.error(e);
       alert(isRtl ? 'حدث خطأ أثناء تقديم التقرير' : 'An error occurred while submitting the report');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handlePrintPDF = async () => {
+    if (!lastSubmission) return;
+    try {
+      setIsPrinting(true);
+      const html2pdf = (await import('html2pdf.js')).default;
+      
+      let printFrame = document.getElementById('field-report-pdf-iframe') as HTMLIFrameElement;
+      if (!printFrame) {
+        printFrame = document.createElement('iframe');
+        printFrame.id = 'field-report-pdf-iframe';
+        printFrame.style.position = 'fixed';
+        printFrame.style.right = '-9999px';
+        printFrame.style.bottom = '0';
+        printFrame.style.width = '1000px';
+        printFrame.style.height = '1200px';
+        printFrame.style.border = '0';
+        document.body.appendChild(printFrame);
+      }
+
+      const selectedProjectName = selectedProject 
+        ? (isRtl ? selectedProject.nameAr : selectedProject.nameEn)
+        : '-';
+
+      // Build attendance table rows
+      let attendanceRowsHtml = '';
+      if (!lastSubmission.attendanceRecords || lastSubmission.attendanceRecords.length === 0) {
+        attendanceRowsHtml = `<tr><td colspan="5" style="text-align: center; padding: 12px; color: #64748b; font-size: 11px;">${isRtl ? 'لا يوجد سجلات حضور مسجلة' : 'No attendance records registered'}</td></tr>`;
+      } else {
+        attendanceRowsHtml = lastSubmission.attendanceRecords.map((r, index) => {
+          const statusLabel = isRtl ? (
+            r.status === 'Present' ? 'حاضر' :
+            r.status === 'Absent' ? 'غائب' :
+            r.status === 'Late' ? 'متأخر' :
+            r.status === 'Sick' ? 'مرضي' :
+            r.status === 'AnnualLeave' ? 'إجازة سنوية' : 'إجازة قصيرة'
+          ) : r.status;
+          const prof = isRtl ? r.professionAr : r.professionEn;
+          return `
+            <tr style="background-color: ${index % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+              <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; font-weight: 600; color: #1e293b;">${r.workerName}</td>
+              <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; color: #475569;">${prof}</td>
+              <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: center;">
+                <span style="display: inline-block; padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 9px; 
+                  background-color: ${r.isPresent ? '#ecfdf5' : '#fef2f2'}; 
+                  color: ${r.isPresent ? '#047857' : '#b91c1c'};">
+                  ${statusLabel}
+                </span>
+              </td>
+              <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: center; font-weight: bold; color: #334155;">${r.isPresent ? `${r.shiftTime} hrs` : '-'}</td>
+              <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; color: #64748b; font-style: italic;">${r.notes || '-'}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      // Build production updates rows
+      let productionRowsHtml = '';
+      if (!lastSubmission.progressUpdates || lastSubmission.progressUpdates.length === 0) {
+        productionRowsHtml = `<tr><td colspan="6" style="text-align: center; padding: 12px; color: #64748b; font-size: 11px;">${isRtl ? 'لا يوجد تحديثات كميات مسجلة' : 'No quantity updates registered'}</td></tr>`;
+      } else {
+        productionRowsHtml = lastSubmission.progressUpdates.map((p, index) => {
+          const act = activities.find(a => a.id === p.activityId);
+          const wi = act ? workItems.find(w => w.id === act.workItemId) : null;
+          const actName = act ? (isRtl ? act.nameAr : act.nameEn) : p.activityId;
+          const wiName = wi ? (isRtl ? wi.nameAr : wi.nameEn) : '';
+          return `
+            <tr style="background-color: ${index % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+              <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; font-weight: 600; color: #1e293b;">${wiName}</td>
+              <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; color: #475569;">${actName}</td>
+              <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: center; font-weight: bold; color: #0f172a;">${p.time}</td>
+              <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: center; font-weight: 800; color: #0284c7;">+${p.completedQuantity} ${act?.unit || ''}</td>
+              <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: center; font-weight: bold; color: #475569;">${p.numberOfWorkers}</td>
+              <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; color: #64748b;">${p.notes || '-'}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      const formattedSubmitTime = new Date(lastSubmission.timestamp).toLocaleString(isRtl ? 'ar-SA' : 'en-GB');
+
+      // Safety box details
+      let safetyHtml = '';
+      if (lastSubmission.safetyRecord) {
+        const sr = lastSubmission.safetyRecord;
+        safetyHtml = `
+          <div style="background-color: ${sr.safeStatus ? '#f0fdf4' : '#fffbeb'}; border: 1px solid ${sr.safeStatus ? '#bbf7d0' : '#fef08a'}; border-radius: 12px; padding: 15px; margin-top: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <strong style="color: ${sr.safeStatus ? '#15803d' : '#a16207'}; font-size: 13px;">
+                ${sr.safeStatus ? (isRtl ? '✅ الموقع آمن وخالٍ من الحوادث' : '✅ Site Safe & Compliant') : (isRtl ? '⚠️ تم رصد مخالفات سلامة مهنية' : '⚠️ Safety Infractions Logged')}
+              </strong>
+              <span style="font-size: 11px; font-weight: bold; color: #475569;">
+                ${isRtl ? 'عدد المخالفات:' : 'Violations count:'} <span style="color: #ef4444; font-weight: 800;">${sr.violationsCount}</span>
+              </span>
+            </div>
+            <p style="margin: 0; font-size: 11px; color: #334155;">
+              <strong>${isRtl ? 'ملاحظات تدقيق السلامة:' : 'Safety audit notes:'}</strong> ${sr.safetyNotes || (isRtl ? 'لا توجد ملاحظات إضافية.' : 'No additional safety logs.')}
+            </p>
+          </div>
+        `;
+      } else {
+        safetyHtml = `<p style="font-size: 11px; color: #64748b; font-style: italic; margin-top: 5px;">${isRtl ? 'لم يتم تضمين سجل سلامة مخصص في هذا التقرير.' : 'No dedicated safety log specified.'}</p>`;
+      }
+
+      // Delay box details
+      let delayHtml = '';
+      if (lastSubmission.delayRecord) {
+        const dr = lastSubmission.delayRecord;
+        const delayLabel = isRtl ? (
+          dr.delayType === 'Weather' ? 'أحوال جوية سيئة' :
+          dr.delayType === 'Materials' ? 'نقص مواد التوريد' :
+          dr.delayType === 'Equipment' ? 'تعطل المعدات والآلات' :
+          dr.delayType === 'Manpower' ? 'نقص الأيدي العاملة' :
+          dr.delayType === 'Permits' ? 'تراخيص وموافقات جهات خارجية' : 'عوامل فنية وتصميمية أخرى'
+        ) : dr.delayType;
+
+        delayHtml = `
+          <div style="background-color: #fffaf0; border: 1px solid #fed7aa; border-radius: 12px; padding: 15px; margin-top: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <strong style="color: #c2410c; font-size: 13px;">
+                🚨 ${isRtl ? 'سجل تأخير وإعاقة للموقع' : '🚨 Registered Operational Site Delay'}
+              </strong>
+              <span style="font-size: 11px; background-color: #ffedd5; color: #9a3412; padding: 2px 8px; border-radius: 6px; font-weight: bold;">
+                ${delayLabel}
+              </span>
+            </div>
+            <div style="font-size: 11px; color: #334155; space-y-1;">
+              <p style="margin: 0 0 6px 0;"><strong>${isRtl ? 'توصيف الإعاقة الميدانية:' : 'Delay Description:'}</strong> ${dr.description}</p>
+              <p style="margin: 0 0 6px 0;"><strong>${isRtl ? 'مستوى التأثير المتوقع:' : 'Impact Severity:'}</strong> <span style="color: #ea580c; font-weight: bold;">${dr.impactLevel}</span></p>
+              <p style="margin: 0;"><strong>${isRtl ? 'خطة تلافي التأخير المعروضة:' : 'Proposed Recovery Plan:'}</strong> ${isRtl ? dr.resolutionPlanAr : dr.resolutionPlanEn}</p>
+            </div>
+          </div>
+        `;
+      } else {
+        delayHtml = `<p style="font-size: 11px; color: #64748b; font-style: italic; margin-top: 5px;">${isRtl ? 'لا توجد إعاقات أو تأخيرات معلنة في هذا التقرير.' : 'No active delays registered in this log.'}</p>`;
+      }
+
+      // Incident box details
+      let incidentHtml = '';
+      if (lastSubmission.issueReport) {
+        const ir = lastSubmission.issueReport;
+        incidentHtml = `
+          <div style="background-color: #fef2f2; border: 1px solid #fecaca; border-radius: 12px; padding: 15px; margin-top: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <strong style="color: #991b1b; font-size: 13px;">
+                🔥 ${isRtl ? 'بلاغ حادث/مشكلة حرجة مسجل' : '🔥 Active Field Incident Report'}
+              </strong>
+              <span style="font-size: 10px; background-color: #fee2e2; color: #991b1b; padding: 2px 8px; border-radius: 6px; font-weight: 800;">
+                ${ir.priority.toUpperCase()}
+              </span>
+            </div>
+            <div style="font-size: 11px; color: #334155;">
+              <p style="margin: 0 0 6px 0;"><strong>${isRtl ? 'عنوان البلاغ الميداني:' : 'Incident Title:'}</strong> ${isRtl ? ir.titleAr : ir.titleEn}</p>
+              <p style="margin: 0;"><strong>${isRtl ? 'التوصيف الفني للمشكلة:' : 'Technical Description:'}</strong> ${ir.description}</p>
+            </div>
+          </div>
+        `;
+      } else {
+        incidentHtml = `<p style="font-size: 11px; color: #64748b; font-style: italic; margin-top: 5px;">${isRtl ? 'لم تسجل أي مشاكل فنية أو حوادث أمن صناعي.' : 'No incidents or critical site issues reported.'}</p>`;
+      }
+
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Cairo:wght@400;600;700;800&display=swap');
+            body {
+              font-family: 'Cairo', 'Inter', sans-serif;
+              direction: ${isRtl ? 'rtl' : 'ltr'};
+              color: #1e293b;
+              background-color: #ffffff;
+              padding: 0;
+              margin: 0;
+            }
+            .container {
+              width: 100%;
+              max-width: 800px;
+              margin: 0 auto;
+              box-sizing: border-box;
+            }
+            .header-banner {
+              background-color: #040957;
+              color: #ffffff;
+              border-radius: 16px;
+              padding: 24px;
+              margin-bottom: 24px;
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+            }
+            .header-title-sec {
+              flex: 1;
+            }
+            .header-title-sec h1 {
+              font-size: 18px;
+              font-weight: 800;
+              margin: 0 0 6px 0;
+              color: #fbbf24;
+            }
+            .header-title-sec p {
+              font-size: 11px;
+              margin: 0;
+              color: #e2e8f0;
+              font-weight: 500;
+            }
+            .badge-success {
+              background-color: #10b981;
+              color: white;
+              font-size: 10px;
+              font-weight: 800;
+              padding: 6px 12px;
+              border-radius: 8px;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+            }
+            .section-card {
+              border: 1px solid #e2e8f0;
+              border-radius: 16px;
+              padding: 18px;
+              margin-bottom: 20px;
+            }
+            .section-card-title {
+              font-size: 13px;
+              font-weight: 800;
+              color: #040957;
+              border-bottom: 2px solid #040957;
+              padding-bottom: 8px;
+              margin-top: 0;
+              margin-bottom: 14px;
+              display: flex;
+              justify-content: space-between;
+            }
+            .meta-grid {
+              display: grid;
+              grid-template-cols: 1fr 1fr;
+              gap: 12px;
+            }
+            .meta-item {
+              background-color: #f8fafc;
+              border: 1px solid #f1f5f9;
+              border-radius: 10px;
+              padding: 8px 12px;
+            }
+            .meta-label {
+              font-size: 9px;
+              color: #64748b;
+              font-weight: bold;
+              display: block;
+              margin-bottom: 3px;
+              text-transform: uppercase;
+            }
+            .meta-value {
+              font-size: 11px;
+              color: #0f172a;
+              font-weight: bold;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 5px;
+              table-layout: fixed;
+            }
+            th {
+              background-color: #f1f5f9;
+              color: #040957;
+              font-weight: bold;
+              font-size: 10px;
+              padding: 10px;
+              text-align: ${isRtl ? 'right' : 'left'};
+              border-bottom: 2px solid #cbd5e1;
+              word-wrap: break-word;
+              word-break: break-word;
+              overflow-wrap: break-word;
+            }
+            td {
+              padding: 10px;
+              border-bottom: 1px solid #f1f5f9;
+              font-size: 10px;
+              color: #334155;
+              word-wrap: break-word;
+              word-break: break-word;
+              overflow-wrap: break-word;
+            }
+            .sig-area {
+              display: flex;
+              justify-content: space-between;
+              margin-top: 40px;
+              gap: 20px;
+            }
+            .sig-box {
+              flex: 1;
+              border-top: 1px dashed #94a3b8;
+              text-align: center;
+              padding-top: 10px;
+              font-size: 10px;
+            }
+            .sig-title {
+              font-weight: bold;
+              color: #040957;
+              margin-bottom: 4px;
+            }
+            .sig-name {
+              color: #475569;
+            }
+            .legal-badge {
+              background-color: #f0fdfa;
+              border: 1px solid #ccfbf1;
+              color: #0f766e;
+              border-radius: 12px;
+              padding: 14px;
+              font-size: 10px;
+              line-height: 1.6;
+              margin-top: 25px;
+              text-align: center;
+              font-weight: 600;
+            }
+          </style>
+        </head>
+        <body>
+          <div id="pdf-content" class="container">
+            <!-- Header Section -->
+            <div class="header-banner">
+              <div class="header-title-sec">
+                <h1>${isRtl ? settings.companyNameAr : settings.companyNameEn}</h1>
+                <p>${isRtl ? 'إيصال تقديم التقرير الميداني الرقمي المعتمد' : 'Official Digital Field Daily Log Receipt'}</p>
+                <p style="margin-top: 3px; font-size: 9px; color: #cbd5e1;">UUID: ${lastSubmission.id} | Timestamp: ${formattedSubmitTime}</p>
+              </div>
+              <div>
+                <span class="badge-success">${isRtl ? 'تم الرفع والاعتماد الإلكتروني للمشرف' : 'SUBMITTED TO REVIEW'}</span>
+              </div>
+            </div>
+
+            <!-- Metadata Section -->
+            <div class="section-card">
+              <h2 class="section-card-title">
+                <span>📋 ${isRtl ? 'بيانات التقرير والمشرف المسؤول' : 'Report & Supervisor Metadata'}</span>
+              </h2>
+              <div class="meta-grid">
+                <div class="meta-item">
+                  <span class="meta-label">${isRtl ? 'اسم المشروع' : 'Project Name'}</span>
+                  <span class="meta-value">${selectedProjectName}</span>
+                </div>
+                <div class="meta-item">
+                  <span class="meta-label">${isRtl ? 'مشرف الموقع المسؤول' : 'Site Supervisor'}</span>
+                  <span class="meta-value">${lastSubmission.supervisorName} (Badge: ${lastSubmission.badgeNumber})</span>
+                </div>
+                <div class="meta-item">
+                  <span class="meta-label">${isRtl ? 'تاريخ العمل الفعلي' : 'Target Work Date'}</span>
+                  <span class="meta-value">${lastSubmission.date}</span>
+                </div>
+                <div class="meta-item">
+                  <span class="meta-label">${isRtl ? 'رمز التحقق والتسجيل الرقمي' : 'Digital Verification Handshake'}</span>
+                  <span class="meta-value" style="font-family: monospace; color: #0284c7;">${lastSubmission.signatureData}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Attendance Section -->
+            <div class="section-card">
+              <h2 class="section-card-title">
+                <span>👥 ${isRtl ? 'سجل حضور القوى العاملة المعتمد' : 'Crew Force Attendance Ledger'}</span>
+                <span style="font-size: 10px; color: #475569; font-weight: normal;">${lastSubmission.attendanceRecords.length} ${isRtl ? 'عامل ومسؤول فني' : 'Staff Members'}</span>
+              </h2>
+              <table>
+                <thead>
+                  <tr>
+                    <th style="width: 28%;">${isRtl ? 'الاسم الثنائي/الكامل' : 'Worker Name'}</th>
+                    <th style="width: 22%;">${isRtl ? 'الوظيفة/المهنة' : 'Profession'}</th>
+                    <th style="width: 14%; text-align: center;">${isRtl ? 'الحالة' : 'Status'}</th>
+                    <th style="width: 14%; text-align: center;">${isRtl ? 'ساعات العمل' : 'Shift Duration'}</th>
+                    <th style="width: 22%;">${isRtl ? 'ملاحظات وتفاصيل' : 'Remarks'}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${attendanceRowsHtml}
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Production Updates Section -->
+            <div class="section-card" style="page-break-before: auto;">
+              <h2 class="section-card-title">
+                <span>🎯 ${isRtl ? 'تحديثات الكميات والإنتاجية ثنائية الساعة' : 'Bi-Hourly Quantity & Output Updates'}</span>
+                <span style="font-size: 10px; color: #475569; font-weight: normal;">${lastSubmission.progressUpdates.length} ${isRtl ? 'تحديث موقعي' : 'Updates Logged'}</span>
+              </h2>
+              <table>
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">${isRtl ? 'حزمة العمل' : 'Work Item'}</th>
+                    <th style="width: 22%;">${isRtl ? 'النشاط الفرعي' : 'Sub-Activity'}</th>
+                    <th style="width: 12%; text-align: center;">${isRtl ? 'الوقت' : 'Time'}</th>
+                    <th style="width: 16%; text-align: center;">${isRtl ? 'الكمية المنفذة' : 'Completed Qty'}</th>
+                    <th style="width: 12%; text-align: center;">${isRtl ? 'الأيدي العاملة' : 'Crew Size'}</th>
+                    <th style="width: 18%;">${isRtl ? 'تفاصيل التنفيذ' : 'Notes/Execution'}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${productionRowsHtml}
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Safety & Delays Section -->
+            <div class="section-card">
+              <h2 class="section-card-title">
+                <span>🛡️ ${isRtl ? 'السلامة والتدقيق والمشاكل الميدانية' : 'Safety, Compliance & Site Incidents'}</span>
+              </h2>
+              <div>
+                <h4 style="margin: 0 0 5px 0; font-size: 11px; color: #475569;">${isRtl ? '1. حالة السلامة المهنية ومعدات الحماية:' : '1. Occupational Health & Safety Compliance:'}</h4>
+                ${safetyHtml}
+              </div>
+              <div style="margin-top: 18px;">
+                <h4 style="margin: 0 0 5px 0; font-size: 11px; color: #475569;">2. ${isRtl ? 'عوائق الموقع وإعاقات تمنع التنفيذ:' : '2. Operational Constraints & Project Delays:'}</h4>
+                ${delayHtml}
+              </div>
+              <div style="margin-top: 18px;">
+                <h4 style="margin: 0 0 5px 0; font-size: 11px; color: #475569;">3. ${isRtl ? 'بلاغات الحوادث والمخاطر الحرجة:' : '3. Critical Field Incidents & Risk Notifications:'}</h4>
+                ${incidentHtml}
+              </div>
+            </div>
+
+            <!-- Legal Protection Badge -->
+            <div class="legal-badge">
+              🚨 ${isRtl ? 'تنويه قانوني وحماية للمشرف:' : 'Supervisor Digital Safe-Guard & Legal Disclaimer:'}<br/>
+              ${isRtl ? 'يمثل هذا المستند الإلكتروني إثباتاً آمناً وغير قابل للتعديل لجميع التفاصيل والكميات المنجزة التي تم الإبلاغ عنها وإرسالها من الموقع بواسطة المشرف في الوقت المحدد. يهدف هذا المستند لحفظ حقوق الطاقم الفني وتوفير حماية كاملة للمشرف في حال وجود أي خلافات في الحصر لاحقاً.' : 'This secure electronic log contains cryptographic digital signatures of the Site Supervisor captured at checkout. It represents an unalterable official receipt of reported site metrics, providing full legal safeguard, compliance protection, and work history audit trail for the supervisor.'}
+            </div>
+
+            <!-- Signatures -->
+            <div class="sig-area">
+              <div class="sig-box">
+                <div class="sig-title">${isRtl ? 'مشرف الموقع المعتمد (المرسِل)' : 'Field Supervisor (Sender)'}</div>
+                <div style="height: 35px; margin: 5px 0; line-height: 35px; font-family: monospace; font-weight: bold; color: #0284c7; font-size: 11px; font-style: italic;">
+                  ${lastSubmission.signatureData}
+                </div>
+                <div class="sig-name">${lastSubmission.supervisorName}</div>
+              </div>
+              <div class="sig-box">
+                <div class="sig-title">${isRtl ? 'استشاري الإشراف والمطابقة' : 'Consultant Audit & Review'}</div>
+                <div style="height: 35px;"></div>
+                <div class="sig-name">____________________</div>
+              </div>
+              <div class="sig-box">
+                <div class="sig-title">${isRtl ? 'اعتماد مدير قسم المشاريع' : 'Project Management Director'}</div>
+                <div style="height: 35px;"></div>
+                <div class="sig-name">____________________</div>
+              </div>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+
+      const frameDoc = printFrame.contentWindow?.document;
+      if (frameDoc) {
+        frameDoc.open();
+        frameDoc.write(htmlContent);
+        frameDoc.close();
+      }
+
+      // Wait briefly for content rendering
+      await new Promise(resolve => setTimeout(resolve, 800));
+
+      const element = frameDoc.getElementById('pdf-content');
+      const opt = {
+        margin:       [10, 10, 10, 10] as [number, number, number, number],
+        filename:     `OFFICIAL_FIELD_REPORT_${lastSubmission.id}.pdf`,
+        image:        { type: 'jpeg' as const, quality: 0.98 },
+        html2canvas:  { scale: 2, useCORS: true, logging: false },
+        jsPDF:        { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
+      };
+
+      await runWithOklchSanitizer(async () => {
+        await html2pdf().set(opt).from(element).save();
+      });
+
+    } catch (err) {
+      console.error("Failed to export PDF:", err);
+      alert(isRtl ? 'حدث خطأ أثناء استخراج التقرير بصيغة PDF' : 'An error occurred while generating PDF');
+    } finally {
+      setIsPrinting(false);
     }
   };
 
@@ -615,10 +1104,24 @@ export default function FieldPortal({
             </div>
           </div>
 
-          <div className="flex justify-center gap-3">
+          <div className="flex flex-col sm:flex-row justify-center gap-3">
+            <button
+              onClick={handlePrintPDF}
+              disabled={isPrinting}
+              className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-400 text-white font-bold py-3 px-6 rounded-2xl text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-100 dark:shadow-none"
+            >
+              <Printer className="w-4 h-4 animate-pulse" />
+              <span>
+                {isPrinting 
+                  ? (isRtl ? 'جاري تصدير وثيقة الحماية...' : 'Exporting Safe PDF...') 
+                  : (isRtl ? 'حفظ التقرير وإثبات الإنجاز (PDF)' : 'Save Daily Report as PDF')}
+              </span>
+            </button>
+
             <button
               onClick={() => {
                 setSuccessSubmissionId(null);
+                setLastSubmission(null);
                 setProdUpdates([]);
                 setHasSafetyRecord(false);
                 setHasDelayRecord(false);

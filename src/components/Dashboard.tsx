@@ -300,12 +300,12 @@ export default function Dashboard({
 
           const headerRow = `
             <tr style="background-color: #f1f5f9; font-weight: bold; border-top: 2px solid #cbd5e1; border-bottom: 2px solid #cbd5e1;">
-              <td colspan="7" style="padding: 10px; font-weight: 800; color: #040957; font-size: 11px; text-align: ${isRtl ? 'right' : 'left'};">
+              <td colspan="7" style="padding: 5px 8px; font-weight: 800; color: #040957; font-size: 9px; text-align: ${isRtl ? 'right' : 'left'};">
                 <span style="font-weight: 900; margin-right: 5px;">📅 ${formattedDate()}</span>
-                <span style="background-color: #dbeafe; color: #1e40af; font-size: 9px; padding: 2px 6px; border-radius: 9999px; margin: 0 5px; font-weight: 900;">
+                <span style="background-color: #dbeafe; color: #1e40af; font-size: 7.5px; padding: 1px 4px; border-radius: 9999px; margin: 0 4px; font-weight: 900;">
                   ${groupItems.length} ${isRtl ? 'تحديثات' : 'updates'}
                 </span>
-                <span style="background-color: #d1fae5; color: #065f46; font-size: 9px; padding: 2px 6px; border-radius: 9999px; margin: 0 5px; font-weight: 900;">
+                <span style="background-color: #d1fae5; color: #065f46; font-size: 7.5px; padding: 1px 4px; border-radius: 9999px; margin: 0 4px; font-weight: 900;">
                   ${isRtl ? 'الإنتاج:' : 'Qty:'} +${groupItems.reduce((sum, item) => sum + item.completedQuantity, 0)}
                 </span>
               </td>
@@ -314,13 +314,13 @@ export default function Dashboard({
 
           const itemRows = groupItems.map((upd, i) => `
             <tr style="background-color: #ffffff; border-bottom: 1px solid #e2e8f0;">
-              <td class="num-font" style="text-align: center; padding: 10px; color: #64748b; font-weight: 600;">${i + 1}</td>
-              <td style="text-align: ${isRtl ? 'right' : 'left'}; padding: 10px; font-weight: 700; color: #0f172a;">${upd.activityName}</td>
-              <td class="num-font" style="text-align: center; padding: 10px; font-weight: 600; color: #475569;">${upd.time}</td>
-              <td class="num-font" style="text-align: center; padding: 10px; font-weight: 700; color: #0f172a;">+${upd.completedQuantity} ${upd.unit}</td>
-              <td class="num-font" style="text-align: center; padding: 10px; font-weight: 700; color: #2563eb;">${upd.shiftAchievement !== null ? upd.shiftAchievement + '%' : '-'}</td>
-              <td class="num-font" style="text-align: center; padding: 10px; font-weight: 700; color: #10b981;">${upd.completionPercentage}%</td>
-              <td style="text-align: ${isRtl ? 'right' : 'left'}; padding: 10px; font-weight: 600; color: #475569; font-size: 11px;">${upd.reporterName || (isRtl ? 'مشرف ميداني' : 'Field Supervisor')}</td>
+              <td class="num-font" style="text-align: center; color: #64748b; font-weight: 600;">${i + 1}</td>
+              <td style="text-align: ${isRtl ? 'right' : 'left'}; font-weight: 700; color: #0f172a;">${upd.activityName}</td>
+              <td class="num-font" style="text-align: center; font-weight: 600; color: #475569;">${upd.time}</td>
+              <td class="num-font" style="text-align: center; font-weight: 700; color: #0f172a;">+${upd.completedQuantity} ${upd.unit}</td>
+              <td class="num-font" style="text-align: center; font-weight: 700; color: #2563eb;">${upd.shiftAchievement !== null ? upd.shiftAchievement + '%' : '-'}</td>
+              <td class="num-font" style="text-align: center; font-weight: 700; color: #10b981;">${upd.completionPercentage}%</td>
+              <td style="text-align: ${isRtl ? 'right' : 'left'}; font-weight: 600; color: #475569;">${upd.reporterName || (isRtl ? 'مشرف ميداني' : 'Field Supervisor')}</td>
             </tr>
           `).join('');
 
@@ -353,156 +353,179 @@ export default function Dashboard({
                 body { 
                     font-family: ${isRtl ? "'Noto Kufi Arabic', 'Inter'" : "'Inter'"}, 'Segoe UI', sans-serif; 
                     margin: 0; 
-                    padding: 40px; 
+                    padding: 0; 
                     background: white; 
                     color: #0f172a; 
                     width: 100%; 
-                    font-size: 12px;
-                    line-height: 1.5;
+                    font-size: 8.5px;
+                    line-height: 1.4;
                 }
                 
-                .header-container { 
-                    border-bottom: 3px double #040957; 
-                    padding-bottom: 20px; 
-                    margin-bottom: 25px; 
+                .pdf-container {
+                    padding: 0;
+                    width: 100%;
+                    max-width: 100%;
+                    box-sizing: border-box;
                 }
-                
-                .header-top {
-                    display: flex; 
-                    justify-content: space-between; 
-                    align-items: flex-start;
+
+                .header-layout-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin-bottom: 15px;
+                    table-layout: fixed;
                 }
 
                 .logo-box { 
                     width: 90px; 
                     height: 90px; 
-                    display: flex; 
+                    display: inline-flex; 
                     align-items: center; 
                     justify-content: center; 
-                    margin-${isRtl ? 'left' : 'right'}: 20px; 
                     background: #f8fafc;
                     border: 1px solid #e2e8f0;
                     border-radius: 12px;
                     padding: 5px;
+                    vertical-align: middle;
                 }
 
                 .company-name { 
-                    font-size: 18px; 
+                    font-size: 11px; 
                     font-weight: 800; 
                     color: #040957; 
-                    margin-bottom: 4px;
-                    letter-spacing: -0.5px;
+                    margin-bottom: 1.5px;
+                    letter-spacing: -0.3px;
                 }
 
                 .company-details { 
                     color: #475569; 
-                    font-size: 10px; 
+                    font-size: 7.5px; 
                     font-weight: 500;
-                    margin-bottom: 3px;
+                    margin-bottom: 1px;
+                    line-height: 1.25;
+                    word-wrap: break-word;
+                    word-break: break-word;
+                    overflow-wrap: break-word;
                 }
 
                 .document-title-box { 
                     text-align: ${isRtl ? 'left' : 'right'}; 
-                    display: flex;
-                    flex-direction: column;
-                    align-items: ${isRtl ? 'flex-start' : 'flex-end'};
+                    display: block;
                 }
 
                 .doc-badge {
                     background: #040957;
                     color: white;
-                    padding: 5px 12px;
+                    padding: 2px 6px;
                     font-weight: 800;
-                    font-size: 11px;
-                    border-radius: 6px;
-                    margin-bottom: 8px;
+                    font-size: 7.5px;
+                    border-radius: 3px;
+                    margin-bottom: 3px;
                     text-transform: uppercase;
-                    letter-spacing: 1px;
+                    display: inline-block;
                 }
 
                 .serial-text {
                     font-family: 'JetBrains Mono', monospace;
                     font-weight: 700;
                     color: #475569;
-                    font-size: 11px;
+                    font-size: 8px;
                 }
 
                 .meta-table { 
                     width: 100%; 
                     border-collapse: collapse; 
-                    margin-bottom: 20px; 
+                    margin-bottom: 15px; 
                     background-color: #f8fafc; 
                     border: 1px solid #e2e8f0;
-                    border-radius: 8px;
-                    overflow: hidden;
+                    border-radius: 6px;
+                    table-layout: fixed;
                 }
                 
                 .meta-table td { 
-                    padding: 10px 14px; 
+                    padding: 6px 10px; 
                     border: 1px solid #e2e8f0; 
+                    vertical-align: top;
+                    word-wrap: break-word;
+                    word-break: break-word;
+                    overflow-wrap: break-word;
                 }
 
                 .meta-label { 
                     color: #64748b; 
-                    font-size: 10px; 
+                    font-size: 7.5px; 
                     font-weight: 700; 
                     text-transform: uppercase; 
                     display: block; 
-                    margin-bottom: 3px; 
+                    margin-bottom: 1px; 
                 }
 
                 .meta-val { 
-                    font-size: 12px; 
+                    font-size: 9px; 
                     font-weight: 700; 
                     color: #040957; 
                 }
 
-                .stats-grid {
-                    display: grid;
-                    grid-template-columns: repeat(3, 1fr);
-                    gap: 15px;
-                    margin-bottom: 25px;
+                .stats-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin-bottom: 15px;
+                    table-layout: fixed;
                 }
 
-                .stat-card {
+                .stat-card-cell {
                     background: #f8fafc;
                     border: 1px solid #e2e8f0;
-                    border-radius: 8px;
-                    padding: 12px;
+                    border-radius: 6px;
+                    padding: 8px;
                     text-align: center;
+                    word-wrap: break-word;
+                    word-break: break-word;
+                    overflow-wrap: break-word;
                 }
 
                 .stat-num {
                     font-family: 'JetBrains Mono', monospace;
-                    font-size: 18px;
+                    font-size: 14px;
                     font-weight: 800;
                     color: #0080FF;
-                    margin-bottom: 3px;
+                    margin-bottom: 1px;
                 }
 
                 .stat-label {
                     color: #64748b;
-                    font-size: 9px;
+                    font-size: 7.5px;
                     font-weight: 700;
                     text-transform: uppercase;
                 }
 
-                .section-heading {
-                    font-size: 11px;
-                    font-weight: 800;
-                    color: #040957;
-                    text-transform: uppercase;
-                    border-bottom: 1.5px solid #040957;
-                    padding-bottom: 5px;
-                    margin-bottom: 12px;
+                .section-heading-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin-bottom: 8px;
+                    table-layout: fixed;
+                }
+
+                .section-heading-cell {
+                    background-color: #040957; 
+                    color: #ffffff; 
+                    padding: 4px 8px; 
+                    font-weight: 800; 
+                    font-size: 8.5px; 
+                    border-radius: 3px; 
+                    text-transform: uppercase; 
                     letter-spacing: 0.5px;
+                    text-align: ${isRtl ? 'right' : 'left'};
+                    word-wrap: break-word;
+                    word-break: break-word;
+                    overflow-wrap: break-word;
                 }
 
                 .main-table { 
                     width: 100%; 
                     border-collapse: collapse; 
-                    margin-bottom: 25px; 
-                    font-size: 11px; 
+                    margin-bottom: 15px; 
+                    font-size: 8.5px; 
+                    table-layout: fixed;
                 }
 
                 .main-table th { 
@@ -510,13 +533,19 @@ export default function Dashboard({
                     color: #ffffff; 
                     font-weight: 700; 
                     text-align: center; 
-                    padding: 10px; 
+                    padding: 6px 4px; 
                     border: 1px solid #040957;
+                    word-wrap: break-word;
+                    word-break: break-word;
+                    overflow-wrap: break-word;
                 }
 
                 .main-table td { 
                     border: 1px solid #e2e8f0; 
-                    padding: 8px 10px; 
+                    padding: 5px 4px; 
+                    word-wrap: break-word;
+                    word-break: break-word;
+                    overflow-wrap: break-word;
                 }
                 
                 .num-font { 
@@ -528,74 +557,83 @@ export default function Dashboard({
                 .remarks-box {
                     background: #fafafa;
                     border: 1px solid #e2e8f0;
-                    border-radius: 8px;
-                    padding: 12px 16px;
-                    margin-bottom: 30px;
+                    border-radius: 6px;
+                    padding: 6px 10px;
+                    margin-bottom: 15px;
                 }
 
                 .remarks-text {
-                    font-size: 11px;
+                    font-size: 8.5px;
                     color: #334155;
                     font-weight: 500;
-                    line-height: 1.6;
+                    line-height: 1.4;
                     text-align: justify;
                 }
                 
-                .footer-signatures { 
-                    margin-top: 50px; 
-                    display: grid;
-                    grid-template-columns: repeat(3, 1fr);
-                    gap: 30px;
-                    text-align: center; 
+                .signatures-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin-top: 25px;
+                    table-layout: fixed;
                 }
 
-                .sig-box { 
-                    display: flex; 
-                    flex-direction: column; 
-                    align-items: center; 
+                .sig-cell {
+                    text-align: center;
+                    padding: 6px;
+                    vertical-align: top;
+                    word-wrap: break-word;
+                    word-break: break-word;
+                    overflow-wrap: break-word;
                 }
 
                 .sig-line { 
                     border-top: 1.5px solid #040957; 
-                    padding-top: 8px; 
-                    width: 100%; 
+                    padding-top: 5px; 
                     color: #040957; 
-                    font-size: 11px; 
+                    font-size: 8.5px; 
                     font-weight: 700;
                 }
 
                 .sig-title {
                     color: #64748b;
-                    font-size: 9px;
+                    font-size: 7.5px;
                     font-weight: 600;
-                    margin-top: 2px;
+                    margin-top: 1px;
                     text-transform: uppercase;
                 }
             </style>
         </head>
         <body>
-          <div id="pdf-content">
+          <div id="pdf-content" class="pdf-container">
             <!-- Header Section -->
-            <div class="header-container">
-                <div class="header-top">
-                    <div style="display: flex; align-items: center;">
-                        <div class="logo-box">
-                            ${settings?.companyLogoUrl ? `<img src="${settings.companyLogoUrl}" alt="Logo" style="max-width: 100%; max-height: 100%; object-fit: contain;" />` : `<svg width="45" height="45" viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="2"><path d="M3 21h18"></path><path d="M5 21V7l8-4v18"></path><path d="M19 21V11l-6-3"></path></svg>`}
+            <table class="header-layout-table">
+                <tr>
+                    <td style="width: 65%; text-align: ${isRtl ? 'right' : 'left'}; vertical-align: middle;">
+                        <table style="border-collapse: collapse; display: inline-table; table-layout: fixed; width: 100%;">
+                            <tr>
+                                <td style="padding: 0; padding-${isRtl ? 'left' : 'right'}: 10px; vertical-align: middle; width: 100px;">
+                                    <div class="logo-box">
+                                        ${settings?.companyLogoUrl ? `<img src="${settings.companyLogoUrl}" alt="Logo" style="max-width: 100%; max-height: 100%; object-fit: contain;" />` : `<svg width="45" height="45" viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="2"><path d="M3 21h18"></path><path d="M5 21V7l8-4v18"></path><path d="M19 21V11l-6-3"></path></svg>`}
+                                    </div>
+                                </td>
+                                <td style="padding: 0; vertical-align: middle; text-align: ${isRtl ? 'right' : 'left'};">
+                                    <div class="company-name">${((isRtl ? settings?.companyNameAr : settings?.companyNameEn) || (isRtl ? 'شركة الرشيد للمقاولات' : 'Rashed Al-Subaie Contracting Co.'))}</div>
+                                    <div class="company-details" style="font-weight: 700; color: #0f172a;">${companyAddress || ''}</div>
+                                    <div class="company-details">${isRtl ? 'هاتف: ' : 'Tel: '}${phoneNum} | ${isRtl ? 'البريد الالكتروني: ' : 'Email: '}${emailAdd}</div>
+                                    <div class="company-details">${isRtl ? 'سجل تجاري رقم: ' : 'CR No: '}${crNum} | ${isRtl ? 'الرقم الضريبي: ' : 'VAT No: '}${vatNum}</div>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                    <td style="width: 35%; text-align: ${isRtl ? 'left' : 'right'}; vertical-align: middle;">
+                        <div class="document-title-box" style="text-align: ${isRtl ? 'left' : 'right'};">
+                            <div class="doc-badge">${isRtl ? 'وثيقة رسمية' : 'Official Document'}</div>
+                            <h2 style="margin: 0 0 4px 0; font-size: 11px; font-weight: 800; color: #0f172a;">${isRtl ? customReportTitleAr : customReportTitleEn}</h2>
+                            <div class="serial-text">${isRtl ? 'الرقم المرجعي: ' : 'Ref No: '} ${reportSerialNum}</div>
                         </div>
-                        <div>
-                            <div class="company-name">${((isRtl ? settings?.companyNameAr : settings?.companyNameEn) || (isRtl ? 'شركة الرشيد للمقاولات' : 'Rashed Al-Subaie Contracting Co.'))}</div>
-                            <div class="company-details" style="font-weight: 700; color: #0f172a;">${companyAddress || ''}</div>
-                            <div class="company-details">${isRtl ? 'هاتف: ' : 'Tel: '}${phoneNum} | ${isRtl ? 'البريد الالكتروني: ' : 'Email: '}${emailAdd}</div>
-                            <div class="company-details">${isRtl ? 'سجل تجاري رقم: ' : 'CR No: '}${crNum} | ${isRtl ? 'الرقم الضريبي: ' : 'VAT No: '}${vatNum}</div>
-                        </div>
-                    </div>
-                    <div class="document-title-box">
-                        <div class="doc-badge">${isRtl ? 'وثيقة رسمية' : 'Official Document'}</div>
-                        <h2 style="margin: 0 0 6px 0; font-size: 14px; font-weight: 800; color: #0f172a;">${isRtl ? customReportTitleAr : customReportTitleEn}</h2>
-                        <div class="serial-text">${isRtl ? 'الرقم المرجعي: ' : 'Ref No: '} ${reportSerialNum}</div>
-                    </div>
-                </div>
-            </div>
+                    </td>
+                </tr>
+            </table>
 
             <!-- Metadata Section -->
             <table class="meta-table">
@@ -620,24 +658,40 @@ export default function Dashboard({
             </table>
 
             <!-- Performance Metrics Grid -->
-            <div class="section-heading">${isRtl ? 'مؤشرات الأداء التشغيلية للفترة' : 'Operational Performance Indicators'}</div>
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-num">${totalIntervals}</div>
-                    <div class="stat-label">${isRtl ? 'إجمالي فترات التحديث' : 'Total Interval Logs'}</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-num">+${totalQtyProduced}</div>
-                    <div class="stat-label">${isRtl ? 'الكمية الإجمالية المنجزة' : 'Total Quantity Produced'}</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-num">${avgIntervalProgress}%</div>
-                    <div class="stat-label">${isRtl ? 'متوسط كفاءة الإنجاز للفترة' : 'Average Interval Achievement'}</div>
-                </div>
-            </div>
+            <table class="section-heading-table">
+                <tr>
+                    <td class="section-heading-cell">
+                        ${isRtl ? 'مؤشرات الأداء التشغيلية للفترة' : 'Operational Performance Indicators'}
+                    </td>
+                </tr>
+            </table>
+            
+            <table class="stats-table">
+                <tr>
+                    <td class="stat-card-cell" style="padding-right: 8px;">
+                        <div class="stat-num">${totalIntervals}</div>
+                        <div class="stat-label">${isRtl ? 'إجمالي فترات التحديث' : 'Total Interval Logs'}</div>
+                    </td>
+                    <td class="stat-card-cell" style="padding: 10px 8px;">
+                        <div class="stat-num">+${totalQtyProduced}</div>
+                        <div class="stat-label">${isRtl ? 'الكمية الإجمالية المنجزة' : 'Total Quantity Produced'}</div>
+                    </td>
+                    <td class="stat-card-cell" style="padding-left: 8px;">
+                        <div class="stat-num">${avgIntervalProgress}%</div>
+                        <div class="stat-label">${isRtl ? 'متوسط كفاءة الإنجاز للفترة' : 'Average Interval Achievement'}</div>
+                    </td>
+                </tr>
+            </table>
 
             <!-- Detailed Interval Logs Table -->
-            <div class="section-heading">${isRtl ? 'سجل تفاصيل فترات الإنتاج (كل ساعتين)' : 'Detailed 2-Hour Production Interval Logs'}</div>
+            <table class="section-heading-table">
+                <tr>
+                    <td class="section-heading-cell">
+                        ${isRtl ? 'سجل تفاصيل فترات الإنتاج (كل ساعتين)' : 'Detailed 2-Hour Production Interval Logs'}
+                    </td>
+                </tr>
+            </table>
+
             <table class="main-table">
                 <thead>
                     <tr>
@@ -656,7 +710,14 @@ export default function Dashboard({
             </table>
 
             <!-- Executive Remarks / Notes -->
-            <div class="section-heading">${isRtl ? 'الملاحظات والتدقيق الفني الميداني' : 'Field Technical Remarks & Notes'}</div>
+            <table class="section-heading-table">
+                <tr>
+                    <td class="section-heading-cell">
+                        ${isRtl ? 'الملاحظات والتدقيق الفني الميداني' : 'Field Technical Remarks & Notes'}
+                    </td>
+                </tr>
+            </table>
+
             <div class="remarks-box">
                 <div class="remarks-text">
                     ${isRtl ? customRemarksAr : customRemarksEn}
@@ -664,23 +725,25 @@ export default function Dashboard({
             </div>
 
             <!-- Official Signatures -->
-            <div class="footer-signatures">
-                <div class="sig-box">
-                    <div style="height: 45px;"></div>
-                    <div class="sig-line">${isRtl ? 'المهندس المشرف بالموقع' : 'Site Supervising Engineer'}</div>
-                    <div class="sig-title">${isRtl ? 'مستخرج التقرير الميداني' : 'Field Reporter'}</div>
-                </div>
-                <div class="sig-box">
-                    <div style="height: 45px;"></div>
-                    <div class="sig-line">${isRtl ? 'ممثل استشاري الإشراف' : 'Consultant Representative'}</div>
-                    <div class="sig-title">${isRtl ? 'التدقيق والاعتماد الفني' : 'Technical Review & Verification'}</div>
-                </div>
-                <div class="sig-box">
-                    <div style="height: 45px;"></div>
-                    <div class="sig-line">${isRtl ? settings?.managerNameAr || 'م. فهد العتيبي' : settings?.managerNameEn || 'Eng. Fahad Al-Otaibi'}</div>
-                    <div class="sig-title">${isRtl ? 'اعتماد مدير إدارة المشاريع' : 'Project Manager Approval'}</div>
-                </div>
-            </div>
+            <table class="signatures-table">
+                <tr>
+                    <td class="sig-cell">
+                        <div style="height: 35px;"></div>
+                        <div class="sig-line">${isRtl ? 'المهندس المشرف بالموقع' : 'Site Supervising Engineer'}</div>
+                        <div class="sig-title">${isRtl ? 'مستخرج التقرير الميداني' : 'Field Reporter'}</div>
+                    </td>
+                    <td class="sig-cell">
+                        <div style="height: 35px;"></div>
+                        <div class="sig-line">${isRtl ? 'ممثل استشاري الإشراف' : 'Consultant Representative'}</div>
+                        <div class="sig-title">${isRtl ? 'التدقيق والاعتماد الفني' : 'Technical Review & Verification'}</div>
+                    </td>
+                    <td class="sig-cell">
+                        <div style="height: 35px;"></div>
+                        <div class="sig-line">${isRtl ? settings?.managerNameAr || 'م. فهد العتيبي' : settings?.managerNameEn || 'Eng. Fahad Al-Otaibi'}</div>
+                        <div class="sig-title">${isRtl ? 'اعتماد مدير إدارة المشاريع' : 'Project Manager Approval'}</div>
+                    </td>
+                </tr>
+            </table>
           </div>
         </body>
         </html>
