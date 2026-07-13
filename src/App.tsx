@@ -120,6 +120,10 @@ export default function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, [isSidebarCollapsed]);
 
+  useEffect(() => {
+    document.title = lang === 'ar' ? 'إدارة أنشطة المشروع' : 'Project Activities Management';
+  }, [lang]);
+
   // Core databases
   const [projects, setProjects] = useState<Project[]>([]);
   const [workItems, setWorkItems] = useState<WorkItem[]>([]);
