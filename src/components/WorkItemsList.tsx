@@ -39,7 +39,9 @@ import {
   X,
   PlusCircle,
   Play,
-  AlertTriangle
+  AlertTriangle,
+  Edit,
+  Eye
 } from 'lucide-react';
 
 interface WorkItemsListProps {
@@ -114,6 +116,11 @@ export default function WorkItemsList({
 
   // Active planning inspection
   const [inspectedActivityId, setInspectedActivityId] = useState<string | null>(null);
+
+  // Edit/Details state
+  const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [activityForDetails, setActivityForDetails] = useState<Activity | null>(null);
 
   // Filter project-specific elements
   const currentProject = useMemo(() => {
@@ -204,6 +211,7 @@ export default function WorkItemsList({
   // Save new Activity
   const handleOpenAddActivity = (wiId: string) => {
     if (isReadOnly) return;
+    setEditingActivityId(null);
     setSelectedWiIdForActivity(wiId);
     setActNameAr('');
     setActNameEn('');
@@ -213,11 +221,35 @@ export default function WorkItemsList({
     setActDescEn('');
     setSelectedMaterialIds([]);
     setSelectedEquipmentIds([]);
-      setMaterialAllocations([]);
-      setEquipmentAllocations([]);
+    setMaterialAllocations([]);
+    setEquipmentAllocations([]);
     setSelectedWorkerIds([]);
     setDependsOnId('');
     setIsAddActOpen(true);
+  };
+
+  const handleOpenEditActivity = (act: Activity) => {
+    if (isReadOnly) return;
+    setEditingActivityId(act.id);
+    setSelectedWiIdForActivity(act.workItemId);
+    setActNameAr(act.nameAr);
+    setActNameEn(act.nameEn);
+    setActQty(act.totalQuantity);
+    setActUnit(act.unit);
+    setActDescAr(act.descriptionAr || '');
+    setActDescEn(act.descriptionEn || '');
+    setSelectedMaterialIds(act.materialIds || []);
+    setSelectedEquipmentIds(act.equipmentIds || []);
+    setMaterialAllocations(act.materialAllocations || []);
+    setEquipmentAllocations(act.equipmentAllocations || []);
+    setSelectedWorkerIds(act.workerIds || []);
+    setDependsOnId(act.dependsOnActivityId || '');
+    setIsAddActOpen(true);
+  };
+
+  const handleOpenDetails = (act: Activity) => {
+    setActivityForDetails(act);
+    setIsDetailsOpen(true);
   };
 
   const handleSaveActivity = (e: React.FormEvent) => {
@@ -228,25 +260,43 @@ export default function WorkItemsList({
       return;
     }
 
-    const newAct: Activity = {
-      id: `act-${Date.now()}`,
-      workItemId: selectedWiIdForActivity,
-      nameAr: actNameAr,
-      nameEn: actNameEn,
-      totalQuantity: Number(actQty),
-      unit: actUnit,
-      descriptionAr: actDescAr,
-      descriptionEn: actDescEn,
-      materialIds: selectedMaterialIds,
-      equipmentIds: selectedEquipmentIds,
-      materialAllocations: materialAllocations,
-      equipmentAllocations: equipmentAllocations,
-      workerIds: selectedWorkerIds,
-      dependsOnActivityId: dependsOnId || undefined
-    };
+    if (editingActivityId) {
+      onUpdateActivity(editingActivityId, {
+        nameAr: actNameAr,
+        nameEn: actNameEn,
+        totalQuantity: Number(actQty),
+        unit: actUnit,
+        descriptionAr: actDescAr,
+        descriptionEn: actDescEn,
+        materialIds: selectedMaterialIds,
+        equipmentIds: selectedEquipmentIds,
+        materialAllocations: materialAllocations,
+        equipmentAllocations: equipmentAllocations,
+        workerIds: selectedWorkerIds,
+        dependsOnActivityId: dependsOnId || undefined
+      });
+    } else {
+      const newAct: Activity = {
+        id: `act-${Date.now()}`,
+        workItemId: selectedWiIdForActivity,
+        nameAr: actNameAr,
+        nameEn: actNameEn,
+        totalQuantity: Number(actQty),
+        unit: actUnit,
+        descriptionAr: actDescAr,
+        descriptionEn: actDescEn,
+        materialIds: selectedMaterialIds,
+        equipmentIds: selectedEquipmentIds,
+        materialAllocations: materialAllocations,
+        equipmentAllocations: equipmentAllocations,
+        workerIds: selectedWorkerIds,
+        dependsOnActivityId: dependsOnId || undefined
+      };
+      onAddActivity(newAct);
+    }
 
-    onAddActivity(newAct);
     setIsAddActOpen(false);
+    setEditingActivityId(null);
   };
 
   return (
@@ -418,34 +468,54 @@ export default function WorkItemsList({
                                       </div>
                                     </div>
 
-                                    <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
-                                      <div className="text-right">
-                                        <div className="text-[10px] text-gray-400">{isRtl ? 'الحجم الكلي' : 'Total Scope'}</div>
-                                        <div className="font-bold text-gray-700 font-mono text-xs">{act.totalQuantity} {act.unit}</div>
+                                      <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+                                        <div className="text-right flex-1 sm:flex-none">
+                                          <div className="text-[10px] text-gray-400">{isRtl ? 'الحجم الكلي' : 'Total Scope'}</div>
+                                          <div className="font-bold text-gray-700 font-mono text-xs">{act.totalQuantity} {act.unit}</div>
+                                        </div>
+
+                                        <div className="flex items-center gap-1">
+                                          <button 
+                                            onClick={() => handleOpenDetails(act)}
+                                            className="bg-gray-100 hover:bg-gray-200 text-gray-600 p-1.5 rounded text-[10px] font-bold transition"
+                                            title={isRtl ? 'تفاصيل' : 'Details'}
+                                          >
+                                            <Eye className="w-3.5 h-3.5" />
+                                          </button>
+
+                                          {!isReadOnly && (
+                                            <button 
+                                              onClick={() => handleOpenEditActivity(act)}
+                                              className="bg-amber-50 hover:bg-amber-100 text-amber-600 p-1.5 rounded text-[10px] font-bold transition"
+                                              title={isRtl ? 'تعديل' : 'Edit'}
+                                            >
+                                              <Edit className="w-3.5 h-3.5" />
+                                            </button>
+                                          )}
+
+                                          <button 
+                                            onClick={() => setInspectedActivityId(act.id)}
+                                            className="bg-[#040957] hover:bg-[#0080FF] text-white p-1.5 rounded text-[10px] font-bold flex items-center gap-1 transition"
+                                            title={isRtl ? 'حسابات الجدولة' : 'Inspect Plan'}
+                                          >
+                                            <Calculator className="w-3.5 h-3.5" />
+                                          </button>
+
+                                          <button 
+                                            onClick={() => {
+                                              openConfirm(
+                                                t.confirmDelete,
+                                                isRtl ? 'هل أنت متأكد من حذف هذا النشاط نهائياً؟' : 'Are you sure you want to delete this activity permanently?',
+                                                () => onDeleteActivity(act.id)
+                                              );
+                                            }}
+                                            disabled={isReadOnly}
+                                            className="text-gray-300 hover:text-red-500 p-1.5 transition-colors disabled:opacity-30"
+                                          >
+                                            <Trash2 className="w-4 h-4" />
+                                          </button>
+                                        </div>
                                       </div>
-
-                                      <button 
-                                        onClick={() => setInspectedActivityId(act.id)}
-                                        className="bg-[#040957] hover:bg-[#0080FF] text-white py-1 px-2.5 rounded text-[10px] font-bold flex items-center gap-1 transition"
-                                      >
-                                        <Calculator className="w-3 h-3" />
-                                        <span>{isRtl ? 'حسابات الجدولة' : 'Inspect Plan'}</span>
-                                      </button>
-
-                                      <button 
-                                        onClick={() => {
-                                          openConfirm(
-                                            t.confirmDelete,
-                                            isRtl ? 'هل أنت متأكد من حذف هذا النشاط نهائياً؟' : 'Are you sure you want to delete this activity permanently?',
-                                            () => onDeleteActivity(act.id)
-                                          );
-                                        }}
-                                        disabled={isReadOnly}
-                                        className="text-gray-300 hover:text-red-500 transition-colors disabled:opacity-30"
-                                      >
-                                        <X className="w-4 h-4" />
-                                      </button>
-                                    </div>
                                   </div>
                                 );
                               })}
@@ -658,12 +728,14 @@ export default function WorkItemsList({
         </div>
       )}
 
-      {/* MODAL: ADD ACTIVITY */}
+      {/* MODAL: ADD/EDIT ACTIVITY */}
       {isAddActOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full border border-gray-100 animate-scaleIn max-h-[90vh] overflow-y-auto">
             <div className="bg-[#040957] text-white p-4 rounded-t-2xl flex justify-between items-center">
-              <h3 className="font-bold text-xs uppercase tracking-wide">{t.addActivity}</h3>
+              <h3 className="font-bold text-xs uppercase tracking-wide">
+                {editingActivityId ? (isRtl ? 'تعديل نشاط' : 'Edit Activity') : t.addActivity}
+              </h3>
               <button onClick={() => setIsAddActOpen(false)} className="text-white bg-white/10 hover:bg-white/20 p-1 rounded transition">
                 <X className="w-4 h-4" />
               </button>
@@ -879,11 +951,133 @@ export default function WorkItemsList({
               </div>
 
               <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
-                <button type="button" onClick={() => setIsAddActOpen(false)} className="bg-gray-100 hover:bg-gray-200 py-2.5 px-4 rounded-xl text-xs font-bold text-gray-600 transition">{t.cancel}</button>
-                <button type="submit" className="bg-[#040957] hover:bg-[#0080FF] text-white py-2.5 px-5 rounded-xl text-xs font-bold transition shadow-md">{t.save}</button>
+                <button type="button" onClick={() => { setIsAddActOpen(false); setEditingActivityId(null); }} className="bg-gray-100 hover:bg-gray-200 py-2.5 px-4 rounded-xl text-xs font-bold text-gray-600 transition">{t.cancel}</button>
+                <button type="submit" className="bg-[#040957] hover:bg-[#0080FF] text-white py-2.5 px-6 rounded-xl text-xs font-bold transition shadow-sm">{editingActivityId ? (isRtl ? 'تحديث' : 'Update') : t.save}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: ACTIVITY DETAILS */}
+      {isDetailsOpen && activityForDetails && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full border border-gray-100 animate-scaleIn max-h-[90vh] overflow-y-auto">
+            <div className="bg-[#040957] text-white p-4 rounded-t-2xl flex justify-between items-center">
+              <h3 className="font-bold text-xs uppercase tracking-wide">{isRtl ? 'تفاصيل النشاط' : 'Activity Details'}</h3>
+              <button onClick={() => setIsDetailsOpen(false)} className="text-white bg-white/10 hover:bg-white/20 p-1 rounded transition">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 font-bold uppercase">{isRtl ? 'الاسم (عربي)' : 'Name (Arabic)'}</label>
+                  <p className="font-bold text-sm text-[#040957]">{activityForDetails.nameAr}</p>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 font-bold uppercase">{isRtl ? 'الاسم (إنجليزي)' : 'Name (English)'}</label>
+                  <p className="font-bold text-sm text-[#040957]">{activityForDetails.nameEn}</p>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 font-bold uppercase">{isRtl ? 'الكمية الكلية' : 'Total Quantity'}</label>
+                  <p className="font-mono font-bold text-sm">{activityForDetails.totalQuantity} {activityForDetails.unit}</p>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 font-bold uppercase">{isRtl ? 'التبعية' : 'Dependency'}</label>
+                  <p className="font-bold text-sm">
+                    {activityForDetails.dependsOnActivityId 
+                      ? (activities.find(a => a.id === activityForDetails.dependsOnActivityId)?.nameAr || activityForDetails.dependsOnActivityId)
+                      : (isRtl ? 'لا يوجد' : 'None')}
+                  </p>
+                </div>
               </div>
 
-            </form>
+              <div className="space-y-1">
+                <label className="text-[10px] text-gray-400 font-bold uppercase">{isRtl ? 'الوصف' : 'Description'}</label>
+                <p className="text-xs text-gray-600 leading-relaxed bg-gray-50 p-3 rounded-xl border border-gray-100">
+                  {isRtl ? (activityForDetails.descriptionAr || 'لا يوجد وصف') : (activityForDetails.descriptionEn || 'No description')}
+                </p>
+              </div>
+
+              <div className="space-y-4 pt-4 border-t border-gray-100">
+                {/* Workers Section */}
+                <div className="space-y-2">
+                  <h4 className="font-bold text-[#040957] text-xs flex items-center gap-2">
+                    <UserCheck className="w-4 h-4 text-[#0080FF]" />
+                    {isRtl ? 'العمال المخصصون' : 'Allocated Workers'}
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {activityForDetails.workerIds.length > 0 ? (
+                      workers.filter(w => activityForDetails.workerIds.includes(w.id)).map(w => (
+                        <div key={w.id} className="flex items-center justify-between p-2 rounded-lg bg-blue-50/50 border border-blue-100">
+                          <span className="text-xs font-bold text-blue-900">{w.fullName}</span>
+                          <span className="text-[10px] text-blue-600 font-mono">{w.professionAr}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-[10px] text-gray-400 italic">{isRtl ? 'لم يتم تخصيص عمال' : 'No workers allocated'}</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Materials Section */}
+                <div className="space-y-2">
+                  <h4 className="font-bold text-[#040957] text-xs flex items-center gap-2">
+                    <Package className="w-4 h-4 text-[#0080FF]" />
+                    {isRtl ? 'المواد المخصصة' : 'Allocated Materials'}
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {activityForDetails.materialAllocations && activityForDetails.materialAllocations.length > 0 ? (
+                      activityForDetails.materialAllocations.map(alloc => {
+                        const m = materials.find(mat => mat.id === alloc.id);
+                        return (
+                          <div key={alloc.id} className="flex items-center justify-between p-2 rounded-lg bg-emerald-50/50 border border-emerald-100">
+                            <span className="text-xs font-bold text-emerald-900">{isRtl ? m?.nameAr : m?.nameEn}</span>
+                            <span className="text-[10px] text-emerald-600 font-mono font-bold">{alloc.quantity} {m?.unit}</span>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <p className="text-[10px] text-gray-400 italic">{isRtl ? 'لم يتم تخصيص مواد' : 'No materials allocated'}</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Equipment Section */}
+                <div className="space-y-2">
+                  <h4 className="font-bold text-[#040957] text-xs flex items-center gap-2">
+                    <Wrench className="w-4 h-4 text-[#0080FF]" />
+                    {isRtl ? 'المعدات المخصصة' : 'Allocated Equipment'}
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {activityForDetails.equipmentAllocations && activityForDetails.equipmentAllocations.length > 0 ? (
+                      activityForDetails.equipmentAllocations.map(alloc => {
+                        const e = equipment.find(eq => eq.id === alloc.id);
+                        return (
+                          <div key={alloc.id} className="flex items-center justify-between p-2 rounded-lg bg-amber-50/50 border border-amber-100">
+                            <span className="text-xs font-bold text-amber-900">{isRtl ? e?.nameAr : e?.nameEn}</span>
+                            <span className="text-[10px] text-amber-600 font-mono font-bold">{alloc.quantity} {isRtl ? 'وحدة' : 'Units'}</span>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <p className="text-[10px] text-gray-400 italic">{isRtl ? 'لم يتم تخصيص معدات' : 'No equipment allocated'}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-4">
+                <button 
+                  onClick={() => setIsDetailsOpen(false)} 
+                  className="bg-[#040957] text-white py-2 px-6 rounded-xl text-xs font-bold transition shadow-md"
+                >
+                  {isRtl ? 'إغلاق' : 'Close'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
