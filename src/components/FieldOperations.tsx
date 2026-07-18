@@ -42,7 +42,14 @@ import {
   X,
   Users,
   Printer,
-  Copy
+  Copy,
+  Eye,
+  Edit,
+  Package,
+  Wrench,
+  UserCheck,
+  Calculator,
+  Calendar
 } from 'lucide-react';
 
 interface FieldOperationsProps {
@@ -208,6 +215,18 @@ export default function FieldOperations({
   const [prodWorkersUsed, setProdWorkersUsed] = useState(4);
   const [prodNotes, setProdNotes] = useState('');
   const [simulatedFiles, setSimulatedFiles] = useState<{name: string, type: string}[]>([]);
+
+  // Activity Details State
+  const [isActivityDetailsOpen, setIsActivityDetailsOpen] = useState(false);
+  const [activityForDetails, setActivityForDetails] = useState<Activity | null>(null);
+
+  const handleOpenActivityDetails = (actId: string) => {
+    const act = activities.find(a => a.id === actId);
+    if (act) {
+      setActivityForDetails(act);
+      setIsActivityDetailsOpen(true);
+    }
+  };
 
   // --- 3. Safety Module Form State ---
   const [safeStatus, setSafeStatus] = useState<boolean>(true);
@@ -1685,9 +1704,18 @@ export default function FieldOperations({
                                               ⏱️ {p.time} | 👷 {p.numberOfWorkers} {isRtl ? 'عمال' : 'workers'}
                                             </p>
                                           </div>
-                                          <span className="font-mono text-xs font-black text-amber-900 bg-amber-100/60 px-2 py-0.5 rounded">
-                                            +{p.completedQuantity} {actObj?.unit}
-                                          </span>
+                                          <div className="flex items-center gap-2">
+                                            <button 
+                                              onClick={() => handleOpenActivityDetails(p.activityId)}
+                                              className="p-1 hover:bg-amber-100 rounded text-amber-700 transition"
+                                              title="View Activity Details"
+                                            >
+                                              <Eye className="w-3.5 h-3.5" />
+                                            </button>
+                                            <span className="font-mono text-xs font-black text-amber-900 bg-amber-100/60 px-2 py-0.5 rounded">
+                                              +{p.completedQuantity} {actObj?.unit}
+                                            </span>
+                                          </div>
                                         </div>
                                         {p.notes && (
                                           <p className="text-[10px] text-gray-500 italic mt-1.5 bg-white/50 p-1.5 rounded border border-gray-150">
@@ -1802,7 +1830,19 @@ export default function FieldOperations({
 
                     {/* Activity Selector */}
                     <div className="space-y-1">
-                      <label className="block text-xs font-bold text-gray-500">{isRtl ? 'نوع النشاط الميداني' : 'Sub-activity'}</label>
+                      <label className="block text-xs font-bold text-gray-500 flex justify-between items-center">
+                        <span>{isRtl ? 'نوع النشاط الميداني' : 'Sub-activity'}</span>
+                        {prodActId && (
+                          <button 
+                            type="button"
+                            onClick={() => handleOpenActivityDetails(prodActId)}
+                            className="text-[10px] text-[#0080FF] font-bold hover:underline flex items-center gap-1"
+                          >
+                            <Eye className="w-3 h-3" />
+                            {isRtl ? 'عرض التفاصيل والموارد' : 'View Details & Resources'}
+                          </button>
+                        )}
+                      </label>
                       <select
                         value={prodActId}
                         onChange={(e) => setProdActId(e.target.value)}
@@ -2263,9 +2303,180 @@ export default function FieldOperations({
             </form>
           )}
 
+          {/* ACTIVITY DETAILS MODAL */}
+          {isActivityDetailsOpen && activityForDetails && (
+              <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  className="bg-white dark:bg-gray-900 w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden border border-white/20"
+                >
+                  {/* Modal Header */}
+                  <div className="bg-gradient-to-r from-[#040957] to-blue-900 p-6 text-white flex justify-between items-center text-left">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-white/10 rounded-xl">
+                        <FileText className="w-6 h-6 text-amber-400" />
+                      </div>
+                      <div className={isRtl ? 'text-right' : 'text-left'}>
+                        <h3 className="text-lg font-black tracking-tight">
+                          {isRtl ? 'تفاصيل النشاط الميداني' : 'Activity Plan Details'}
+                        </h3>
+                        <p className="text-xs text-blue-200 font-medium">
+                          {isRtl ? 'الموارد المخصصة والجدول الزمني' : 'Allocated Resources & Schedule'}
+                        </p>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => setIsActivityDetailsOpen(false)}
+                      className="p-2 hover:bg-white/10 rounded-full transition"
+                    >
+                      <X className="w-6 h-6" />
+                    </button>
+                  </div>
+
+                  {/* Modal Body */}
+                  <div className={`p-6 max-h-[70vh] overflow-y-auto custom-scrollbar space-y-6 ${isRtl ? 'text-right' : 'text-left'}`}>
+                    {/* Basic Info */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-700">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
+                          {isRtl ? 'اسم النشاط (Ar)' : 'Activity Name (Ar)'}
+                        </span>
+                        <p className="text-sm font-black text-slate-800 dark:text-white leading-tight">
+                          {activityForDetails.nameAr}
+                        </p>
+                      </div>
+                      <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-700">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
+                          {isRtl ? 'Activity Name (En)' : 'Activity Name (En)'}
+                        </span>
+                        <p className="text-sm font-black text-slate-800 dark:text-white leading-tight">
+                          {activityForDetails.nameEn}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Quantities & Schedule */}
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800">
+                        <div className={`flex items-center gap-2 mb-1 text-blue-600 dark:text-blue-400 ${isRtl ? 'flex-row-reverse' : ''}`}>
+                          <Calculator className="w-3.5 h-3.5" />
+                          <span className="text-[9px] font-black uppercase tracking-wider">{isRtl ? 'الكمية الإجمالية' : 'Total Qty'}</span>
+                        </div>
+                        <p className="text-lg font-black text-blue-900 dark:text-blue-100 font-mono">
+                          {activityForDetails.totalQuantity} <span className="text-xs font-bold">{activityForDetails.unit}</span>
+                        </p>
+                      </div>
+                      <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800">
+                        <div className={`flex items-center gap-2 mb-1 text-amber-600 dark:text-amber-400 ${isRtl ? 'flex-row-reverse' : ''}`}>
+                          <Calendar className="w-3.5 h-3.5" />
+                          <span className="text-[9px] font-black uppercase tracking-wider">{isRtl ? 'البداية' : 'Start'}</span>
+                        </div>
+                        <p className="text-sm font-black text-amber-900 dark:text-amber-100 font-mono">
+                          {activityForDetails.startDate}
+                        </p>
+                      </div>
+                      <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800">
+                        <div className={`flex items-center gap-2 mb-1 text-emerald-600 dark:text-emerald-400 ${isRtl ? 'flex-row-reverse' : ''}`}>
+                          <CheckCircle className="w-3.5 h-3.5" />
+                          <span className="text-[9px] font-black uppercase tracking-wider">{isRtl ? 'النهاية' : 'End'}</span>
+                        </div>
+                        <p className="text-sm font-black text-emerald-900 dark:text-emerald-100 font-mono">
+                          {activityForDetails.endDate}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Resource Allocations */}
+                    <div className="space-y-4">
+                      <h4 className={`text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2 ${isRtl ? 'flex-row-reverse' : ''}`}>
+                        <Users className="w-4 h-4 text-indigo-500" />
+                        {isRtl ? 'تخصيص الموارد المخططة' : 'Planned Resource Allocations'}
+                      </h4>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Workers */}
+                        <div className="bg-white dark:bg-gray-850 rounded-2xl border border-slate-100 dark:border-gray-800 p-4">
+                          <div className={`flex items-center gap-2 mb-3 pb-2 border-b border-slate-50 dark:border-gray-800 ${isRtl ? 'flex-row-reverse' : ''}`}>
+                            <UserCheck className="w-4 h-4 text-emerald-500" />
+                            <span className="text-xs font-bold text-slate-600 dark:text-gray-300">{isRtl ? 'العمالة المخصصة' : 'Allocated Workers'}</span>
+                          </div>
+                          <div className="space-y-2">
+                            {activityForDetails.workerIds.length > 0 ? (
+                              activityForDetails.workerIds.map(id => {
+                                const w = workers.find(worker => worker.id === id);
+                                return (
+                                  <div key={id} className={`flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl text-[11px] font-bold ${isRtl ? 'flex-row-reverse text-right' : ''}`}>
+                                    <span className="text-slate-700 dark:text-gray-200">{w ? w.fullName : id}</span>
+                                    <span className="text-slate-400 font-mono text-[9px]">{w?.badgeNumber}</span>
+                                  </div>
+                                );
+                              })
+                            ) : (
+                              <p className="text-[10px] text-slate-400 italic text-center py-2">{isRtl ? 'لا يوجد عمال مخصصين' : 'No workers assigned'}</p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Equipment */}
+                        <div className="bg-white dark:bg-gray-850 rounded-2xl border border-slate-100 dark:border-gray-800 p-4">
+                          <div className={`flex items-center gap-2 mb-3 pb-2 border-b border-slate-50 dark:border-gray-800 ${isRtl ? 'flex-row-reverse' : ''}`}>
+                            <Wrench className="w-4 h-4 text-amber-500" />
+                            <span className="text-xs font-bold text-slate-600 dark:text-gray-300">{isRtl ? 'المعدات والآليات' : 'Equipment & Machinery'}</span>
+                          </div>
+                          <div className="space-y-2">
+                            {activityForDetails.equipmentAllocations && activityForDetails.equipmentAllocations.length > 0 ? (
+                              activityForDetails.equipmentAllocations.map((eq, i) => (
+                                <div key={i} className={`flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl text-[11px] font-bold ${isRtl ? 'flex-row-reverse text-right' : ''}`}>
+                                  <span className="text-slate-700 dark:text-gray-200">{isRtl ? eq.equipmentNameAr : eq.equipmentNameEn}</span>
+                                  <span className="text-blue-600 font-mono text-[10px]">{eq.quantity} {isRtl ? 'وحدة' : 'Units'}</span>
+                                </div>
+                              ))
+                            ) : (
+                              <p className="text-[10px] text-slate-400 italic text-center py-2">{isRtl ? 'لا توجد معدات مخصصة' : 'No equipment assigned'}</p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Materials */}
+                        <div className="md:col-span-2 bg-white dark:bg-gray-850 rounded-2xl border border-slate-100 dark:border-gray-800 p-4">
+                          <div className={`flex items-center gap-2 mb-3 pb-2 border-b border-slate-50 dark:border-gray-800 ${isRtl ? 'flex-row-reverse' : ''}`}>
+                            <Package className="w-4 h-4 text-blue-500" />
+                            <span className="text-xs font-bold text-slate-600 dark:text-gray-300">{isRtl ? 'المواد المخطط استهلاكها' : 'Planned Materials'}</span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            {activityForDetails.materialAllocations && activityForDetails.materialAllocations.length > 0 ? (
+                              activityForDetails.materialAllocations.map((mat, i) => (
+                                <div key={i} className={`flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl text-[11px] font-bold ${isRtl ? 'flex-row-reverse text-right' : ''}`}>
+                                  <span className="text-slate-700 dark:text-gray-200">{isRtl ? mat.materialNameAr : mat.materialNameEn}</span>
+                                  <span className="text-emerald-600 font-mono text-[10px]">{mat.quantity} {mat.unit}</span>
+                                </div>
+                              ))
+                            ) : (
+                              <div className="col-span-2">
+                                <p className="text-[10px] text-slate-400 italic text-center py-2">{isRtl ? 'لا توجد مواد مخصصة' : 'No materials assigned'}</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Modal Footer */}
+                  <div className={`p-6 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-700 flex justify-end ${isRtl ? 'flex-row-reverse' : ''}`}>
+                    <button 
+                      onClick={() => setIsActivityDetailsOpen(false)}
+                      className="px-8 py-3 bg-[#040957] text-white rounded-2xl text-xs font-black hover:bg-blue-900 transition shadow-lg shadow-blue-900/20"
+                    >
+                      {isRtl ? 'إغلاق النافذة' : 'Close Details'}
+                    </button>
+                  </div>
+                </motion.div>
+              </div>
+            )}
         </div>
       </div>
-
-          </div>
+    </div>
   );
 }

@@ -42,7 +42,13 @@ import {
   X,
   FileSpreadsheet,
   Globe,
-  Printer
+  Printer,
+  Eye,
+  Edit,
+  Package,
+  Wrench,
+  UserCheck,
+  Calculator
 } from 'lucide-react';
 import { dbApi } from '../lib/api';
 import { runWithOklchSanitizer } from '../utils/pdfSanitizer';
@@ -119,6 +125,11 @@ export default function FieldPortal({
   const [prodNotes, setProdNotes] = useState('');
   const [uploadedFiles, setUploadedFiles] = useState<{name: string, content: string}[]>([]);
   const [dragActive, setDragActive] = useState(false);
+
+  // Edit/Details state for production updates
+  const [editingProdIdx, setEditingProdIdx] = useState<number | null>(null);
+  const [isActivityDetailsOpen, setIsActivityDetailsOpen] = useState(false);
+  const [activityForDetails, setActivityForDetails] = useState<Activity | null>(null);
 
   // Remaining Quantity calculations for selected sub-activity in FieldPortal
   const currentActivity = activities.find(a => a.id === prodActId);
@@ -345,6 +356,75 @@ export default function FieldPortal({
     setProdNotes('');
     setUploadedFiles([]);
     triggerToast(isRtl ? 'تمت إضافة تحديث الإنتاج بنجاح' : 'Production record added to summary');
+  };
+
+  const handleEditProductionRecord = (idx: number) => {
+    const update = prodUpdates[idx];
+    setEditingProdIdx(idx);
+    setProdWiId(update.workItemId);
+    setProdActId(update.activityId);
+    setProdTime(update.time);
+    setProdCompletedQty(update.completedQuantity);
+    setProdWorkersUsed(update.numberOfWorkers);
+    setProdNotes(update.notes);
+    // Note: for simplicity we don't reload photos into the upload area
+    // as they are already stored in the update record.
+    // If they want to change photos, they can delete and re-add or we could handle it better.
+    // But typically editing text/quantity is enough.
+  };
+
+  const handleUpdateProductionRecord = () => {
+    if (editingProdIdx === null || !prodActId) return;
+
+    const activityObj = activities.find(a => a.id === prodActId);
+    if (!activityObj) return;
+
+    const qtyToAdd = Number(prodCompletedQty);
+    // When editing, we need to adjust remainingQty calculation
+    // because the current record is already counted in localSessionProgress
+    const localOtherProgress = prodUpdates
+      .filter((upd, i) => i !== editingProdIdx && upd.activityId === prodActId)
+      .reduce((sum, upd) => sum + Number(upd.completedQuantity), 0);
+    const adjActivityProgress = dbProgress + localOtherProgress;
+    const adjRemainingQty = Math.max(0, activityObj.totalQuantity - adjActivityProgress);
+
+    if (qtyToAdd <= 0) {
+      alert(isRtl ? 'الرجاء إدخال كمية صحيحة' : 'Please enter a valid quantity');
+      return;
+    }
+
+    if (qtyToAdd > adjRemainingQty) {
+      alert(isRtl 
+        ? `لا يمكن تجاوز الكمية المتبقية (${adjRemainingQty} ${activityObj.unit}).` 
+        : `Cannot exceed remaining quantity (${adjRemainingQty} ${activityObj.unit}).`);
+      return;
+    }
+
+    const updatedUpdates = [...prodUpdates];
+    updatedUpdates[editingProdIdx] = {
+      ...updatedUpdates[editingProdIdx],
+      workItemId: prodWiId,
+      activityId: prodActId,
+      time: prodTime,
+      completedQuantity: qtyToAdd,
+      numberOfWorkers: prodWorkersUsed,
+      completionPercentage: Math.round(((adjActivityProgress + qtyToAdd) / activityObj.totalQuantity) * 100),
+      notes: prodNotes,
+    };
+
+    setProdUpdates(updatedUpdates);
+    setEditingProdIdx(null);
+    setProdNotes('');
+    setUploadedFiles([]);
+    triggerToast(isRtl ? 'تم تحديث التحديث بنجاح' : 'Production record updated');
+  };
+
+  const handleOpenActivityDetails = (actId: string) => {
+    const act = activities.find(a => a.id === actId);
+    if (act) {
+      setActivityForDetails(act);
+      setIsActivityDetailsOpen(true);
+    }
   };
 
   const handleRemoveProductionRecord = (idx: number) => {
@@ -850,6 +930,15 @@ export default function FieldPortal({
           <div id="pdf-content" class="container">
             <!-- Header Section -->
             <div class="header-banner">
+              ${settings.companyLogoUrl ? `
+                <div style="background-color: white; padding: 5px; border-radius: 12px; margin-${isRtl ? 'left' : 'right'}: 20px; display: flex; align-items: center; justify-content: center; height: 90px; width: 90px; flex-shrink: 0; box-shadow: inset 0 0 10px rgba(0,0,0,0.05);">
+                  <img src="${settings.companyLogoUrl}" style="max-height: 80px; width: auto; object-fit: contain;" />
+                </div>
+              ` : `
+                <div style="background-color: #f1f5f9; color: #040957; padding: 5px; border-radius: 12px; margin-${isRtl ? 'left' : 'right'}: 20px; display: flex; align-items: center; justify-content: center; height: 90px; width: 90px; flex-shrink: 0; font-size: 32px; font-weight: 900;">
+                  ${settings.companyNameEn.charAt(0)}
+                </div>
+              `}
               <div class="header-title-sec">
                 <h1>${isRtl ? settings.companyNameAr : settings.companyNameEn}</h1>
                 <p>${isRtl ? 'إيصال تقديم التقرير الميداني الرقمي المعتمد' : 'Official Digital Field Daily Log Receipt'}</p>
@@ -1465,7 +1554,11 @@ export default function FieldPortal({
                 ) : (
                   <div className="bg-gray-50 dark:bg-gray-900/20 p-5 rounded-2xl border border-gray-150 dark:border-gray-800 space-y-4">
                     <h3 className="text-xs font-black text-[#040957] dark:text-[#0080FF] uppercase tracking-wider">
-                      ➕ {isRtl ? 'إضافة تحديث ميداني جديد' : 'Add New Production Log'}
+                      {editingProdIdx !== null ? (
+                        <span>✏️ {isRtl ? 'تعديل تحديث ميداني' : 'Edit Production Log'}</span>
+                      ) : (
+                        <span>➕ {isRtl ? 'إضافة تحديث ميداني جديد' : 'Add New Production Log'}</span>
+                      )}
                     </h3>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1485,7 +1578,18 @@ export default function FieldPortal({
                       </div>
 
                       <div className="space-y-1">
-                        <label className="text-xs font-bold text-gray-500">{isRtl ? 'النشاط الميداني الفرعي:' : 'Sub-activity:'}</label>
+                        <label className="text-xs font-bold text-gray-500 flex justify-between items-center">
+                          <span>{isRtl ? 'النشاط الميداني الفرعي:' : 'Sub-activity:'}</span>
+                          {prodActId && (
+                            <button 
+                              onClick={() => handleOpenActivityDetails(prodActId)}
+                              className="text-[10px] text-[#0080FF] font-bold hover:underline flex items-center gap-1"
+                            >
+                              <Eye className="w-3 h-3" />
+                              {isRtl ? 'عرض المخطط والموارد' : 'View Plan & Resources'}
+                            </button>
+                          )}
+                        </label>
                         <select
                           value={prodActId}
                           onChange={(e) => setProdActId(e.target.value)}
@@ -1675,14 +1779,27 @@ export default function FieldPortal({
                       )}
                     </div>
 
-                    <div className="flex justify-end">
+                    <div className="flex justify-end gap-2">
+                      {editingProdIdx !== null && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingProdIdx(null);
+                            setProdNotes('');
+                            setUploadedFiles([]);
+                          }}
+                          className="bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold px-5 py-2.5 rounded-xl text-xs transition"
+                        >
+                          {isRtl ? 'إلغاء التعديل' : 'Cancel Edit'}
+                        </button>
+                      )}
                       <button
                         type="button"
-                        onClick={handleAddProductionRecord}
-                        className="bg-amber-400 hover:bg-amber-500 text-slate-900 font-black px-5 py-2.5 rounded-xl text-xs flex items-center gap-1.5 transition shadow-md"
+                        onClick={editingProdIdx !== null ? handleUpdateProductionRecord : handleAddProductionRecord}
+                        className={`${editingProdIdx !== null ? 'bg-amber-500 hover:bg-amber-600' : 'bg-amber-400 hover:bg-amber-500'} text-slate-900 font-black px-5 py-2.5 rounded-xl text-xs flex items-center gap-1.5 transition shadow-md`}
                       >
-                        <Plus className="w-4 h-4" />
-                        <span>{isRtl ? 'حفظ وإضافة التحديث للقائمة' : 'Add Update to Summary'}</span>
+                        {editingProdIdx !== null ? <Edit className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                        <span>{editingProdIdx !== null ? (isRtl ? 'تحديث السجل' : 'Update Record') : (isRtl ? 'حفظ وإضافة التحديث للقائمة' : 'Add Update to Summary')}</span>
                       </button>
                     </div>
                   </div>
@@ -1721,13 +1838,29 @@ export default function FieldPortal({
                                 </div>
                               )}
                             </div>
-                            <button
-                              onClick={() => handleRemoveProductionRecord(idx)}
-                              className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition"
-                              title="Delete log"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                onClick={() => handleOpenActivityDetails(p.activityId)}
+                                className="p-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-xl transition"
+                                title="View Details"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleEditProductionRecord(idx)}
+                                className="p-2 bg-amber-50 hover:bg-amber-100 text-amber-600 rounded-xl transition"
+                                title="Edit Log"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleRemoveProductionRecord(idx)}
+                                className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition"
+                                title="Delete log"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
                           </div>
                         );
                       })}
@@ -2130,6 +2263,179 @@ export default function FieldPortal({
 
           </div>
 
+        </div>
+      )}
+
+      {/* ACTIVITY DETAILS MODAL */}
+      {isActivityDetailsOpen && activityForDetails && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="bg-white dark:bg-gray-900 w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden border border-white/20"
+          >
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-[#040957] to-blue-900 p-6 text-white flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-white/10 rounded-xl">
+                  <FileText className="w-6 h-6 text-amber-400" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black tracking-tight">
+                    {isRtl ? 'تفاصيل النشاط الميداني' : 'Activity Plan Details'}
+                  </h3>
+                  <p className="text-xs text-blue-200 font-medium">
+                    {isRtl ? 'الموارد المخصصة والجدول الزمني' : 'Allocated Resources & Schedule'}
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsActivityDetailsOpen(false)}
+                className="p-2 hover:bg-white/10 rounded-full transition"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 max-h-[70vh] overflow-y-auto custom-scrollbar space-y-6">
+              {/* Basic Info */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-700">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
+                    {isRtl ? 'اسم النشاط (Ar)' : 'Activity Name (Ar)'}
+                  </span>
+                  <p className="text-sm font-black text-slate-800 dark:text-white leading-tight">
+                    {activityForDetails.nameAr}
+                  </p>
+                </div>
+                <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-700">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
+                    {isRtl ? 'Activity Name (En)' : 'Activity Name (En)'}
+                  </span>
+                  <p className="text-sm font-black text-slate-800 dark:text-white leading-tight">
+                    {activityForDetails.nameEn}
+                  </p>
+                </div>
+              </div>
+
+              {/* Quantities & Schedule */}
+              <div className="grid grid-cols-3 gap-4">
+                <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800">
+                  <div className="flex items-center gap-2 mb-1 text-blue-600 dark:text-blue-400">
+                    <Calculator className="w-3.5 h-3.5" />
+                    <span className="text-[9px] font-black uppercase tracking-wider">{isRtl ? 'الكمية الإجمالية' : 'Total Qty'}</span>
+                  </div>
+                  <p className="text-lg font-black text-blue-900 dark:text-blue-100 font-mono">
+                    {activityForDetails.totalQuantity} <span className="text-xs font-bold">{activityForDetails.unit}</span>
+                  </p>
+                </div>
+                <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800">
+                  <div className="flex items-center gap-2 mb-1 text-amber-600 dark:text-amber-400">
+                    <Calendar className="w-3.5 h-3.5" />
+                    <span className="text-[9px] font-black uppercase tracking-wider">{isRtl ? 'البداية' : 'Start'}</span>
+                  </div>
+                  <p className="text-sm font-black text-amber-900 dark:text-amber-100 font-mono">
+                    {activityForDetails.startDate}
+                  </p>
+                </div>
+                <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800">
+                  <div className="flex items-center gap-2 mb-1 text-emerald-600 dark:text-emerald-400">
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    <span className="text-[9px] font-black uppercase tracking-wider">{isRtl ? 'النهاية' : 'End'}</span>
+                  </div>
+                  <p className="text-sm font-black text-emerald-900 dark:text-emerald-100 font-mono">
+                    {activityForDetails.endDate}
+                  </p>
+                </div>
+              </div>
+
+              {/* Resource Allocations */}
+              <div className="space-y-4">
+                <h4 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                  <Users className="w-4 h-4 text-indigo-500" />
+                  {isRtl ? 'تخصيص الموارد المخططة' : 'Planned Resource Allocations'}
+                </h4>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Workers */}
+                  <div className="bg-white dark:bg-gray-850 rounded-2xl border border-slate-100 dark:border-gray-800 p-4">
+                    <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-50 dark:border-gray-800">
+                      <UserCheck className="w-4 h-4 text-emerald-500" />
+                      <span className="text-xs font-bold text-slate-600 dark:text-gray-300">{isRtl ? 'العمالة المخصصة' : 'Allocated Workers'}</span>
+                    </div>
+                    <div className="space-y-2">
+                      {activityForDetails.workerIds.length > 0 ? (
+                        activityForDetails.workerIds.map(id => {
+                          const w = workers.find(worker => worker.id === id);
+                          return (
+                            <div key={id} className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl text-[11px] font-bold">
+                              <span className="text-slate-700 dark:text-gray-200">{w ? w.fullName : id}</span>
+                              <span className="text-slate-400 font-mono text-[9px]">{w?.badgeNumber}</span>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <p className="text-[10px] text-slate-400 italic text-center py-2">{isRtl ? 'لا يوجد عمال مخصصين' : 'No workers assigned'}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Equipment */}
+                  <div className="bg-white dark:bg-gray-850 rounded-2xl border border-slate-100 dark:border-gray-800 p-4">
+                    <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-50 dark:border-gray-800">
+                      <Wrench className="w-4 h-4 text-amber-500" />
+                      <span className="text-xs font-bold text-slate-600 dark:text-gray-300">{isRtl ? 'المعدات والآليات' : 'Equipment & Machinery'}</span>
+                    </div>
+                    <div className="space-y-2">
+                      {activityForDetails.equipmentAllocations && activityForDetails.equipmentAllocations.length > 0 ? (
+                        activityForDetails.equipmentAllocations.map((eq, i) => (
+                          <div key={i} className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl text-[11px] font-bold">
+                            <span className="text-slate-700 dark:text-gray-200">{isRtl ? eq.equipmentNameAr : eq.equipmentNameEn}</span>
+                            <span className="text-blue-600 font-mono text-[10px]">{eq.quantity} {isRtl ? 'وحدة' : 'Units'}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-[10px] text-slate-400 italic text-center py-2">{isRtl ? 'لا توجد معدات مخصصة' : 'No equipment assigned'}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Materials */}
+                  <div className="md:col-span-2 bg-white dark:bg-gray-850 rounded-2xl border border-slate-100 dark:border-gray-800 p-4">
+                    <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-50 dark:border-gray-800">
+                      <Package className="w-4 h-4 text-blue-500" />
+                      <span className="text-xs font-bold text-slate-600 dark:text-gray-300">{isRtl ? 'المواد المخطط استهلاكها' : 'Planned Materials'}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {activityForDetails.materialAllocations && activityForDetails.materialAllocations.length > 0 ? (
+                        activityForDetails.materialAllocations.map((mat, i) => (
+                          <div key={i} className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl text-[11px] font-bold">
+                            <span className="text-slate-700 dark:text-gray-200">{isRtl ? mat.materialNameAr : mat.materialNameEn}</span>
+                            <span className="text-emerald-600 font-mono text-[10px]">{mat.quantity} {mat.unit}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="col-span-2">
+                          <p className="text-[10px] text-slate-400 italic text-center py-2">{isRtl ? 'لا توجد مواد مخصصة' : 'No materials assigned'}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-6 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-700 flex justify-end">
+              <button 
+                onClick={() => setIsActivityDetailsOpen(false)}
+                className="px-8 py-3 bg-[#040957] text-white rounded-2xl text-xs font-black hover:bg-blue-900 transition shadow-lg shadow-blue-900/20"
+              >
+                {isRtl ? 'إغلاق النافذة' : 'Close Details'}
+              </button>
+            </div>
+          </motion.div>
         </div>
       )}
     </div>

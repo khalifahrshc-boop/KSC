@@ -143,11 +143,11 @@ const AttendanceReportGenerator: React.FC<AttendanceReportPDFProps> = ({
               <img 
                 src={settings.companyLogoUrl} 
                 alt="Logo" 
-                className="h-16 w-auto object-contain"
+                className="h-24 w-auto object-contain"
                 referrerPolicy="no-referrer"
               />
             ) : (
-              <div className="h-16 w-16 bg-slate-100 flex items-center justify-center text-[#040957] text-2xl font-black rounded-lg">
+              <div className="h-20 w-20 bg-slate-100 flex items-center justify-center text-[#040957] text-3xl font-black rounded-lg">
                 {settings.companyNameEn.charAt(0)}
               </div>
             )}
@@ -207,25 +207,25 @@ const AttendanceReportGenerator: React.FC<AttendanceReportPDFProps> = ({
 
       {/* 3. ATTENDANCE TABLE (16 OPTIMIZED COLUMNS) */}
       <div className="overflow-x-auto mb-8 border border-slate-200 rounded-xl shadow-sm">
-        <table className="w-full border-collapse text-[7.5px] table-fixed">
+        <table className="w-full border-collapse text-[7px] table-fixed">
           <thead>
             <tr className="bg-[#040957] text-white">
-              <th className="w-[3%] p-1 font-black border-r border-white/10">#</th>
-              <th className="w-[16%] p-1 font-black border-r border-white/10">{isRtl ? 'الاسم' : 'Name'}</th>
-              <th className="w-[6%] p-1 font-black border-r border-white/10">{isRtl ? 'الكود' : 'ID'}</th>
-              <th className="w-[10%] p-1 font-black border-r border-white/10">{isRtl ? 'الهوية/الإقامة' : 'ID No.'}</th>
-              <th className="w-[11%] p-1 font-black border-r border-white/10">{isRtl ? 'المهنة' : 'Job'}</th>
-              <th className="w-[6%] p-1 font-black border-r border-white/10">{isRtl ? 'الوردية' : 'Shift'}</th>
-              <th className="w-[5%] p-1 font-black border-r border-white/10">{isRtl ? 'دخول' : 'In'}</th>
-              <th className="w-[5%] p-1 font-black border-r border-white/10">{isRtl ? 'راحة (خ)' : 'B-Out'}</th>
-              <th className="w-[5%] p-1 font-black border-r border-white/10">{isRtl ? 'راحة (د)' : 'B-In'}</th>
-              <th className="w-[5%] p-1 font-black border-r border-white/10">{isRtl ? 'خروج' : 'Out'}</th>
-              <th className="w-[5%] p-1 font-black border-r border-white/10">{isRtl ? 'ساعات' : 'Hrs'}</th>
-              <th className="w-[5%] p-1 font-black border-r border-white/10">{isRtl ? 'إضافي' : 'OT'}</th>
-              <th className="w-[6%] p-1 font-black border-r border-white/10">{isRtl ? 'الحالة' : 'Status'}</th>
-              <th className="w-[6%] p-1 font-black border-r border-white/10">{isRtl ? 'المشرف' : 'Sup.'}</th>
-              <th className="w-[6%] p-1 font-black border-r border-white/10">{isRtl ? 'الموظف' : 'Emp.'}</th>
-              <th className="w-[10%] p-1 font-black">{isRtl ? 'ملاحظات' : 'Rem.'}</th>
+              <th className="w-[2%] p-1 font-black border-r border-white/10 break-words">#</th>
+              <th className="w-[16%] p-1 font-black border-r border-white/10 break-words">{isRtl ? 'الاسم' : 'Name'}</th>
+              <th className="w-[5%] p-1 font-black border-r border-white/10 break-words">{isRtl ? 'الكود' : 'ID'}</th>
+              <th className="w-[9%] p-1 font-black border-r border-white/10 break-words">{isRtl ? 'الهوية/الإقامة' : 'ID No.'}</th>
+              <th className="w-[10%] p-1 font-black border-r border-white/10 break-words">{isRtl ? 'المهنة' : 'Job'}</th>
+              <th className="w-[5%] p-1 font-black border-r border-white/10 break-words">{isRtl ? 'الوردية' : 'Shift'}</th>
+              <th className="w-[5%] p-1 font-black border-r border-white/10 break-words">{isRtl ? 'دخول' : 'In'}</th>
+              <th className="w-[5%] p-1 font-black border-r border-white/10 break-words">{isRtl ? 'راحة (خ)' : 'B-Out'}</th>
+              <th className="w-[5%] p-1 font-black border-r border-white/10 break-words">{isRtl ? 'راحة (د)' : 'B-In'}</th>
+              <th className="w-[5%] p-1 font-black border-r border-white/10 break-words">{isRtl ? 'خروج' : 'Out'}</th>
+              <th className="w-[4%] p-1 font-black border-r border-white/10 break-words">{isRtl ? 'ساعات' : 'Hrs'}</th>
+              <th className="w-[4%] p-1 font-black border-r border-white/10 break-words">{isRtl ? 'إضافي' : 'OT'}</th>
+              <th className="w-[6%] p-1 font-black border-r border-white/10 break-words">{isRtl ? 'الحالة' : 'Status'}</th>
+              <th className="w-[5%] p-1 font-black border-r border-white/10 break-words">{isRtl ? 'المشرف' : 'Sup.'}</th>
+              <th className="w-[5%] p-1 font-black border-r border-white/10 break-words">{isRtl ? 'الموظف' : 'Emp.'}</th>
+              <th className="w-[9%] p-1 font-black break-words">{isRtl ? 'ملاحظات' : 'Rem.'}</th>
             </tr>
           </thead>
           <tbody>
@@ -237,12 +237,12 @@ const AttendanceReportGenerator: React.FC<AttendanceReportPDFProps> = ({
                 
                 return (
                   <tr key={record.id} className={`${isEven ? 'bg-white' : 'bg-slate-50/50'} border-b border-slate-100`}>
-                    <td className="p-1 text-center font-bold text-[#040957] border-r border-slate-100">{index + 1}</td>
-                    <td className="p-1 font-bold border-r border-slate-100 truncate">{record.workerName}</td>
-                    <td className="p-1 text-center border-r border-slate-100">{worker?.badgeNumber || '---'}</td>
-                    <td className="p-1 text-center font-mono border-r border-slate-100 text-[7px]">{worker?.nationalId || '---'}</td>
-                    <td className="p-1 border-r border-slate-100 truncate">{isRtl ? record.professionAr : record.professionEn}</td>
-                    <td className="p-1 text-center border-r border-slate-100 text-[5px] truncate">{record.shiftTime}</td>
+                    <td className="p-1 text-center font-bold text-[#040957] border-r border-slate-100 break-words">{index + 1}</td>
+                    <td className="p-1 font-bold border-r border-slate-100 break-words leading-tight">{record.workerName}</td>
+                    <td className="p-1 text-center border-r border-slate-100 break-words">{worker?.badgeNumber || '---'}</td>
+                    <td className="p-1 text-center font-mono border-r border-slate-100 text-[6.5px] break-words">{worker?.nationalId || '---'}</td>
+                    <td className="p-1 border-r border-slate-100 break-words leading-tight">{isRtl ? record.professionAr : record.professionEn}</td>
+                    <td className="p-1 text-center border-r border-slate-100 text-[5px] break-words">{record.shiftTime}</td>
                     <td className="p-1 text-center font-bold border-r border-slate-100">{record.startTime || '--:--'}</td>
                     <td className="p-1 text-center font-bold border-r border-slate-100">{breakTimes.out}</td>
                     <td className="p-1 text-center font-bold border-r border-slate-100">{breakTimes.in}</td>
@@ -250,13 +250,13 @@ const AttendanceReportGenerator: React.FC<AttendanceReportPDFProps> = ({
                     <td className="p-1 text-center font-bold border-r border-slate-100">{record.isPresent ? '8.0' : '0.0'}</td>
                     <td className="p-1 text-center text-orange-600 font-bold border-r border-slate-100">{record.status === 'Late' ? '2.0' : '0.0'}</td>
                     <td className="p-1 text-center border-r border-slate-100">
-                      <span className={`px-1 py-0.5 rounded-full border text-[6px] font-black uppercase whitespace-nowrap ${getStatusColor(record.status)}`}>
+                      <span className={`px-1 py-0.5 rounded-full border text-[6px] font-black uppercase whitespace-normal break-words inline-block ${getStatusColor(record.status)}`}>
                         {getStatusLabel(record.status)}
                       </span>
                     </td>
-                    <td className="p-1 italic text-slate-300 border-r border-slate-100 text-[6px] text-center">VERIFIED</td>
-                    <td className="p-1 italic text-slate-300 border-r border-slate-100 text-[6px] text-center">SIGNED</td>
-                    <td className="p-1 text-slate-500 truncate text-[6px]">{record.notes || '---'}</td>
+                    <td className="p-1 italic text-slate-300 border-r border-slate-100 text-[5px] text-center">VERIFIED</td>
+                    <td className="p-1 italic text-slate-300 border-r border-slate-100 text-[5px] text-center">SIGNED</td>
+                    <td className="p-1 text-slate-500 break-words text-[6px] leading-tight">{record.notes || '---'}</td>
                   </tr>
                 );
               })
