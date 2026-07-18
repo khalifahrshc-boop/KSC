@@ -10,9 +10,11 @@ import {
   UserRole,
   WorkItem,
   Activity,
-  ProgressUpdate
+  ProgressUpdate,
+  AttendanceRecord,
+  WarehouseMaterial
 } from '../types';
-import { getProjectProgress } from '../utils/progressCalculations';
+import { getProjectProgress, getProjectStatusDetails } from '../utils/progressCalculations';
 import { 
   Plus, 
   Search, 
@@ -41,6 +43,8 @@ interface ProjectListProps {
   workItems: WorkItem[];
   activities: Activity[];
   progressUpdates: ProgressUpdate[];
+  attendanceRecords: AttendanceRecord[];
+  materials: WarehouseMaterial[];
   settings: SystemSettings;
   userRole: UserRole;
   onAddProject: (project: Project) => void;
@@ -59,6 +63,8 @@ export default function ProjectList({
   workItems,
   activities,
   progressUpdates = [],
+  attendanceRecords = [],
+  materials = [],
   settings,
   userRole,
   onAddProject,
@@ -575,12 +581,16 @@ export default function ProjectList({
             <tbody className="divide-y divide-gray-100 text-xs">
               {sortedProjects.map(p => {
                 const isSelected = selectedIds.includes(p.id);
+                // Dynamic Status Calculation based on all current inputs
+                const dynamicStatus = getProjectStatusDetails(p, workItems, activities, progressUpdates, attendanceRecords, materials);
+                
                 let statusLabel = t.onTrack;
                 let statusClass = 'bg-blue-50 text-blue-700 border-blue-100';
-                if (p.status === 'Ahead') {
+                
+                if (dynamicStatus.status === 'Ahead') {
                   statusLabel = t.ahead;
                   statusClass = 'bg-emerald-50 text-emerald-700 border-emerald-100';
-                } else if (p.status === 'Delayed') {
+                } else if (dynamicStatus.status === 'Delayed') {
                   statusLabel = t.delayed;
                   statusClass = 'bg-red-50 text-red-700 border-red-100';
                 }

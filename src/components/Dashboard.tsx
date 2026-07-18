@@ -59,7 +59,9 @@ import {
   ProgressUpdate,
   SystemNotification, 
   UserRole, 
-  User 
+  User,
+  AttendanceRecord,
+  WarehouseMaterial
 } from '../types';
 import { 
   getProjectProgress, 
@@ -67,7 +69,8 @@ import {
   getProjectProgressAtDate,
   getProjectPlannedProgressAtDate,
   getWorkItemProgress,
-  getActivityProgress
+  getActivityProgress,
+  getProjectStatusDetails
 } from '../utils/progressCalculations';
 
 interface DashboardProps {
@@ -78,6 +81,8 @@ interface DashboardProps {
   activities: Activity[];
   workers: Worker[];
   progressUpdates: ProgressUpdate[];
+  attendanceRecords: AttendanceRecord[];
+  materials: WarehouseMaterial[];
   notifications: SystemNotification[];
   onMarkNotificationRead: (id: string) => void;
   onClearAllNotifications: () => void;
@@ -95,6 +100,8 @@ export default function Dashboard({
   activities, 
   workers,
   progressUpdates = [],
+  attendanceRecords = [],
+  materials = [],
   notifications, 
   onMarkNotificationRead, 
   onClearAllNotifications,
@@ -115,9 +122,14 @@ export default function Dashboard({
   const totalWiCount = workItems.length;
   const totalActCount = activities.length;
 
-  const aheadCount = projects.filter(p => p.status === 'Ahead').length;
-  const onTrackCount = projects.filter(p => p.status === 'On Track').length;
-  const delayedCount = projects.filter(p => p.status === 'Delayed').length;
+  // Compute dynamic statuses for all projects to ensure accuracy based on actual inputs
+  const projectStatuses = useMemo(() => {
+    return projects.map(p => getProjectStatusDetails(p, workItems, activities, progressUpdates, attendanceRecords, materials));
+  }, [projects, workItems, activities, progressUpdates, attendanceRecords, materials]);
+
+  const aheadCount = projectStatuses.filter(s => s.status === 'Ahead').length;
+  const onTrackCount = projectStatuses.filter(s => s.status === 'On Track').length;
+  const delayedCount = projectStatuses.filter(s => s.status === 'Delayed').length;
 
   const targetProjectsForStats = filterProjectId === 'all' 
     ? projects 
@@ -795,12 +807,15 @@ export default function Dashboard({
       .map(upd => {
         const activity = activities.find(a => a.id === upd.activityId);
         activityProgressMap[upd.activityId] = (activityProgressMap[upd.activityId] || 0) + upd.completedQuantity;
+        const currentProgress = activityProgressMap[upd.activityId];
+        const totalQty = activity?.totalQuantity || 0;
         
         return {
           ...upd,
           activityName: isRtl ? activity?.nameAr : activity?.nameEn,
           unit: activity?.unit,
-          remaining: Math.max(0, (activity?.totalQuantity || 0) - activityProgressMap[upd.activityId]),
+          remaining: Math.max(0, totalQty - currentProgress),
+          completionPercentage: totalQty > 0 ? Math.round((currentProgress / totalQty) * 100) : 0,
           shiftAchievement: activity?.plannedDailyProduction 
             ? Math.round((upd.completedQuantity / (activity.plannedDailyProduction / 4)) * 100)
             : null

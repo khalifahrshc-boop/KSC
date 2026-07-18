@@ -12,13 +12,15 @@ import {
   EquipmentItem, 
   Worker, 
   UserRole,
-  ProgressUpdate
+  ProgressUpdate,
+  SystemSettings
 } from '../types';
 import { 
   getActivityProgress, 
   getWorkItemProgress,
   getActivityStatus 
 } from '../utils/progressCalculations';
+import { runWithOklchSanitizer } from '../utils/pdfSanitizer';
 import { 
   Plus, 
   Trash2, 
@@ -41,12 +43,14 @@ import {
   Play,
   AlertTriangle,
   Edit,
-  Eye
+  Eye,
+  Printer
 } from 'lucide-react';
 
 interface WorkItemsListProps {
   lang: 'ar' | 'en';
   t: any;
+  settings: SystemSettings;
   projects: Project[];
   workItems: WorkItem[];
   activities: Activity[];
@@ -60,12 +64,14 @@ interface WorkItemsListProps {
   onAddActivity: (activity: Activity) => void;
   onDeleteActivity: (id: string) => void;
   onUpdateActivity: (id: string, updated: Partial<Activity>) => void;
+  onUpdateWorker?: (id: string, updated: Partial<Worker>) => void;
   openConfirm: (title: string, message: string, onConfirm: () => void, isDestructive?: boolean) => void;
 }
 
 export default function WorkItemsList({
   lang,
   t,
+  settings,
   projects,
   workItems,
   activities,
@@ -79,10 +85,144 @@ export default function WorkItemsList({
   onAddActivity,
   onDeleteActivity,
   onUpdateActivity,
+  onUpdateWorker,
   openConfirm
 }: WorkItemsListProps) {
   const isRtl = lang === 'ar';
   const isReadOnly = userRole === 'Viewer';
+
+  const [isPrintingActivity, setIsPrintingActivity] = useState<string | null>(null);
+
+  const handlePrintActivityDetailsPDF = async (act: Activity) => {
+    try {
+      setIsPrintingActivity(act.id);
+      const html2pdf = (await import('html2pdf.js')).default;
+      const stats = calculateSmartPlanningValues(act);
+      const proj = projects.find(p => p.id === (workItems.find(wi => wi.id === act.workItemId)?.projectId));
+      const projectName = proj ? (isRtl ? proj.nameAr : proj.nameEn) : '---';
+
+      const content = `
+        <div style="font-family: 'Cairo', 'Inter', sans-serif; padding: 30px; direction: ${isRtl ? 'rtl' : 'ltr'}; color: #1e293b; background-color: white;">
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #040957; padding-bottom: 15px; margin-bottom: 20px;">
+            <div>
+              <h1 style="margin: 0; font-size: 18px; color: #040957;">${isRtl ? settings.companyNameAr : settings.companyNameEn}</h1>
+              <p style="margin: 5px 0 0 0; font-size: 10px; color: #64748b;">${isRtl ? 'تقرير تفاصيل النشاط والجدولة الزمنية' : 'Activity Detail & Schedule Analysis Report'}</p>
+            </div>
+            <div style="text-align: ${isRtl ? 'left' : 'right'};">
+              <div style="font-size: 10px; font-weight: bold; color: #040957;">Activity ID: ${act.id}</div>
+              <div style="font-size: 9px; color: #94a3b8;">${new Date().toLocaleString(isRtl ? 'ar-SA' : 'en-GB')}</div>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px;">
+            <div style="background-color: #f8fafc; padding: 12px; border-radius: 10px; border: 1px solid #e2e8f0;">
+              <div style="font-size: 8px; color: #64748b; font-weight: bold; text-transform: uppercase; margin-bottom: 4px;">${isRtl ? 'المشروع' : 'Project'}</div>
+              <div style="font-size: 11px; font-weight: bold; color: #1e293b;">${projectName}</div>
+            </div>
+            <div style="background-color: #f8fafc; padding: 12px; border-radius: 10px; border: 1px solid #e2e8f0;">
+              <div style="font-size: 8px; color: #64748b; font-weight: bold; text-transform: uppercase; margin-bottom: 4px;">${isRtl ? 'حالة النشاط' : 'Activity Health'}</div>
+              <div style="font-size: 11px; font-weight: bold; color: ${stats.status === 'Delayed' ? '#dc2626' : '#166534'};">${stats.status.toUpperCase()}</div>
+            </div>
+          </div>
+
+          <div style="margin-bottom: 30px;">
+            <h2 style="font-size: 14px; color: #040957; margin-bottom: 10px; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">${isRtl ? 'معلومات النشاط الأساسية' : 'Core Activity Information'}</h2>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+              <div>
+                <strong style="font-size: 10px; color: #64748b;">${isRtl ? 'الاسم' : 'Name'}:</strong>
+                <div style="font-size: 11px; font-weight: bold;">${isRtl ? act.nameAr : act.nameEn}</div>
+              </div>
+              <div>
+                <strong style="font-size: 10px; color: #64748b;">${isRtl ? 'الكمية المستهدفة' : 'Target Quantity'}:</strong>
+                <div style="font-size: 11px; font-weight: bold;">${act.totalQuantity} ${act.unit}</div>
+              </div>
+            </div>
+            <div style="margin-top: 15px;">
+              <strong style="font-size: 10px; color: #64748b;">${isRtl ? 'الوصف التنفيذي' : 'Execution Description'}:</strong>
+              <div style="font-size: 10px; line-height: 1.6; color: #334155; background-color: #f1f5f9; padding: 10px; border-radius: 8px; margin-top: 5px;">
+                ${isRtl ? (act.descriptionAr || '---') : (act.descriptionEn || '---')}
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-bottom: 30px;">
+            <h2 style="font-size: 14px; color: #040957; margin-bottom: 10px; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">📊 ${isRtl ? 'تحليلات الجدولة والإنتاجية' : 'Schedule & Production Analytics'}</h2>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+              <div style="border: 1px solid #e2e8f0; padding: 10px; border-radius: 8px; text-align: center;">
+                <div style="font-size: 8px; color: #64748b;">${isRtl ? 'التقدم المحقق' : 'Achieved Progress'}</div>
+                <div style="font-size: 12px; font-weight: 900; color: #0284c7;">${getActivityProgress(act, progressUpdates)}%</div>
+              </div>
+              <div style="border: 1px solid #e2e8f0; padding: 10px; border-radius: 8px; text-align: center;">
+                <div style="font-size: 8px; color: #64748b;">${isRtl ? 'المدة المتوقعة' : 'Expected Duration'}</div>
+                <div style="font-size: 12px; font-weight: 900;">${stats.expectedDurationDays} ${isRtl ? 'أيام' : 'Days'}</div>
+              </div>
+              <div style="border: 1px solid #e2e8f0; padding: 10px; border-radius: 8px; text-align: center;">
+                <div style="font-size: 8px; color: #64748b;">${isRtl ? 'الانتهاء المتوقع' : 'Expected Finish'}</div>
+                <div style="font-size: 11px; font-weight: 900; color: #b45309;">${stats.expectedFinishDateStr}</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div>
+              <h3 style="font-size: 12px; color: #040957; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px; margin-bottom: 10px;">👥 ${isRtl ? 'العمالة المخصصة' : 'Allocated Workforce'}</h3>
+              <ul style="list-style: none; padding: 0; margin: 0; font-size: 10px;">
+                ${act.workerIds.map(id => {
+                  const w = workers.find(work => work.id === id);
+                  return `<li style="padding: 5px 0; border-bottom: 1px dashed #f1f5f9;"><strong>${w?.fullName}</strong> - ${isRtl ? w?.professionAr : w?.professionEn}</li>`;
+                }).join('')}
+                ${act.workerIds.length === 0 ? `<li style="color: #94a3b8; font-style: italic;">No workers assigned</li>` : ''}
+              </ul>
+            </div>
+            <div>
+              <h3 style="font-size: 12px; color: #040957; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px; margin-bottom: 10px;">🏗️ ${isRtl ? 'الموارد والمعدات' : 'Resources & Equipment'}</h3>
+              <div style="font-size: 10px;">
+                <div style="margin-bottom: 10px;">
+                  <strong style="font-size: 9px; color: #64748b;">${isRtl ? 'المواد:' : 'Materials:'}</strong>
+                  <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 3px;">
+                    ${act.materialAllocations?.map(a => {
+                      const m = materials.find(mat => mat.id === a.id);
+                      return `<span style="background-color: #f0fdf4; color: #166534; padding: 2px 6px; border-radius: 4px; font-size: 9px;">${isRtl ? m?.nameAr : m?.nameEn}: ${a.quantity} ${m?.unit}</span>`;
+                    }).join('') || 'None'}
+                  </div>
+                </div>
+                <div>
+                  <strong style="font-size: 9px; color: #64748b;">${isRtl ? 'المعدات:' : 'Equipment:'}</strong>
+                  <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 3px;">
+                    ${act.equipmentAllocations?.map(a => {
+                      const e = equipment.find(eq => eq.id === a.id);
+                      return `<span style="background-color: #fffbeb; color: #92400e; padding: 2px 6px; border-radius: 4px; font-size: 9px;">${isRtl ? e?.nameAr : e?.nameEn}: ${a.quantity}</span>`;
+                    }).join('') || 'None'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-top: 50px; border-top: 1px solid #e2e8f0; padding-top: 20px; text-align: center; font-size: 9px; color: #94a3b8;">
+            ${isRtl ? 'تم إصدار هذا المستند آلياً من نظام إدارة الإنتاج الميداني' : 'This document is automatically generated by the Field Production Management System'}
+          </div>
+        </div>
+      `;
+
+      const opt = {
+        margin: 10,
+        filename: `Activity_Report_${act.id}.pdf`,
+        image: { type: 'jpeg' as const, quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
+      };
+
+      await runWithOklchSanitizer(async () => {
+        await html2pdf().set(opt).from(content).save();
+      });
+
+    } catch (error) {
+      console.error('Activity PDF Error:', error);
+    } finally {
+      setIsPrintingActivity(null);
+    }
+  };
 
   // Selected state
   const [selectedProjectId, setSelectedProjectId] = useState<string>(projects[0]?.id || '');
@@ -483,6 +623,15 @@ export default function WorkItemsList({
                                             <Eye className="w-3.5 h-3.5" />
                                           </button>
 
+                                          <button 
+                                            onClick={() => handlePrintActivityDetailsPDF(act)}
+                                            disabled={isPrintingActivity === act.id}
+                                            className="bg-slate-100 hover:bg-slate-200 text-slate-600 p-1.5 rounded text-[10px] font-bold transition disabled:opacity-50"
+                                            title={isRtl ? 'طباعة التفاصيل' : 'Print Details'}
+                                          >
+                                            {isPrintingActivity === act.id ? <Clock className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
+                                          </button>
+
                                           {!isReadOnly && (
                                             <button 
                                               onClick={() => handleOpenEditActivity(act)}
@@ -818,16 +967,38 @@ export default function WorkItemsList({
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-24 overflow-y-auto border border-gray-100 p-2 rounded-xl bg-gray-50">
                     {workers.map(w => {
                       const active = selectedWorkerIds.includes(w.id);
+                      // Check if worker is assigned elsewhere in active activities
+                      const isOccupied = activities.some(a => a.id !== editingActivityId && a.workerIds.includes(w.id));
+                      const canBeSelected = !isOccupied || w.allowMultiActivity || active;
+                      
                       return (
-                        <label key={w.id} className="flex items-center gap-1.5 text-[10px] cursor-pointer">
+                        <label key={w.id} className={`flex items-center gap-1.5 text-[10px] cursor-pointer p-1 rounded transition ${isOccupied ? 'bg-amber-50 text-amber-700 opacity-80' : ''}`}>
                           <input 
                             type="checkbox" 
                             checked={active}
+                            disabled={!canBeSelected}
                             onChange={() => {
                               setSelectedWorkerIds(active ? selectedWorkerIds.filter(id => id !== w.id) : [...selectedWorkerIds, w.id]);
                             }}
                           />
-                          <span className="truncate">{w.fullName} ({w.dailyProductivity}m)</span>
+                          <span className="truncate flex items-center gap-1 flex-1">
+                            {w.fullName} 
+                            {isOccupied && <span className={`text-[8px] px-1 rounded-full ${w.allowMultiActivity ? 'bg-blue-200 text-blue-700' : 'bg-amber-200'}`}>
+                              {w.allowMultiActivity ? (isRtl ? 'مشترك' : 'Shared') : (isRtl ? 'مشغول' : 'Busy')}
+                            </span>}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              onUpdateWorker && onUpdateWorker(w.id, { allowMultiActivity: !w.allowMultiActivity });
+                            }}
+                            className={`p-1 rounded-md transition-all ${w.allowMultiActivity ? 'text-blue-600 bg-blue-100 shadow-sm scale-110' : 'text-gray-400 bg-gray-100 hover:bg-gray-200'}`}
+                            title={w.allowMultiActivity ? (isRtl ? 'تعطيل المهام المتعددة' : 'Disable Multi-tasking') : (isRtl ? 'تفعيل المهام المتعددة' : 'Enable Multi-tasking')}
+                          >
+                            <Sparkles className="w-2.5 h-2.5" />
+                          </button>
                         </label>
                       );
                     })}
@@ -1072,9 +1243,17 @@ export default function WorkItemsList({
               <div className="flex justify-end pt-4">
                 <button 
                   onClick={() => setIsDetailsOpen(false)} 
-                  className="bg-[#040957] text-white py-2 px-6 rounded-xl text-xs font-bold transition shadow-md"
+                  className="bg-gray-100 text-gray-600 py-2 px-6 rounded-xl text-xs font-bold transition hover:bg-gray-200"
                 >
                   {isRtl ? 'إغلاق' : 'Close'}
+                </button>
+                <button 
+                  onClick={() => handlePrintActivityDetailsPDF(activityForDetails)} 
+                  disabled={isPrintingActivity === activityForDetails.id}
+                  className="bg-[#040957] text-white py-2 px-6 rounded-xl text-xs font-bold transition shadow-md hover:bg-[#0080FF] flex items-center gap-2"
+                >
+                  {isPrintingActivity === activityForDetails.id ? <Clock className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-4 h-4" />}
+                  {isRtl ? 'طباعة التقرير التفصيلي' : 'Print Detailed Report'}
                 </button>
               </div>
             </div>

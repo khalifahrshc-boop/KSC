@@ -40,6 +40,7 @@ import {
   DelayRecord,
   IssueReport,
   SavedKpiReport,
+  FieldRequest,
   FieldWorkSubmission
 } from './types';
 import { translations } from './utils/translation';
@@ -128,9 +129,32 @@ export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [workItems, setWorkItems] = useState<WorkItem[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [fieldRequests, setFieldRequests] = useState<FieldRequest[]>([]);
   const [materials, setMaterials] = useState<WarehouseMaterial[]>([]);
   const [equipment, setEquipment] = useState<EquipmentItem[]>([]);
   const [workers, setWorkers] = useState<Worker[]>([]);
+
+  const handleAddFieldRequest = async (request: Omit<FieldRequest, 'id'>) => {
+    try {
+      const newRequest = {
+        ...request,
+        id: `req-${Date.now()}`
+      };
+      await dbApi.save('fieldRequests', newRequest);
+      setFieldRequests(prev => [...prev, newRequest]);
+    } catch (error) {
+      console.error('Failed to save field request:', error);
+    }
+  };
+
+  const handleUpdateFieldRequest = async (request: FieldRequest) => {
+    try {
+      await dbApi.save('fieldRequests', request);
+      setFieldRequests(prev => prev.map(r => r.id === request.id ? request : r));
+    } catch (error) {
+      console.error('Failed to update field request:', error);
+    }
+  };
   const [notifications, setNotifications] = useState<SystemNotification[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [settings, setSettings] = useState<SystemSettings>(defaultSettings);
@@ -678,6 +702,33 @@ export default function App() {
     try {
       const saved = await dbApi.save<FieldWorkSubmission>('fieldSubmissions', submission);
       setFieldSubmissions(prev => [saved, ...prev]);
+      
+      // Release workers immediately on submission if an activity is completed in this update
+      if (submission.progressUpdates && submission.progressUpdates.length > 0) {
+        const updatedActivities = [...activities];
+        let hasChanges = false;
+        
+        for (const upd of submission.progressUpdates) {
+          const actIdx = updatedActivities.findIndex(a => a.id === upd.activityId);
+          if (actIdx !== -1) {
+            const act = updatedActivities[actIdx];
+            const currentTotal = progressUpdates
+              .filter(p => p.activityId === act.id)
+              .reduce((sum, p) => sum + p.completedQuantity, 0);
+            
+            if (currentTotal + upd.completedQuantity >= act.totalQuantity) {
+              updatedActivities[actIdx] = { ...act, workerIds: [] };
+              hasChanges = true;
+              await dbApi.save('activities', updatedActivities[actIdx]);
+            }
+          }
+        }
+        
+        if (hasChanges) {
+          setActivities(updatedActivities);
+        }
+      }
+
       logSystemAction('ADD_PENDING_FIELD_SUBMISSION', `Supervisor ${submission.supervisorName} submitted daily field logs.`);
     } catch (e) {
       console.error("Failed to save field submission", e);
@@ -710,7 +761,16 @@ export default function App() {
         await handleAddAttendanceRecords(sub.attendanceRecords);
       }
 
-      // Import progress/production updates
+      // Finalize Material Deliveries and Consumptions
+      // Deliveries are logged. Actual deduction from warehouse stock happens on consumption 
+      // or during planning (reserved). Here we just ensure deliveries are recorded in the system.
+      if (sub.materialDeliveries && sub.materialDeliveries.length > 0) {
+        for (const del of sub.materialDeliveries) {
+          await dbApi.save('materialDeliveries', del);
+        }
+      }
+
+      // Import progress/production updates (this will trigger stock deduction in handleAddProgressUpdate)
       if (sub.progressUpdates && sub.progressUpdates.length > 0) {
         for (const p of sub.progressUpdates) {
           await handleAddProgressUpdate(p);
@@ -776,32 +836,39 @@ export default function App() {
   };
 
   const handleAddProgressUpdate = async (upd: ProgressUpdate) => {
-
     try {
       if (!upd.id) upd.id = `upd-${Date.now()}`;
       const saved = await dbApi.save<ProgressUpdate>('progressUpdates', upd);
       setProgressUpdates(prev => [saved, ...prev]);
 
       // Recalculate and update the overall project completion / S-curve metrics dynamically!
-      const act = activities.find(a => a.id === upd.activityId);
-      if (act) {
-        // Find and deduct materials matching that activity
-        for (const mId of act.materialIds) {
-          const m = materials.find(mat => mat.id === mId);
+      // Deduct materials from stock based on actual consumptions
+      if (upd.materialConsumptions && upd.materialConsumptions.length > 0) {
+        for (const cons of upd.materialConsumptions) {
+          const m = materials.find(mat => mat.id === cons.materialId);
           if (m) {
-            const consumed = Math.max(0, m.quantity - Math.round(upd.completedQuantity * 1.2));
-            const updatedMat = { ...m, quantity: consumed };
+            // Subtract from reserved stock (since planning already moved it there)
+            // or from regular quantity if reserved is insufficient
+            const reservedToDeduct = Math.min(m.reservedStock || 0, cons.quantityUsed);
+            const extraToDeduct = Math.max(0, cons.quantityUsed - reservedToDeduct);
+
+            const updatedMat = { 
+              ...m, 
+              reservedStock: Math.max(0, (m.reservedStock || 0) - reservedToDeduct),
+              quantity: Math.max(0, m.quantity - extraToDeduct) 
+            };
             await dbApi.save('warehouseMaterials', updatedMat);
-            setMaterials(prev => prev.map(mat => mat.id === mId ? updatedMat : mat));
+            setMaterials(prev => prev.map(mat => mat.id === m.id ? updatedMat : mat));
 
             // Trigger threshold notification alerts if stock dips below safety margin!
-            if (consumed < m.minThreshold) {
+            const currentTotal = updatedMat.quantity;
+            if (currentTotal < m.minThreshold) {
               const shortageNotice: SystemNotification = {
-                id: `short-${Date.now()}-${mId}`,
+                id: `short-${Date.now()}-${m.id}`,
                 titleAr: `تنبيه حرج بالمخزن: المادة ${m.nameAr} قاربت النفاد`,
                 titleEn: `Low stock trigger: ${m.nameEn} is under boundary limit`,
-                messageAr: `المخزون المتوفر (${consumed} ${m.unit}) هو اقل من حد الأمان المحدد بـ ${m.minThreshold}. يرجى الشراء السريع.`,
-                messageEn: `Actual quantity (${consumed}) plummeted under critical buffer of ${m.minThreshold}.`,
+                messageAr: `المخزون المتوفر (${currentTotal} ${m.unit}) هو اقل من حد الأمان المحدد بـ ${m.minThreshold}. يرجى الشراء السريع.`,
+                messageEn: `Actual quantity (${currentTotal}) plummeted under critical buffer of ${m.minThreshold}.`,
                 timestamp: new Date().toISOString(),
                 type: 'inventory',
                 isRead: false
@@ -810,6 +877,38 @@ export default function App() {
               setNotifications(notifs => [shortageNotice, ...notifs]);
             }
           }
+        }
+      }
+
+      // Check if activity is completed and release workers if so
+      const act = activities.find(a => a.id === upd.activityId);
+      if (act) {
+        const totalDone = progressUpdates
+          .filter(p => p.activityId === act.id)
+          .reduce((sum, p) => sum + p.completedQuantity, 0) + upd.completedQuantity;
+          
+        if (totalDone >= act.totalQuantity) {
+          // Activity is finished! Release workers to available workforce pool
+          const releasedAct = {
+            ...act,
+            workerIds: [] 
+          };
+          await dbApi.save('activities', releasedAct);
+          setActivities(prev => prev.map(a => a.id === act.id ? releasedAct : a));
+          
+          // Add completion notification
+          const completionNotice: SystemNotification = {
+            id: `done-${Date.now()}-${act.id}`,
+            titleAr: `تم إنجاز النشاط: ${act.nameAr}`,
+            titleEn: `Activity Completed: ${act.nameEn}`,
+            messageAr: `تم إنجاز كافة الكميات المخططة لهذا النشاط بنجاح. تم تحرير العمالة المخصصة.`,
+            messageEn: `All planned quantities for this activity have been completed. Assigned workforce is now available.`,
+            timestamp: new Date().toISOString(),
+            type: 'progress',
+            isRead: false
+          };
+          await dbApi.save('notifications', completionNotice);
+          setNotifications(notifs => [completionNotice, ...notifs]);
         }
       }
 
@@ -828,6 +927,17 @@ export default function App() {
     } catch (e) {
       console.error("Failed to delete progress update", e);
       alert(lang === 'ar' ? "فشل حذف التحديث" : "Failed to delete update");
+    }
+  };
+
+  const handleDeleteAttendanceRecord = async (id: string) => {
+    try {
+      await dbApi.delete('attendanceRecords', id);
+      setAttendanceRecords(prev => prev.filter(r => r.id !== id));
+      logSystemAction('DELETE_ATTENDANCE', `Removed attendance record ID: ${id}`);
+    } catch (e) {
+      console.error("Failed to delete attendance record", e);
+      alert(lang === 'ar' ? "فشل حذف سجل الحضور" : "Failed to delete attendance record");
     }
   };
 
@@ -1014,8 +1124,12 @@ export default function App() {
             workItems={workItems}
             activities={activities}
             workers={workers}
+            materials={materials}
+            equipment={equipment}
             progressUpdates={progressUpdates}
+            fieldRequests={fieldRequests}
             onAddPendingSubmission={handleAddPendingSubmission}
+            onAddFieldRequest={handleAddFieldRequest}
             onReturnToMain={() => {
               const newUrl = window.location.origin + window.location.pathname;
               window.history.replaceState({}, document.title, newUrl);
@@ -1290,6 +1404,8 @@ export default function App() {
               activities={activities}
               workers={workers}
               progressUpdates={progressUpdates}
+              attendanceRecords={attendanceRecords}
+              materials={materials}
               notifications={notifications}
               onMarkNotificationRead={handleMarkNotificationRead}
               onClearAllNotifications={handleClearAllNotifications}
@@ -1317,6 +1433,7 @@ export default function App() {
               delays={delays}
               issues={issues}
               onDeleteProgressUpdate={handleDeleteProgressUpdate}
+              onDeleteAttendanceRecord={handleDeleteAttendanceRecord}
               savedKpiReports={savedKpiReports}
               onSaveKpiReport={handleSaveKpiReport}
               onDeleteKpiReport={handleDeleteKpiReport}
@@ -1334,6 +1451,8 @@ export default function App() {
               workItems={workItems}
               activities={activities}
               progressUpdates={progressUpdates}
+              attendanceRecords={attendanceRecords}
+              materials={materials}
               settings={settings}
               userRole={currentUser.role}
               onAddProject={handleAddProject}
@@ -1351,6 +1470,7 @@ export default function App() {
             <WorkItemsList 
               lang={lang}
               t={textDict}
+              settings={settings}
               projects={projects}
               workItems={workItems}
               activities={activities}
@@ -1364,6 +1484,7 @@ export default function App() {
               onAddActivity={handleAddActivity}
               onDeleteActivity={handleDeleteActivity}
               onUpdateActivity={handleUpdateActivity}
+              onUpdateWorker={handleUpdateWorker}
               openConfirm={openConfirm}
             />
           )}
@@ -1391,6 +1512,9 @@ export default function App() {
               onApproveSubmission={handleApproveSubmission}
               onRejectSubmission={handleRejectSubmission}
               currentUser={currentUser}
+              materials={materials}
+              fieldRequests={fieldRequests}
+              onUpdateFieldRequest={handleUpdateFieldRequest}
             />
           )}
 

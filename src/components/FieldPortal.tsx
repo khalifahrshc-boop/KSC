@@ -16,7 +16,12 @@ import {
   DelayRecord, 
   IssueReport, 
   FieldWorkSubmission,
-  SystemSettings
+  SystemSettings,
+  WarehouseMaterial,
+  MaterialConsumption,
+  MaterialDelivery,
+  FieldRequest,
+  EquipmentItem
 } from '../types';
 import { motion } from 'motion/react';
 import { 
@@ -48,8 +53,12 @@ import {
   Package,
   Wrench,
   UserCheck,
-  Calculator
+  Calculator,
+  Truck,
+  ShoppingCart,
+  Zap
 } from 'lucide-react';
+import { getActivityProgress } from '../utils/progressCalculations';
 import { dbApi } from '../lib/api';
 import { runWithOklchSanitizer } from '../utils/pdfSanitizer';
 
@@ -60,8 +69,12 @@ interface FieldPortalProps {
   workItems: WorkItem[];
   activities: Activity[];
   workers: Worker[];
+  materials: WarehouseMaterial[];
+  equipment: EquipmentItem[];
   progressUpdates?: ProgressUpdate[];
+  fieldRequests?: FieldRequest[];
   onAddPendingSubmission: (submission: FieldWorkSubmission) => Promise<void>;
+  onAddFieldRequest: (request: Omit<FieldRequest, 'id'>) => Promise<void>;
   onReturnToMain: () => void;
   onToggleLanguage: () => void;
 }
@@ -73,8 +86,12 @@ export default function FieldPortal({
   workItems,
   activities,
   workers,
+  materials,
+  equipment,
   progressUpdates = [],
+  fieldRequests = [],
   onAddPendingSubmission,
+  onAddFieldRequest,
   onReturnToMain,
   onToggleLanguage
 }: FieldPortalProps) {
@@ -115,6 +132,7 @@ export default function FieldPortal({
 
   // 3. Production Updates state (list of multiple updates submitted during the day)
   const [prodUpdates, setProdUpdates] = useState<Omit<ProgressUpdate, 'id' | 'projectId'>[]>([]);
+  const [materialDeliveries, setMaterialDeliveries] = useState<Omit<MaterialDelivery, 'id'>[]>([]);
   
   // Individual update form state
   const [prodWiId, setProdWiId] = useState('');
@@ -125,6 +143,83 @@ export default function FieldPortal({
   const [prodNotes, setProdNotes] = useState('');
   const [uploadedFiles, setUploadedFiles] = useState<{name: string, content: string}[]>([]);
   const [dragActive, setDragActive] = useState(false);
+
+  // Material consumption in current form
+  const [currentConsumptions, setCurrentConsumptions] = useState<MaterialConsumption[]>([]);
+  const [tempMatId, setTempMatId] = useState('');
+  const [tempMatQty, setTempMatQty] = useState(0);
+  const [tempDelId, setTempDelId] = useState('');
+  const [tempDelQty, setTempDelQty] = useState(0);
+
+  // Field Requests state
+  const [reqType, setReqType] = useState<FieldRequest['type']>('Material');
+  const [reqResourceId, setReqResourceId] = useState('');
+  const [reqQuantity, setReqQuantity] = useState(1);
+  const [reqPriority, setReqPriority] = useState<FieldRequest['priority']>('Normal');
+  const [reqNotes, setReqNotes] = useState('');
+  const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
+
+  const handleSubmitFieldRequest = async () => {
+    if (!reqResourceId) {
+      alert(isRtl ? 'الرجاء اختيار المورد المطلوب!' : 'Please select the requested resource!');
+      return;
+    }
+    if (reqQuantity <= 0) {
+      alert(isRtl ? 'الرجاء إدخال كمية صحيحة!' : 'Please enter a valid quantity!');
+      return;
+    }
+
+    try {
+      setIsSubmittingRequest(true);
+      
+      let resNameEn = '';
+      let resNameAr = '';
+      let resUnit = 'Units';
+
+      if (reqType === 'Material') {
+        const m = materials.find(mat => mat.id === reqResourceId);
+        resNameEn = m?.nameEn || '';
+        resNameAr = m?.nameAr || '';
+        resUnit = m?.unit || 'Units';
+      } else if (reqType === 'Equipment') {
+        const e = equipment.find(eq => eq.id === reqResourceId);
+        resNameEn = e?.nameEn || '';
+        resNameAr = e?.nameAr || '';
+        resUnit = 'Units';
+      } else {
+        resNameEn = reqResourceId;
+        resNameAr = reqResourceId;
+        resUnit = isRtl ? 'عمال' : 'Workers';
+      }
+
+      await onAddFieldRequest({
+        projectId: selectedProjectId,
+        supervisorId: supBadge || '000',
+        supervisorName: supName || 'Field Supervisor',
+        type: reqType,
+        resourceId: reqResourceId,
+        resourceNameEn: resNameEn,
+        resourceNameAr: resNameAr,
+        quantity: reqQuantity,
+        unit: resUnit,
+        status: 'Pending',
+        priority: reqPriority,
+        notes: reqNotes,
+        timestamp: new Date().toISOString()
+      });
+
+      triggerToast(isRtl ? 'تم إرسال طلب الموارد بنجاح!' : 'Resource request submitted successfully!');
+      
+      // Reset request form
+      setReqResourceId('');
+      setReqQuantity(1);
+      setReqNotes('');
+    } catch (error) {
+      console.error('Request submission error:', error);
+    } finally {
+      setIsSubmittingRequest(false);
+    }
+  };
 
   // Edit/Details state for production updates
   const [editingProdIdx, setEditingProdIdx] = useState<number | null>(null);
@@ -141,6 +236,21 @@ export default function FieldPortal({
     .reduce((sum, upd) => sum + Number(upd.completedQuantity), 0);
   const activityProgress = dbProgress + localSessionProgress;
   const remainingQty = currentActivity ? Math.max(0, currentActivity.totalQuantity - activityProgress) : 0;
+  const isActivityCompleted = currentActivity ? (activityProgress >= currentActivity.totalQuantity && currentActivity.totalQuantity > 0) : false;
+
+  const calculateDaysRemaining = (finishDate?: string) => {
+    if (!finishDate) return null;
+    const finish = new Date(finishDate);
+    const today = new Date();
+    // Normalize to start of day for accurate day counting
+    today.setHours(0, 0, 0, 0);
+    finish.setHours(0, 0, 0, 0);
+    const diffTime = finish.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+  };
+
+  const daysRemaining = currentActivity ? calculateDaysRemaining(currentActivity.expectedFinishDate) : null;
 
   // Clamping prodCompletedQty if it exceeds remainingQty
   useEffect(() => {
@@ -148,6 +258,16 @@ export default function FieldPortal({
       setProdCompletedQty(remainingQty);
     }
   }, [prodActId, remainingQty, prodCompletedQty]);
+
+  // Calculate present workers count
+  const presentWorkersCount = Object.values(workerAttendanceState).filter((a: any) => a.isPresent).length;
+
+  // Clamping prodWorkersUsed if it exceeds presentWorkersCount
+  useEffect(() => {
+    if (prodWorkersUsed > presentWorkersCount) {
+      setProdWorkersUsed(presentWorkersCount);
+    }
+  }, [presentWorkersCount, prodWorkersUsed]);
 
   // 4. Safety Audit
   const [hasSafetyRecord, setHasSafetyRecord] = useState(false);
@@ -330,6 +450,13 @@ export default function FieldPortal({
       return;
     }
 
+    if (prodWorkersUsed > presentWorkersCount) {
+      alert(isRtl 
+        ? `لا يمكن أن يتجاوز عدد العمال عدد الحاضرين اليوم (${presentWorkersCount}).` 
+        : `Number of workers cannot exceed present workers count (${presentWorkersCount}).`);
+      return;
+    }
+
     if (qtyToAdd > remainingQty) {
       alert(isRtl 
         ? `لا يمكن تجاوز الكمية المتبقية (${remainingQty} ${activityObj.unit}).` 
@@ -346,6 +473,7 @@ export default function FieldPortal({
       completedQuantity: qtyToAdd,
       numberOfWorkers: prodWorkersUsed,
       equipmentUsed: [],
+      materialConsumptions: currentConsumptions,
       completionPercentage: Math.round(((activityProgress + qtyToAdd) / activityObj.totalQuantity) * 100),
       notes: prodNotes,
       photos: fileList,
@@ -354,6 +482,7 @@ export default function FieldPortal({
 
     setProdUpdates(prev => [...prev, newUpdate]);
     setProdNotes('');
+    setCurrentConsumptions([]);
     setUploadedFiles([]);
     triggerToast(isRtl ? 'تمت إضافة تحديث الإنتاج بنجاح' : 'Production record added to summary');
   };
@@ -393,6 +522,13 @@ export default function FieldPortal({
       return;
     }
 
+    if (prodWorkersUsed > presentWorkersCount) {
+      alert(isRtl 
+        ? `لا يمكن أن يتجاوز عدد العمال عدد الحاضرين اليوم (${presentWorkersCount}).` 
+        : `Number of workers cannot exceed present workers count (${presentWorkersCount}).`);
+      return;
+    }
+
     if (qtyToAdd > adjRemainingQty) {
       alert(isRtl 
         ? `لا يمكن تجاوز الكمية المتبقية (${adjRemainingQty} ${activityObj.unit}).` 
@@ -408,6 +544,7 @@ export default function FieldPortal({
       time: prodTime,
       completedQuantity: qtyToAdd,
       numberOfWorkers: prodWorkersUsed,
+      materialConsumptions: currentConsumptions,
       completionPercentage: Math.round(((adjActivityProgress + qtyToAdd) / activityObj.totalQuantity) * 100),
       notes: prodNotes,
     };
@@ -415,8 +552,66 @@ export default function FieldPortal({
     setProdUpdates(updatedUpdates);
     setEditingProdIdx(null);
     setProdNotes('');
+    setCurrentConsumptions([]);
     setUploadedFiles([]);
     triggerToast(isRtl ? 'تم تحديث التحديث بنجاح' : 'Production record updated');
+  };
+
+  const handleAddMaterialDelivery = (materialId: string, quantity: number) => {
+    const mat = materials.find(m => m.id === materialId);
+    if (!mat || quantity <= 0) return;
+
+    const delivery: Omit<MaterialDelivery, 'id'> = {
+      materialId,
+      materialNameEn: mat.nameEn,
+      materialNameAr: mat.nameAr,
+      quantityDelivered: quantity,
+      unit: mat.unit,
+      timestamp: new Date().toISOString(),
+      activityId: prodActId
+    };
+
+    setMaterialDeliveries(prev => [...prev, delivery]);
+    triggerToast(isRtl ? 'تم تسجيل توريد المادة للموقع' : 'Material delivery recorded on site');
+  };
+
+  const handleAddConsumption = (materialId: string, quantity: number) => {
+    const mat = materials.find(m => m.id === materialId);
+    if (!mat || quantity <= 0) return;
+
+    // Calculate current available on site for this activity
+    const delivered = materialDeliveries
+      .filter(d => d.activityId === prodActId && d.materialId === materialId)
+      .reduce((sum, d) => sum + d.quantityDelivered, 0);
+    
+    const consumedInSession = prodUpdates
+      .filter(upd => upd.activityId === prodActId)
+      .flatMap(upd => upd.materialConsumptions || [])
+      .filter(c => c.materialId === materialId)
+      .reduce((sum, c) => sum + c.quantityUsed, 0);
+    
+    const currentFormConsumed = currentConsumptions
+      .filter(c => c.materialId === materialId)
+      .reduce((sum, c) => sum + c.quantityUsed, 0);
+
+    const availableOnSite = delivered - consumedInSession - currentFormConsumed;
+
+    if (quantity > availableOnSite) {
+      alert(isRtl 
+        ? `الكمية المتوفرة في الموقع (${availableOnSite} ${mat.unit}) أقل من الكمية المطلوبة.` 
+        : `Available on site (${availableOnSite} ${mat.unit}) is less than requested quantity.`);
+      return;
+    }
+
+    const consumption: MaterialConsumption = {
+      materialId,
+      materialNameEn: mat.nameEn,
+      materialNameAr: mat.nameAr,
+      quantityUsed: quantity,
+      unit: mat.unit
+    };
+
+    setCurrentConsumptions(prev => [...prev, consumption]);
   };
 
   const handleOpenActivityDetails = (actId: string) => {
@@ -424,6 +619,98 @@ export default function FieldPortal({
     if (act) {
       setActivityForDetails(act);
       setIsActivityDetailsOpen(true);
+    }
+  };
+
+  const handlePrintProductionDetailPDF = async (update: Omit<ProgressUpdate, 'id' | 'projectId'>) => {
+    try {
+      const html2pdf = (await import('html2pdf.js')).default;
+      const act = activities.find(a => a.id === update.activityId);
+      const projectName = selectedProject ? (isRtl ? selectedProject.nameAr : selectedProject.nameEn) : '---';
+
+      const content = `
+        <div style="font-family: 'Cairo', 'Inter', sans-serif; padding: 25px; direction: ${isRtl ? 'rtl' : 'ltr'}; color: #1e293b; background-color: white;">
+          <div style="border-bottom: 2px solid #040957; padding-bottom: 15px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <h1 style="margin: 0; font-size: 16px; color: #040957;">${isRtl ? settings.companyNameAr : settings.companyNameEn}</h1>
+              <p style="margin: 3px 0 0 0; font-size: 9px; color: #64748b;">${isRtl ? 'تفاصيل إنجاز النشاط الميداني' : 'Field Activity Production Detail'}</p>
+            </div>
+            <div style="text-align: ${isRtl ? 'left' : 'right'}; font-size: 9px; color: #94a3b8;">
+              ${new Date().toLocaleString(isRtl ? 'ar-SA' : 'en-GB')}
+            </div>
+          </div>
+
+          <div style="margin-bottom: 20px; background-color: #f8fafc; border-radius: 12px; padding: 15px; border: 1px solid #e2e8f0;">
+            <div style="margin-bottom: 10px;">
+              <span style="font-size: 8px; font-weight: bold; color: #64748b; text-transform: uppercase; display: block;">${isRtl ? 'المشروع' : 'Project'}</span>
+              <span style="font-size: 11px; font-weight: bold; color: #1e293b;">${projectName}</span>
+            </div>
+            <div style="margin-bottom: 10px;">
+              <span style="font-size: 8px; font-weight: bold; color: #64748b; text-transform: uppercase; display: block;">${isRtl ? 'النشاط الفعلي' : 'Target Activity'}</span>
+              <span style="font-size: 11px; font-weight: bold; color: #040957;">${isRtl ? act?.nameAr : act?.nameEn}</span>
+            </div>
+            <div style="display: grid; grid-template-cols: 1fr 1fr; gap: 15px;">
+              <div>
+                <span style="font-size: 8px; font-weight: bold; color: #64748b; text-transform: uppercase; display: block;">${isRtl ? 'الكمية المنجزة' : 'Quantity Produced'}</span>
+                <span style="font-size: 12px; font-weight: 800; color: #0284c7;">+${update.completedQuantity} ${act?.unit || ''}</span>
+              </div>
+              <div>
+                <span style="font-size: 8px; font-weight: bold; color: #64748b; text-transform: uppercase; display: block;">${isRtl ? 'وقت التسجيل' : 'Log Time'}</span>
+                <span style="font-size: 11px; font-weight: bold; color: #1e293b;">${update.time}</span>
+              </div>
+            </div>
+          </div>
+
+          ${update.materialConsumptions && update.materialConsumptions.length > 0 ? `
+            <div style="margin-bottom: 20px;">
+              <h4 style="font-size: 11px; color: #040957; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; margin-bottom: 8px;">
+                🏗️ ${isRtl ? 'المواد المستهلكة في هذا النشاط' : 'Materials Consumed for this Activity'}
+              </h4>
+              <table style="width: 100%; border-collapse: collapse; font-size: 9px;">
+                <thead>
+                  <tr style="background-color: #f1f5f9; color: #475569;">
+                    <th style="padding: 6px; border: 1px solid #e2e8f0; text-align: ${isRtl ? 'right' : 'left'};">${isRtl ? 'المادة' : 'Material'}</th>
+                    <th style="padding: 6px; border: 1px solid #e2e8f0; text-align: center;">${isRtl ? 'الكمية' : 'Quantity'}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${update.materialConsumptions.map(c => `
+                    <tr>
+                      <td style="padding: 6px; border: 1px solid #e2e8f0; font-weight: bold;">${isRtl ? c.materialNameAr : c.materialNameEn}</td>
+                      <td style="padding: 6px; border: 1px solid #e2e8f0; text-align: center; color: #1d4ed8; font-weight: 800;">${c.quantityUsed} ${c.unit}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          ` : ''}
+
+          ${update.notes ? `
+            <div style="margin-bottom: 20px; border: 1px solid #cbd5e1; padding: 10px; border-radius: 8px;">
+              <span style="font-size: 8px; font-weight: bold; color: #64748b; text-transform: uppercase; display: block; margin-bottom: 4px;">${isRtl ? 'ملاحظات وتوجيهات المشرف' : 'Supervisor Technical Notes'}</span>
+              <p style="margin: 0; font-size: 10px; line-height: 1.5; color: #334155;">${update.notes}</p>
+            </div>
+          ` : ''}
+
+          <div style="margin-top: 30px; text-align: center; border-top: 1px dashed #cbd5e1; padding-top: 15px;">
+            <p style="font-size: 8px; color: #94a3b8;">${isRtl ? 'تم إصدار هذا التفصيل من بوابة المشرف الميدانية الرقمية - شركة الرشيد للمقاولات' : 'Generated via Rashed Al-Subaie Digital Field Supervisor Portal'}</p>
+          </div>
+        </div>
+      `;
+
+      const opt = {
+        margin: 10,
+        filename: `Production_Detail_${update.time.replace(/ /g, '_')}.pdf`,
+        image: { type: 'jpeg' as const, quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm' as const, format: 'a5' as const, orientation: 'portrait' as const }
+      };
+
+      await runWithOklchSanitizer(async () => {
+        await html2pdf().set(opt).from(content).save();
+      });
+    } catch (error) {
+      console.error('Production PDF Error:', error);
     }
   };
 
@@ -575,6 +862,12 @@ export default function FieldPortal({
         };
       }
 
+      // Assemble material deliveries
+      const deliveryList: MaterialDelivery[] = materialDeliveries.map((d, index) => ({
+        ...d,
+        id: `delv-${Date.now()}-${index}`
+      }));
+
       // Build overall submission
       const submission: FieldWorkSubmission = {
         id: `sub-${Date.now()}`,
@@ -590,6 +883,7 @@ export default function FieldPortal({
         checkIn: checkInRecord,
         attendanceRecords: attendanceList,
         progressUpdates: progressList,
+        materialDeliveries: deliveryList,
         safetyRecord: safetyRec,
         delayRecord: delayRec,
         issueReport: issueRec
@@ -1228,13 +1522,14 @@ export default function FieldPortal({
         <div className="bg-white dark:bg-[#182132] border border-gray-150 dark:border-gray-800 rounded-3xl shadow-xl overflow-hidden">
           
           {/* STEP INDICATOR TABS */}
-          <div className="grid grid-cols-5 divide-x divide-gray-100 dark:divide-gray-800 border-b border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/10 text-center">
+          <div className="grid grid-cols-6 divide-x divide-gray-100 dark:divide-gray-800 border-b border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/10 text-center">
             {[
               { id: 1, title: isRtl ? '١. المشرف' : '1. Check-In', icon: User },
               { id: 2, title: isRtl ? '٢. العمالة' : '2. Attendance', icon: Users },
               { id: 3, title: isRtl ? '٣. الإنتاج' : '3. Output', icon: Clock },
-              { id: 4, title: isRtl ? '٤. السجل المالي والبيئي' : '4. Safety & Delays', icon: ShieldAlert },
-              { id: 5, title: isRtl ? '٥. المراجعة' : '5. Submit', icon: CheckCircle }
+              { id: 4, title: isRtl ? '٤. السجل' : '4. Safety', icon: ShieldAlert },
+              { id: 5, title: isRtl ? '٥. الطلبات' : '5. Requests', icon: ShoppingCart },
+              { id: 6, title: isRtl ? '٦. المراجعة' : '6. Submit', icon: CheckCircle }
             ].map(step => (
               <button
                 key={step.id}
@@ -1441,6 +1736,8 @@ export default function FieldPortal({
                           notes: ''
                         };
 
+                        const isAssigned = activities.some(a => a.workerIds.includes(w.id));
+
                         const handleStatusChange = (status: any) => {
                           const isPres = status === 'Present' || status === 'Late' || status === 'ShortLeave';
                           setWorkerAttendanceState(prev => ({
@@ -1456,7 +1753,12 @@ export default function FieldPortal({
                         return (
                           <tr key={w.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/20">
                             <td className="p-3">
-                              <div className="font-extrabold text-gray-800 dark:text-gray-100 text-xs">{w.fullName}</div>
+                              <div className="flex items-center gap-2">
+                                <div className="font-extrabold text-gray-800 dark:text-gray-100 text-xs">{w.fullName}</div>
+                                <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-tighter ${isAssigned ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                  {isAssigned ? (isRtl ? 'مخصص لعمل' : 'Assigned') : (isRtl ? 'متاح للعمل' : 'Available')}
+                                </span>
+                              </div>
                               <div className="text-[10px] text-gray-400">{isRtl ? w.professionAr : w.professionEn} | ID: {w.badgeNumber}</div>
                             </td>
                             <td className="p-3 text-center">
@@ -1580,26 +1882,39 @@ export default function FieldPortal({
                       <div className="space-y-1">
                         <label className="text-xs font-bold text-gray-500 flex justify-between items-center">
                           <span>{isRtl ? 'النشاط الميداني الفرعي:' : 'Sub-activity:'}</span>
-                          {prodActId && (
-                            <button 
-                              onClick={() => handleOpenActivityDetails(prodActId)}
-                              className="text-[10px] text-[#0080FF] font-bold hover:underline flex items-center gap-1"
-                            >
-                              <Eye className="w-3 h-3" />
-                              {isRtl ? 'عرض المخطط والموارد' : 'View Plan & Resources'}
-                            </button>
-                          )}
+                          <div className="flex items-center gap-3">
+                            {prodActId && daysRemaining !== null && !isActivityCompleted && (
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${daysRemaining < 0 ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>
+                                📅 {daysRemaining < 0 
+                                  ? (isRtl ? `متأخر ${Math.abs(daysRemaining)} يوم` : `${Math.abs(daysRemaining)}d Overdue`) 
+                                  : (isRtl ? `${daysRemaining} يوم متبقي` : `${daysRemaining}d Remaining`)}
+                              </span>
+                            )}
+                            {prodActId && (
+                              <button 
+                                onClick={() => handleOpenActivityDetails(prodActId)}
+                                className="text-[10px] text-[#0080FF] font-bold hover:underline flex items-center gap-1"
+                              >
+                                <Eye className="w-3 h-3" />
+                                {isRtl ? 'عرض المخطط والموارد' : 'View Plan & Resources'}
+                              </button>
+                            )}
+                          </div>
                         </label>
                         <select
                           value={prodActId}
                           onChange={(e) => setProdActId(e.target.value)}
                           className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white dark:bg-gray-800 text-gray-850 dark:text-white font-bold"
                         >
-                          {itemActivities.map(act => (
-                            <option key={act.id} value={act.id}>
-                              {isRtl ? act.nameAr : act.nameEn} ({act.totalQuantity} {act.unit})
-                            </option>
-                          ))}
+                          {itemActivities.map(act => {
+                            const progress = getActivityProgress(act, progressUpdates);
+                            const isDelayed = act.expectedFinishDate && new Date() > new Date(act.expectedFinishDate) && progress < 100;
+                            return (
+                              <option key={act.id} value={act.id}>
+                                {isRtl ? act.nameAr : act.nameEn} ({progress}% {isRtl ? 'منجز' : 'Done'}) {isDelayed ? `⚠️ ${isRtl ? 'متأخر' : 'Delayed'}` : ''}
+                              </option>
+                            );
+                          })}
                           {itemActivities.length === 0 && (
                             <option value="">{isRtl ? 'لا توجد أنشطة نشطة' : 'No activities linked'}</option>
                           )}
@@ -1620,6 +1935,7 @@ export default function FieldPortal({
                           value={prodCompletedQty}
                           max={remainingQty}
                           min={0}
+                          disabled={isActivityCompleted}
                           onChange={(e) => {
                             const val = Number(e.target.value);
                             if (val > remainingQty) {
@@ -1630,17 +1946,34 @@ export default function FieldPortal({
                               setProdCompletedQty(val);
                             }
                           }}
-                          className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white dark:bg-gray-800 text-gray-800 dark:text-white font-bold"
+                          className={`w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white dark:bg-gray-800 text-gray-800 dark:text-white font-bold ${isActivityCompleted ? 'opacity-50 cursor-not-allowed bg-gray-50 dark:bg-gray-900' : ''}`}
                         />
                       </div>
 
                       <div className="space-y-1">
-                        <label className="text-xs font-bold text-gray-500">{isRtl ? 'عدد العمال المشاركين:' : 'Workers Involved:'}</label>
+                        <label className="text-xs font-bold text-gray-500 flex justify-between items-center">
+                          <span>{isRtl ? 'عدد العمال المشاركين:' : 'Workers Involved:'}</span>
+                          <span className="text-amber-600 font-mono text-[10px]">
+                            ({isRtl ? 'الحاضرون:' : 'Present:'} {presentWorkersCount})
+                          </span>
+                        </label>
                         <input 
                           type="number" 
                           value={prodWorkersUsed}
-                          onChange={(e) => setProdWorkersUsed(Number(e.target.value))}
-                          className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white dark:bg-gray-800 text-gray-800 dark:text-white font-bold"
+                          max={presentWorkersCount}
+                          min={0}
+                          disabled={isActivityCompleted}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            if (val > presentWorkersCount) {
+                              setProdWorkersUsed(presentWorkersCount);
+                            } else if (val < 0) {
+                              setProdWorkersUsed(0);
+                            } else {
+                              setProdWorkersUsed(val);
+                            }
+                          }}
+                          className={`w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white dark:bg-gray-800 text-gray-800 dark:text-white font-bold ${isActivityCompleted ? 'opacity-50 cursor-not-allowed bg-gray-50 dark:bg-gray-900' : ''}`}
                         />
                       </div>
 
@@ -1649,7 +1982,8 @@ export default function FieldPortal({
                         <select
                           value={prodTime}
                           onChange={(e) => setProdTime(e.target.value)}
-                          className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white dark:bg-gray-800 text-gray-800 dark:text-white font-bold"
+                          disabled={isActivityCompleted}
+                          className={`w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white dark:bg-gray-800 text-gray-800 dark:text-white font-bold ${isActivityCompleted ? 'opacity-50 cursor-not-allowed bg-gray-50 dark:bg-gray-900' : ''}`}
                         >
                           <option value="09:00 AM">09:00 AM</option>
                           <option value="11:00 AM">11:00 AM</option>
@@ -1709,11 +2043,206 @@ export default function FieldPortal({
                         </div>
                       </div>
 
-                      {Number(prodCompletedQty) >= remainingQty && remainingQty > 0 && (
+                      {isActivityCompleted && (
+                        <div className="bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-400 rounded-2xl p-4 mt-2 border-2 border-emerald-200 dark:border-emerald-900/50 flex flex-col items-center justify-center text-center gap-2">
+                          <CheckCircle className="w-8 h-8 text-emerald-500" />
+                          <div>
+                            <div className="text-sm font-black uppercase tracking-widest">
+                              {isRtl ? 'تم إنجاز هذا النشاط بالكامل' : 'Activity Fully Completed'}
+                            </div>
+                            <div className="text-[11px] font-bold opacity-80">
+                              {isRtl ? 'لا يوجد عمل متبقي لهذا البند. تم تحويل العمالة المخصصة إلى قائمة الانتظار.' : 'No work remains for this item. Assigned labor has been released to availability pool.'}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {!isActivityCompleted && Number(prodCompletedQty) >= remainingQty && remainingQty > 0 && (
                         <div className="bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-400 rounded-lg p-2 mt-2 text-[10px] font-bold flex items-center gap-1 border border-amber-200 dark:border-amber-900/30">
                           ⚠️ {isRtl ? `تنبيه: لقد استهلكت كامل الرصيد المتبقي المتاح (${remainingQty} ${currentActivity?.unit})` : `Warning: You are recording the entire remaining scope (${remainingQty} ${currentActivity?.unit})`}
                         </div>
                       )}
+                    </div>
+
+                    {/* MATERIAL MANAGEMENT SECTION */}
+                    <div className="space-y-4 pt-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-[11px] font-black text-[#040957] dark:text-amber-400 uppercase tracking-widest flex items-center gap-1.5">
+                          🏗️ {isRtl ? 'إدارة المواد والمخزون الميداني' : 'On-Site Material & Inventory Management'}
+                        </h4>
+                      </div>
+
+                      {/* Delivery from Warehouse */}
+                      <div className="bg-amber-50/50 dark:bg-amber-950/10 border border-amber-100 dark:border-amber-900/30 rounded-2xl p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-amber-800 dark:text-amber-400 uppercase">
+                            {isRtl ? 'إضافة مواد من المستودع للموقع' : 'Add Materials from Warehouse (Delivery)'}
+                          </span>
+                          <Truck className="w-4 h-4 text-amber-500" />
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <select
+                            value={tempDelId}
+                            onChange={(e) => setTempDelId(e.target.value)}
+                            className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2 text-[11px] font-bold bg-white dark:bg-gray-800"
+                          >
+                            <option value="">{isRtl ? 'اختر المادة...' : 'Select Material...'}</option>
+                            {materials.map(m => (
+                              <option key={m.id} value={m.id}>{isRtl ? m.nameAr : m.nameEn} ({m.unit})</option>
+                            ))}
+                          </select>
+                          <div className="flex gap-2">
+                            <input 
+                              type="number"
+                              value={tempDelQty}
+                              max={materials.find(m => m.id === tempDelId)?.quantity || 0}
+                              min={0}
+                              onChange={(e) => {
+                                const m = materials.find(mat => mat.id === tempDelId);
+                                const available = m?.quantity || 0;
+                                const val = Number(e.target.value);
+                                if (val > available) setTempDelQty(available);
+                                else if (val < 0) setTempDelQty(0);
+                                else setTempDelQty(val);
+                              }}
+                              placeholder={isRtl ? 'الكمية الموردة' : 'Qty Delivered'}
+                              className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2 text-[11px] font-bold bg-white dark:bg-gray-800"
+                            />
+                            <button
+                              onClick={() => {
+                                if (tempDelId && tempDelQty > 0) {
+                                  handleAddMaterialDelivery(tempDelId, tempDelQty);
+                                  setTempDelId('');
+                                  setTempDelQty(0);
+                                }
+                              }}
+                              className="bg-amber-400 hover:bg-amber-500 text-slate-900 font-bold py-2 px-4 rounded-xl text-[10px] transition shrink-0"
+                            >
+                              {isRtl ? 'تسجيل التوريد' : 'Record Delivery'}
+                            </button>
+                          </div>
+                        </div>
+
+                        {materialDeliveries.filter(d => d.activityId === prodActId).length > 0 && (
+                          <div className="pt-2 flex flex-wrap gap-2">
+                            {materialDeliveries.filter(d => d.activityId === prodActId).map((d, i) => (
+                              <div key={i} className="bg-white dark:bg-gray-800 px-2 py-1 rounded-lg border border-amber-200 text-[9px] font-bold flex items-center gap-1.5 shadow-sm">
+                                🚚 {isRtl ? d.materialNameAr : d.materialNameEn}: {d.quantityDelivered} {d.unit}
+                                <button 
+                                  onClick={() => {
+                                    const actualIdx = materialDeliveries.findIndex(md => md.timestamp === d.timestamp);
+                                    if (actualIdx !== -1) {
+                                      const newDels = [...materialDeliveries];
+                                      newDels.splice(actualIdx, 1);
+                                      setMaterialDeliveries(newDels);
+                                    }
+                                  }}
+                                  className="hover:text-red-500 transition-colors ml-1 border-l pl-1 border-amber-100"
+                                >
+                                  <X className="w-2.5 h-2.5" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Consumption Tracking */}
+                      <div className="bg-blue-50/50 dark:bg-blue-950/10 border border-blue-100 dark:border-blue-900/30 rounded-2xl p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-blue-800 dark:text-blue-400 uppercase">
+                            {isRtl ? 'تسجيل الاستهلاك لهذا التحديث' : 'Record Consumption for this Update'}
+                          </span>
+                          <Package className="w-4 h-4 text-blue-500" />
+                        </div>
+                        
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <select
+                            value={tempMatId}
+                            onChange={(e) => setTempMatId(e.target.value)}
+                            className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2 text-[11px] font-bold bg-white dark:bg-gray-800"
+                          >
+                            <option value="">{isRtl ? 'اختر المادة للموقع...' : 'Select Material...'}</option>
+                            {materials.map(m => {
+                              const delivered = materialDeliveries
+                                .filter(d => d.activityId === prodActId && d.materialId === m.id)
+                                .reduce((sum, d) => sum + d.quantityDelivered, 0);
+                              const consumed = prodUpdates
+                                .filter(upd => upd.activityId === prodActId)
+                                .flatMap(upd => upd.materialConsumptions || [])
+                                .filter(c => c.materialId === m.id)
+                                .reduce((sum, c) => sum + c.quantityUsed, 0);
+                              
+                              const onSite = delivered - consumed;
+                              if (onSite <= 0) return null;
+                              return (
+                                <option key={m.id} value={m.id}>
+                                  {isRtl ? m.nameAr : m.nameEn} ({isRtl ? 'المتوفر:' : 'Avail:'} {onSite} {m.unit})
+                                </option>
+                              );
+                            })}
+                          </select>
+                          <div className="flex gap-2">
+                            {(() => {
+                              const selectedMat = materials.find(m => m.id === tempMatId);
+                              const delivered = materialDeliveries
+                                .filter(d => d.activityId === prodActId && d.materialId === tempMatId)
+                                .reduce((sum, d) => sum + d.quantityDelivered, 0);
+                              const consumed = prodUpdates
+                                .filter(upd => upd.activityId === prodActId)
+                                .flatMap(upd => upd.materialConsumptions || [])
+                                .filter(c => c.materialId === tempMatId)
+                                .reduce((sum, c) => sum + c.quantityUsed, 0);
+                              const onSite = delivered - consumed;
+
+                              return (
+                                <input 
+                                  type="number"
+                                  value={tempMatQty}
+                                  max={onSite}
+                                  min={0}
+                                  onChange={(e) => {
+                                    const val = Number(e.target.value);
+                                    if (val > onSite) setTempMatQty(onSite);
+                                    else if (val < 0) setTempMatQty(0);
+                                    else setTempMatQty(val);
+                                  }}
+                                  placeholder={isRtl ? 'الكمية المستخدمة' : 'Qty Used'}
+                                  className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2 text-[11px] font-bold bg-white dark:bg-gray-800"
+                                />
+                              );
+                            })()}
+                            <button
+                              onClick={() => {
+                                if (tempMatId && tempMatQty > 0) {
+                                  handleAddConsumption(tempMatId, tempMatQty);
+                                  setTempMatId('');
+                                  setTempMatQty(0);
+                                }
+                              }}
+                              className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-xl text-[10px] transition shrink-0"
+                            >
+                              {isRtl ? 'إضافة استهلاك' : 'Add Consumption'}
+                            </button>
+                          </div>
+                        </div>
+
+                        {currentConsumptions.length > 0 && (
+                          <div className="pt-2 flex flex-wrap gap-2">
+                            {currentConsumptions.map((c, i) => (
+                              <div key={i} className="bg-white dark:bg-gray-800 px-2 py-1 rounded-lg border border-blue-200 text-[9px] font-bold flex items-center gap-1.5 group">
+                                ⚙️ {isRtl ? c.materialNameAr : c.materialNameEn}: -{c.quantityUsed} {c.unit}
+                                <button 
+                                  onClick={() => setCurrentConsumptions(prev => prev.filter((_, idx) => idx !== i))}
+                                  className="text-red-500 hover:text-red-700"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     <div className="space-y-1">
@@ -1839,6 +2368,13 @@ export default function FieldPortal({
                               )}
                             </div>
                             <div className="flex items-center gap-1.5">
+                              <button
+                                onClick={() => handlePrintProductionDetailPDF(p)}
+                                className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition"
+                                title={isRtl ? 'طباعة التفاصيل' : 'Print Details'}
+                              >
+                                <Printer className="w-4 h-4" />
+                              </button>
                               <button
                                 onClick={() => handleOpenActivityDetails(p.activityId)}
                                 className="p-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-xl transition"
@@ -2122,15 +2658,204 @@ export default function FieldPortal({
                     onClick={() => setCurrentStep(5)}
                     className="bg-[#040957] hover:bg-blue-800 text-white font-extrabold px-6 py-3 rounded-2xl text-xs flex items-center gap-1.5 transition"
                   >
-                    <span>{isRtl ? 'التالي: المراجعة والإرسال' : 'Next: Review & Transmit'}</span>
+                    <span>{isRtl ? 'التالي: طلب موارد ميدانية' : 'Next: Field Resource Requests'}</span>
                     <ChevronLeft className={`w-4 h-4 ${isRtl ? '' : 'rotate-180'}`} />
                   </button>
                 </div>
               </motion.div>
             )}
 
-            {/* STEP 5: REVIEW & TRANSMIT */}
+            {/* STEP 5: FIELD RESOURCE REQUESTS */}
             {currentStep === 5 && (
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+                <div className="space-y-1">
+                  <h2 className="text-base font-black text-[#040957] dark:text-white">
+                    🛒 {isRtl ? 'طلب موارد ومعدات وعمالة إضافية' : 'Request Resources, Equipment & Manpower'}
+                  </h2>
+                  <p className="text-xs text-gray-400">
+                    {isRtl ? 'اطلب احتياجاتك الميدانية من مواد أو معدات أو عمالة إضافية للعمل.' : 'Request your field needs for materials, equipment, or extra manpower for site operations.'}
+                  </p>
+                </div>
+
+                <div className="bg-gray-50/50 dark:bg-gray-900/10 border border-gray-150 dark:border-gray-800 rounded-3xl p-6 space-y-5">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-gray-500">{isRtl ? 'نوع المورد المطلوب:' : 'Resource Category:'}</label>
+                      <div className="flex bg-white dark:bg-gray-800 p-1 rounded-xl border border-gray-200 dark:border-gray-700">
+                        {[
+                          { id: 'Material', label: isRtl ? 'مواد' : 'Material', icon: Package },
+                          { id: 'Equipment', label: isRtl ? 'معدات' : 'Equipment', icon: Truck },
+                          { id: 'Manpower', label: isRtl ? 'عمالة' : 'Manpower', icon: Users }
+                        ].map(type => (
+                          <button
+                            key={type.id}
+                            onClick={() => {
+                              setReqType(type.id as any);
+                              setReqResourceId('');
+                            }}
+                            className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-[10px] font-black transition ${reqType === type.id ? 'bg-[#040957] text-white shadow-md' : 'text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                          >
+                            <type.icon className="w-3.5 h-3.5" />
+                            <span>{type.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-gray-500">
+                        {reqType === 'Material' ? (isRtl ? 'اختر المادة:' : 'Select Material:') : 
+                         reqType === 'Equipment' ? (isRtl ? 'اختر المعدة:' : 'Select Equipment:') : 
+                         (isRtl ? 'أدخل المهنة المطلوبة:' : 'Requested Profession:')}
+                      </label>
+                      {reqType === 'Material' ? (
+                        <select
+                          value={reqResourceId}
+                          onChange={(e) => setReqResourceId(e.target.value)}
+                          className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-xs font-bold bg-white dark:bg-gray-800 focus:ring-2"
+                        >
+                          <option value="">{isRtl ? 'اختر مادة...' : 'Select Material...'}</option>
+                          {materials.map(m => (
+                            <option key={m.id} value={m.id}>{isRtl ? m.nameAr : m.nameEn} ({m.unit})</option>
+                          ))}
+                        </select>
+                      ) : reqType === 'Equipment' ? (
+                        <select
+                          value={reqResourceId}
+                          onChange={(e) => setReqResourceId(e.target.value)}
+                          className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-xs font-bold bg-white dark:bg-gray-800 focus:ring-2"
+                        >
+                          <option value="">{isRtl ? 'اختر معدة...' : 'Select Equipment...'}</option>
+                          {equipment.map(e => (
+                            <option key={e.id} value={e.id}>{isRtl ? e.nameAr : e.nameEn}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input 
+                          type="text"
+                          value={reqResourceId}
+                          onChange={(e) => setReqResourceId(e.target.value)}
+                          placeholder={isRtl ? 'مثال: نجار مسلح' : 'e.g. Concrete Carpenter'}
+                          className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-xs font-bold bg-white dark:bg-gray-800 focus:ring-2"
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-gray-500">{isRtl ? 'الكمية / العدد المطلوب:' : 'Requested Quantity:'}</label>
+                      <input 
+                        type="number"
+                        value={reqQuantity}
+                        onChange={(e) => setReqQuantity(Number(e.target.value))}
+                        min={1}
+                        className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-xs font-bold bg-white dark:bg-gray-800 focus:ring-2"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-gray-500">{isRtl ? 'أولوية الطلب:' : 'Request Priority:'}</label>
+                      <select
+                        value={reqPriority}
+                        onChange={(e) => setReqPriority(e.target.value as any)}
+                        className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-xs font-bold bg-white dark:bg-gray-800 focus:ring-2"
+                      >
+                        <option value="Normal">{isRtl ? 'عادية' : 'Normal'}</option>
+                        <option value="Urgent">{isRtl ? 'عاجلة' : 'Urgent'}</option>
+                        <option value="Emergency">{isRtl ? 'حالة طوارئ' : 'Emergency'}</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-gray-500">{isRtl ? 'ملاحظات إضافية للمستودع/الإدارة:' : 'Additional Notes for Warehouse/Admin:'}</label>
+                    <textarea 
+                      value={reqNotes}
+                      onChange={(e) => setReqNotes(e.target.value)}
+                      placeholder={isRtl ? 'اشرح هنا سبب الاحتياج أو تفاصيل إضافية...' : 'Explain the reason or any extra specifications...'}
+                      className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-xs bg-white dark:bg-gray-800 h-20 focus:ring-2"
+                    />
+                  </div>
+
+                  <button
+                    onClick={handleSubmitFieldRequest}
+                    disabled={isSubmittingRequest || !reqResourceId}
+                    className="w-full bg-[#0080FF] hover:bg-blue-600 disabled:bg-gray-300 text-white font-black py-4 rounded-2xl text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-blue-100 dark:shadow-none"
+                  >
+                    {isSubmittingRequest ? <Clock className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                    <span>{isRtl ? 'إرسال طلب الموارد رسمياً' : 'Submit Official Resource Request'}</span>
+                  </button>
+
+                  {/* Recent Requests List */}
+                  {fieldRequests && fieldRequests.length > 0 && (
+                    <div className="pt-4 border-t border-gray-100 dark:border-gray-800">
+                      <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">
+                        {isRtl ? 'طلباتك الأخيرة' : 'Your Recent Requests'}
+                      </h3>
+                      <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                        {fieldRequests
+                          .filter(r => r.supervisorId === (supBadge || '000'))
+                          .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+                          .map(req => (
+                            <div key={req.id} className="bg-white dark:bg-gray-800/50 p-3 rounded-2xl border border-gray-100 dark:border-gray-800 flex justify-between items-center group">
+                              <div className="flex items-center gap-3">
+                                <div className={`p-2 rounded-xl ${
+                                  req.type === 'Material' ? 'bg-blue-50 text-blue-600' : 
+                                  req.type === 'Equipment' ? 'bg-amber-50 text-amber-600' : 
+                                  'bg-purple-50 text-purple-600'
+                                }`}>
+                                  {req.type === 'Material' ? <Package className="w-3.5 h-3.5" /> : 
+                                   req.type === 'Equipment' ? <Truck className="w-3.5 h-3.5" /> : 
+                                   <Users className="w-3.5 h-3.5" />}
+                                </div>
+                                <div>
+                                  <div className="text-[11px] font-black text-[#040957] dark:text-white">
+                                    {isRtl ? req.resourceNameAr : req.resourceNameEn}
+                                  </div>
+                                  <div className="text-[9px] text-gray-400 font-bold">
+                                    {req.quantity} {req.unit} • {new Date(req.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className={`text-[9px] font-black px-2.5 py-1 rounded-full ${
+                                req.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' :
+                                req.status === 'Rejected' ? 'bg-red-100 text-red-700' :
+                                req.status === 'Fulfilled' ? 'bg-blue-100 text-blue-700' :
+                                'bg-gray-100 text-gray-600'
+                              }`}>
+                                {req.status === 'Pending' ? (isRtl ? 'قيد الانتظار' : 'Pending') : 
+                                 req.status === 'Approved' ? (isRtl ? 'تم الاعتماد' : 'Approved') :
+                                 req.status === 'Rejected' ? (isRtl ? 'مرفوض' : 'Rejected') :
+                                 (isRtl ? 'تم التوريد' : 'Fulfilled')}
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex justify-between pt-4">
+                  <button
+                    onClick={() => setCurrentStep(4)}
+                    className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold px-6 py-3 rounded-2xl text-xs flex items-center gap-1.5 transition"
+                  >
+                    <ChevronRight className={`w-4 h-4 ${isRtl ? '' : 'rotate-180'}`} />
+                    <span>{isRtl ? 'السابق: سجل السلامة' : 'Back: Safety Record'}</span>
+                  </button>
+                  <button
+                    onClick={() => setCurrentStep(6)}
+                    className="bg-[#040957] hover:bg-blue-800 text-white font-extrabold px-6 py-3 rounded-2xl text-xs flex items-center gap-1.5 transition"
+                  >
+                    <span>{isRtl ? 'التالي: المراجعة النهائية' : 'Next: Final Review'}</span>
+                    <ChevronLeft className={`w-4 h-4 ${isRtl ? '' : 'rotate-180'}`} />
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {/* STEP 6: REVIEW & TRANSMIT */}
+            {currentStep === 6 && (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
                 <div className="space-y-1">
                   <h2 className="text-base font-black text-[#040957] dark:text-white">

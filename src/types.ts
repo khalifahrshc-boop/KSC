@@ -94,6 +94,7 @@ export interface Worker {
   hoursPerDay: number;
   status: 'Active' | 'On Leave' | 'Suspended';
   salary: number;
+  allowMultiActivity?: boolean;
 }
 
 export interface SupervisorCheckIn {
@@ -126,6 +127,25 @@ export interface AttendanceRecord {
   timestamp: string;
 }
 
+export interface MaterialConsumption {
+  materialId: string;
+  materialNameEn: string;
+  materialNameAr: string;
+  quantityUsed: number;
+  unit: string;
+}
+
+export interface MaterialDelivery {
+  id: string;
+  materialId: string;
+  materialNameEn: string;
+  materialNameAr: string;
+  quantityDelivered: number;
+  unit: string;
+  timestamp: string;
+  activityId: string;
+}
+
 export interface ProgressUpdate {
   id: string;
   projectId: string;
@@ -136,6 +156,7 @@ export interface ProgressUpdate {
   completedQuantity: number;
   numberOfWorkers: number;
   equipmentUsed: string[];
+  materialConsumptions?: MaterialConsumption[]; // Added tracking for materials
   completionPercentage: number;
   notes: string;
   photos: string[];
@@ -297,9 +318,28 @@ export interface FieldWorkSubmission {
   checkIn?: SupervisorCheckIn;
   attendanceRecords?: AttendanceRecord[];
   progressUpdates?: ProgressUpdate[];
+  materialDeliveries?: MaterialDelivery[];
   safetyRecord?: SafetyRecord;
   delayRecord?: DelayRecord;
   issueReport?: IssueReport;
+}
+
+export interface FieldRequest {
+  id: string;
+  projectId: string;
+  activityId?: string;
+  supervisorId: string;
+  supervisorName: string;
+  type: 'Material' | 'Equipment' | 'Manpower';
+  resourceId: string; // Material ID, Equipment ID, or Profession string
+  resourceNameEn: string;
+  resourceNameAr: string;
+  quantity: number;
+  unit: string;
+  status: 'Pending' | 'Approved' | 'Rejected' | 'Fulfilled';
+  priority: 'Normal' | 'Urgent' | 'Emergency';
+  notes?: string;
+  timestamp: string;
 }
 
 

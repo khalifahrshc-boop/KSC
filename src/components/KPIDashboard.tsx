@@ -64,6 +64,7 @@ interface KPIDashboardProps {
   delays?: DelayRecord[];
   issues?: IssueReport[];
   onDeleteProgressUpdate?: (id: string) => void;
+  onDeleteAttendanceRecord?: (id: string) => void;
   savedKpiReports?: SavedKpiReport[];
   onSaveKpiReport?: (report: Omit<SavedKpiReport, 'id'>) => Promise<void>;
   onDeleteKpiReport?: (id: string) => Promise<void>;
@@ -122,6 +123,7 @@ export default function KPIDashboard({
   delays = [],
   issues = [],
   onDeleteProgressUpdate,
+  onDeleteAttendanceRecord,
   savedKpiReports = [],
   onSaveKpiReport,
   onDeleteKpiReport,
@@ -173,6 +175,13 @@ export default function KPIDashboard({
 
   // State to filter metrics by a single project (or "all" for general enterprise metrics)
   const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
+
+  // Filter Date State
+  const [selectedFilterDate, setSelectedFilterDate] = useState<string>(() => {
+    const d = new Date();
+    // Default to 2026-06-25 if it's before that (based on sysNow logic)
+    return d.getFullYear() === 2026 ? d.toISOString().split('T')[0] : '2026-06-25';
+  });
 
   // State to toggle between Dashboard view and Official Report view
   const [isReportMode, setIsReportMode] = useState(false);
@@ -264,9 +273,12 @@ export default function KPIDashboard({
   }, [progressUpdates, filteredActivityIds, selectedProjectId]);
 
   const filteredAttendance = useMemo(() => {
-    if (selectedProjectId === 'all') return attendanceRecords;
-    return attendanceRecords.filter(r => r.projectId === selectedProjectId);
-  }, [attendanceRecords, selectedProjectId]);
+    let list = selectedProjectId === 'all' ? attendanceRecords : attendanceRecords.filter(r => r.projectId === selectedProjectId);
+    if (selectedFilterDate) {
+      list = list.filter(r => r.date === selectedFilterDate);
+    }
+    return list;
+  }, [attendanceRecords, selectedProjectId, selectedFilterDate]);
 
   const attendanceStats = useMemo(() => {
     const total = filteredAttendance.length;
@@ -279,9 +291,8 @@ export default function KPIDashboard({
 
   // 2. Daily Output Stats & Target Calculations for today (Dynamic to actual user inputs!)
   const sysNow = useMemo(() => {
-    const realNow = new Date();
-    return realNow.getFullYear() === 2026 ? realNow : new Date('2026-06-25');
-  }, []);
+    return new Date(selectedFilterDate);
+  }, [selectedFilterDate]);
 
   const totalDailyTarget = useMemo(() => {
     return filteredActivities.reduce((acc, act) => {
@@ -595,13 +606,15 @@ export default function KPIDashboard({
       
       const currentProgress = activityProgressMap[upd.activityId];
       const remaining = Math.max(0, totalQty - currentProgress);
+      const calculatedPercentage = totalQty > 0 ? Math.round((currentProgress / totalQty) * 100) : 0;
 
       return {
         ...upd,
         activityName: isRtl ? activity?.nameAr : activity?.nameEn,
         unit: activity?.unit,
         remaining,
-        totalQty
+        totalQty,
+        completionPercentage: calculatedPercentage
       };
     }).reverse(); // Show latest first in the log
   }, [filteredUpdates, activities, isRtl]);
@@ -1548,6 +1561,7 @@ export default function KPIDashboard({
                         <th className="p-2.5 text-center">{isRtl ? 'الكمية المضافة' : 'Quantity Appended'}</th>
                         <th className="p-2.5 text-center">{isRtl ? 'الكمية المتبقية' : 'Remaining To Deliver'}</th>
                         <th className="p-2.5 text-left">{isRtl ? 'نسبة الإنجاز %' : 'Achievement %'}</th>
+                        <th className="p-2.5 text-center">{isRtl ? 'إجراء' : 'Action'}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 bg-white">
@@ -1575,6 +1589,19 @@ export default function KPIDashboard({
                                 <div className="h-full bg-emerald-500" style={{ width: `${log.completionPercentage}%` }}></div>
                               </div>
                             </div>
+                          </td>
+                          <td className="p-2.5 text-center">
+                            <button
+                              onClick={() => {
+                                if (confirm(isRtl ? 'هل أنت متأكد من حذف هذا التحديث؟' : 'Are you sure you want to delete this update?')) {
+                                  onDeleteProgressUpdate?.(log.id);
+                                }
+                              }}
+                              className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+                              title={isRtl ? 'حذف' : 'Delete'}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -1735,7 +1762,19 @@ export default function KPIDashboard({
               </h2>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+              <div className="flex items-center gap-2 flex-1 md:flex-none">
+                <label className="text-xs font-black text-gray-500 whitespace-nowrap">
+                  {isRtl ? 'تاريخ البيانات:' : 'Data Date:'}
+                </label>
+                <input
+                  type="date"
+                  value={selectedFilterDate}
+                  onChange={(e) => setSelectedFilterDate(e.target.value)}
+                  className="w-full md:w-40 border border-gray-200 rounded-xl p-2.5 text-xs font-bold text-[#040957] bg-gray-50/50 focus:ring-2 focus:ring-[#0080FF] transition-all"
+                />
+              </div>
+
               <div className="flex items-center gap-2 flex-1 md:flex-none">
                 <label className="text-xs font-black text-gray-500 whitespace-nowrap">
                   {isRtl ? 'تصفية المشروع:' : 'Project Context:'}
@@ -2264,12 +2303,13 @@ export default function KPIDashboard({
                     <th className="p-2.5 text-center">{isRtl ? 'ساعات العمل' : 'Work Schedule'}</th>
                     <th className="p-2.5 text-center">{isRtl ? 'الوردية / الشفت' : 'Shift Type'}</th>
                     <th className="p-2.5 text-right">{isRtl ? 'ملاحظات وتوجيهات المشرف' : 'Supervisor Notes'}</th>
+                    <th className="p-2.5 text-center">{isRtl ? 'إجراءات' : 'Actions'}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-150 bg-white">
                   {filteredAttendance.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="p-12 text-center text-gray-400 italic font-medium">
+                      <td colSpan={8} className="p-12 text-center text-gray-400 italic font-medium">
                         {isRtl ? '⚠️ لا توجد سجلات حضور مسجلة حالياً للمشروع المحدد.' : 'No daily employee roster records found for the selected project.'}
                       </td>
                     </tr>
@@ -2346,6 +2386,19 @@ export default function KPIDashboard({
                         <td className="p-2.5 text-right text-gray-500 italic max-w-xs truncate">
                           {rec.notes || '-'}
                         </td>
+                        <td className="p-2.5 text-center">
+                          <button
+                            onClick={() => {
+                              if (confirm(isRtl ? 'هل أنت متأكد من حذف هذا السجل؟' : 'Are you sure you want to delete this record?')) {
+                                onDeleteAttendanceRecord?.(rec.id);
+                              }
+                            }}
+                            className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+                            title={isRtl ? 'حذف' : 'Delete'}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
                       </tr>
                     ))
                   )}
@@ -2353,6 +2406,7 @@ export default function KPIDashboard({
               </table>
             </div>
           </motion.div>
+
 
           {activeProject && (
             <motion.div 

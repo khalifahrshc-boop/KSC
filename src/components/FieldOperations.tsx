@@ -17,7 +17,11 @@ import {
   Worker,
   AttendanceRecord,
   SystemSettings,
-  FieldWorkSubmission
+  FieldWorkSubmission,
+  WarehouseMaterial,
+  MaterialConsumption,
+  MaterialDelivery,
+  FieldRequest
 } from '../types';
 import AttendanceReportGenerator from './AttendanceReportGenerator';
 import { renderToString } from 'react-dom/server';
@@ -49,7 +53,9 @@ import {
   Wrench,
   UserCheck,
   Calculator,
-  Calendar
+  Calendar,
+  Truck,
+  ShoppingCart
 } from 'lucide-react';
 
 interface FieldOperationsProps {
@@ -73,6 +79,9 @@ interface FieldOperationsProps {
   onApproveSubmission?: (submissionId: string, managerName: string) => Promise<void>;
   onRejectSubmission?: (submissionId: string, reason: string) => Promise<void>;
   currentUser?: any;
+  materials: WarehouseMaterial[];
+  fieldRequests?: FieldRequest[];
+  onUpdateFieldRequest?: (request: FieldRequest) => Promise<void>;
 }
 
 
@@ -132,7 +141,10 @@ export default function FieldOperations({
   fieldSubmissions = [],
   onApproveSubmission,
   onRejectSubmission,
-  currentUser
+  currentUser,
+  materials,
+  fieldRequests = [],
+  onUpdateFieldRequest
 }: FieldOperationsProps) {
   const isRtl = lang === 'ar';
   const isReadOnly = userRole === 'Viewer';
@@ -140,8 +152,16 @@ export default function FieldOperations({
   const [selectedProjectId, setSelectedProjectId] = useState<string>(projects[0]?.id || '');
 
   // Sub Module view tabs
-  const [activeTab, setActiveTab] = useState<'checkin' | 'attendance' | 'production' | 'safety' | 'delays' | 'issues' | 'approvals'>('checkin');
+  const [activeTab, setActiveTab] = useState<'checkin' | 'attendance' | 'production' | 'safety' | 'delays' | 'issues' | 'approvals' | 'requests'>('checkin');
   const [portalCopied, setPortalCopied] = useState(false);
+
+  // Material tracking state
+  const [materialDeliveries, setMaterialDeliveries] = useState<Omit<MaterialDelivery, 'id'>[]>([]);
+  const [currentConsumptions, setCurrentConsumptions] = useState<MaterialConsumption[]>([]);
+  const [tempMatId, setTempMatId] = useState('');
+  const [tempMatQty, setTempMatQty] = useState(0);
+  const [tempDelId, setTempDelId] = useState('');
+  const [tempDelQty, setTempDelQty] = useState(0);
 
 
   // --- Attendance Sheet Form State ---
@@ -271,6 +291,16 @@ export default function FieldOperations({
     }
   }, [prodActId, remainingQty, prodCompletedQty]);
 
+  // Calculate present workers count for current attendance date
+  const presentWorkersCount = Object.values(workerAttendanceState).filter((a: any) => a.isPresent).length;
+
+  // Clamping prodWorkersUsed if it exceeds presentWorkersCount
+  useEffect(() => {
+    if (prodWorkersUsed > presentWorkersCount) {
+      setProdWorkersUsed(presentWorkersCount);
+    }
+  }, [presentWorkersCount, prodWorkersUsed]);
+
   // Sync state on project change
   useEffect(() => {
     if (projectWorkItems.length > 0) {
@@ -375,6 +405,175 @@ export default function FieldOperations({
   };
 
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [isPrintingSubmission, setIsPrintingSubmission] = useState(false);
+
+  const handlePrintSubmissionPDF = async (submission: FieldWorkSubmission) => {
+    try {
+      setIsPrintingSubmission(true);
+      const html2pdf = (await import('html2pdf.js')).default;
+      
+      const targetProj = projects.find(p => p.id === submission.projectId);
+      const projectName = targetProj ? (isRtl ? targetProj.nameAr : targetProj.nameEn) : '---';
+
+      // Build attendance table
+      let attendanceHtml = '';
+      if (submission.attendanceRecords && submission.attendanceRecords.length > 0) {
+        attendanceHtml = `
+          <div style="margin-top: 15px;">
+            <h4 style="font-size: 12px; color: #040957; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px; margin-bottom: 10px;">
+              👥 ${isRtl ? 'كشف حضور العمالة المرفق' : 'Attached Workforce Attendance'}
+            </h4>
+            <table style="width: 100%; border-collapse: collapse; font-size: 10px;">
+              <thead>
+                <tr style="background-color: #f8fafc;">
+                  <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: ${isRtl ? 'right' : 'left'};">${isRtl ? 'الاسم' : 'Name'}</th>
+                  <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: center;">${isRtl ? 'المهنة' : 'Profession'}</th>
+                  <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: center;">${isRtl ? 'الحالة' : 'Status'}</th>
+                  <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: center;">${isRtl ? 'ملاحظات' : 'Notes'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${submission.attendanceRecords.map(r => `
+                  <tr>
+                    <td style="padding: 6px; border: 1px solid #e2e8f0; font-weight: bold;">${r.workerName}</td>
+                    <td style="padding: 6px; border: 1px solid #e2e8f0; text-align: center;">${isRtl ? r.professionAr : r.professionEn}</td>
+                    <td style="padding: 6px; border: 1px solid #e2e8f0; text-align: center;">
+                      <span style="color: ${r.isPresent ? '#059669' : '#dc2626'}; font-weight: bold;">${r.status}</span>
+                    </td>
+                    <td style="padding: 6px; border: 1px solid #e2e8f0;">${r.notes || '-'}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+
+      // Build production updates
+      let productionHtml = '';
+      if (submission.progressUpdates && submission.progressUpdates.length > 0) {
+        productionHtml = `
+          <div style="margin-top: 20px;">
+            <h4 style="font-size: 12px; color: #040957; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px; margin-bottom: 10px;">
+              📊 ${isRtl ? 'تفاصيل الإنجاز والإنتاجية' : 'Production & Progress Details'}
+            </h4>
+            ${submission.progressUpdates.map(p => {
+              const act = activities.find(a => a.id === p.activityId);
+              return `
+                <div style="background-color: #fcfcfc; border: 1px solid #f1f5f9; padding: 10px; border-radius: 8px; margin-bottom: 10px;">
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                    <strong style="font-size: 11px; color: #1e293b;">${isRtl ? act?.nameAr : act?.nameEn}</strong>
+                    <span style="font-size: 10px; color: #0284c7; font-weight: 800;">+${p.completedQuantity} ${act?.unit || ''}</span>
+                  </div>
+                  <div style="font-size: 9px; color: #64748b; display: flex; gap: 15px;">
+                    <span>⏱️ ${p.time}</span>
+                    <span>👷 ${p.numberOfWorkers} ${isRtl ? 'عمال' : 'workers'}</span>
+                  </div>
+                  ${p.notes ? `<p style="font-size: 9px; color: #475569; margin: 5px 0 0 0; font-style: italic;">Notes: ${p.notes}</p>` : ''}
+                  ${p.materialConsumptions && p.materialConsumptions.length > 0 ? `
+                    <div style="margin-top: 8px; padding-top: 5px; border-top: 1px dashed #e2e8f0;">
+                      <span style="font-size: 8px; font-weight: bold; color: #040957; text-transform: uppercase;">${isRtl ? 'المواد المستهلكة:' : 'Materials Used:'}</span>
+                      <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 3px;">
+                        ${p.materialConsumptions.map(c => `
+                          <span style="font-size: 8px; background-color: #eff6ff; color: #1d4ed8; padding: 2px 6px; border-radius: 4px;">
+                            ${isRtl ? c.materialNameAr : c.materialNameEn}: ${c.quantityUsed} ${c.unit}
+                          </span>
+                        `).join('')}
+                      </div>
+                    </div>
+                  ` : ''}
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `;
+      }
+
+      // Build safety/delay/issue summaries
+      let extrasHtml = '';
+      if (submission.safetyRecord || submission.delayRecord || submission.issueReport) {
+        extrasHtml = `
+          <div style="margin-top: 20px; display: grid; grid-template-cols: 1fr; gap: 15px;">
+            ${submission.safetyRecord ? `
+              <div style="border: 1px solid #bbf7d0; background-color: #f0fdf4; padding: 10px; border-radius: 8px;">
+                <h5 style="margin: 0 0 5px 0; font-size: 10px; color: #166534;">🛡️ ${isRtl ? 'سجل السلامة' : 'Safety Record'}</h5>
+                <p style="margin: 0; font-size: 9px;">${isRtl ? 'الحالة:' : 'Status:'} ${submission.safetyRecord.isSafe ? (isRtl ? 'آمن' : 'Safe') : (isRtl ? 'مخالفات' : 'Violations')}</p>
+                ${submission.safetyRecord.notes ? `<p style="margin: 3px 0 0 0; font-size: 8px; color: #4b5563;">${submission.safetyRecord.notes}</p>` : ''}
+              </div>
+            ` : ''}
+            ${submission.delayRecord ? `
+              <div style="border: 1px solid #fed7aa; background-color: #fff7ed; padding: 10px; border-radius: 8px;">
+                <h5 style="margin: 0 0 5px 0; font-size: 10px; color: #9a3412;">⚠️ ${isRtl ? 'سجل التأخير' : 'Delay Record'}</h5>
+                <p style="margin: 0; font-size: 9px;">${isRtl ? 'السبب:' : 'Reason:'} ${isRtl ? submission.delayRecord.reasonAr : submission.delayRecord.reasonEn}</p>
+                <p style="margin: 3px 0 0 0; font-size: 8px; color: #4b5563;">Impact: ${submission.delayRecord.impactLevel}</p>
+              </div>
+            ` : ''}
+          </div>
+        `;
+      }
+
+      const formattedDate = new Date(submission.timestamp).toLocaleString(isRtl ? 'ar-SA' : 'en-GB');
+
+      const content = `
+        <div style="font-family: 'Cairo', 'Inter', sans-serif; padding: 30px; direction: ${isRtl ? 'rtl' : 'ltr'}; color: #1e293b;">
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #040957; padding-bottom: 15px; margin-bottom: 20px;">
+            <div>
+              <h1 style="margin: 0; font-size: 18px; color: #040957;">${isRtl ? settings.companyNameAr : settings.companyNameEn}</h1>
+              <p style="margin: 5px 0 0 0; font-size: 10px; color: #64748b;">${isRtl ? 'تقرير تفاصيل العمل الميداني والاعتماد الرقمي' : 'Official Field Work Detail & Digital Approval Report'}</p>
+            </div>
+            <div style="text-align: ${isRtl ? 'left' : 'right'};">
+              <div style="font-size: 10px; font-weight: bold; color: #040957;">ID: ${submission.id}</div>
+              <div style="font-size: 9px; color: #94a3b8;">${formattedDate}</div>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-cols: 1fr 1fr; gap: 20px; margin-bottom: 25px;">
+            <div style="background-color: #f8fafc; padding: 12px; border-radius: 10px; border: 1px solid #e2e8f0;">
+              <div style="font-size: 8px; color: #64748b; font-weight: bold; text-transform: uppercase; margin-bottom: 4px;">${isRtl ? 'المشروع' : 'Project'}</div>
+              <div style="font-size: 11px; font-weight: bold; color: #1e293b;">${projectName}</div>
+            </div>
+            <div style="background-color: #f8fafc; padding: 12px; border-radius: 10px; border: 1px solid #e2e8f0;">
+              <div style="font-size: 8px; color: #64748b; font-weight: bold; text-transform: uppercase; margin-bottom: 4px;">${isRtl ? 'المشرف المسؤول' : 'Responsible Supervisor'}</div>
+              <div style="font-size: 11px; font-weight: bold; color: #1e293b;">${submission.supervisorName} (${submission.badgeNumber})</div>
+            </div>
+          </div>
+
+          <div style="background-color: ${submission.status === 'Approved' ? '#f0fdf4' : submission.status === 'Rejected' ? '#fef2f2' : '#fffbeb'}; border: 1px solid ${submission.status === 'Approved' ? '#bbf7d0' : submission.status === 'Rejected' ? '#fecaca' : '#fef08a'}; border-radius: 10px; padding: 12px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 11px; font-weight: 800; color: ${submission.status === 'Approved' ? '#166534' : submission.status === 'Rejected' ? '#991b1b' : '#92400e'};">
+              ${isRtl ? 'حالة الطلب السحابية:' : 'Cloud Submission Status:'} ${submission.status.toUpperCase()}
+            </span>
+            ${submission.approvedBy ? `<span style="font-size: 9px; color: #166534; font-weight: bold;">Verified by: ${submission.approvedBy}</span>` : ''}
+          </div>
+
+          ${attendanceHtml}
+          ${productionHtml}
+          ${extrasHtml}
+
+          <div style="margin-top: 40px; border-top: 1px dashed #cbd5e1; padding-top: 20px; text-align: center; font-size: 9px; color: #94a3b8;">
+            ${isRtl ? 'هذا المستند تم توليده رقمياً من نظام إدارة الميدان السحابي ولا يحتاج لختم حي' : 'This document is digitally generated by the Cloud Field Management System and is officially verified.'}
+          </div>
+        </div>
+      `;
+
+      const opt = {
+        margin: 10,
+        filename: `Detail_Report_${submission.id}.pdf`,
+        image: { type: 'jpeg' as const, quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
+      };
+
+      await runWithOklchSanitizer(async () => {
+        await html2pdf().set(opt).from(content).save();
+      });
+
+    } catch (error) {
+      console.error('Submission PDF Error:', error);
+      alert('Error generating PDF report.');
+    } finally {
+      setIsPrintingSubmission(false);
+    }
+  };
 
   const generateAttendancePDF = async () => {
     try {
@@ -659,6 +858,13 @@ export default function FieldOperations({
       return;
     }
 
+    if (prodWorkersUsed > presentWorkersCount) {
+      alert(isRtl 
+        ? `لا يمكن أن يتجاوز عدد العمال عدد الحاضرين اليوم (${presentWorkersCount}).` 
+        : `Number of workers cannot exceed present workers count (${presentWorkersCount}).`);
+      return;
+    }
+
     if (qtyToAdd > remainingQty) {
       alert(isRtl 
         ? `لا يمكن تجاوز الكمية المتبقية (${remainingQty} ${currentActivity?.unit}).` 
@@ -676,6 +882,7 @@ export default function FieldOperations({
       completedQuantity: qtyToAdd,
       numberOfWorkers: Number(prodWorkersUsed),
       equipmentUsed: ['Machinery Active'],
+      materialConsumptions: currentConsumptions,
       completionPercentage: Math.round(((activityProgress + qtyToAdd) / (currentActivity?.totalQuantity || 1)) * 100),
       notes: prodNotes,
       photos: simulatedFiles.filter(f => f.type === 'photo').map(f => f.name),
@@ -686,8 +893,66 @@ export default function FieldOperations({
     onAddProgressUpdate(updateRec);
     // Reset forms
     setProdNotes('');
+    setCurrentConsumptions([]);
     setSimulatedFiles([]);
     triggerToast(t.updateSuccess);
+  };
+
+  const handleAddMaterialDelivery = (materialId: string, quantity: number) => {
+    const mat = materials.find(m => m.id === materialId);
+    if (!mat || quantity <= 0) return;
+
+    const delivery: Omit<MaterialDelivery, 'id'> = {
+      materialId,
+      materialNameEn: mat.nameEn,
+      materialNameAr: mat.nameAr,
+      quantityDelivered: quantity,
+      unit: mat.unit,
+      timestamp: new Date().toISOString(),
+      activityId: prodActId
+    };
+
+    setMaterialDeliveries(prev => [...prev, delivery]);
+    triggerToast(isRtl ? 'تم تسجيل توريد المادة للموقع' : 'Material delivery recorded on site');
+  };
+
+  const handleAddConsumption = (materialId: string, quantity: number) => {
+    const mat = materials.find(m => m.id === materialId);
+    if (!mat || quantity <= 0) return;
+
+    // Calculate current available on site for this activity
+    const delivered = materialDeliveries
+      .filter(d => d.activityId === prodActId && d.materialId === materialId)
+      .reduce((sum, d) => sum + d.quantityDelivered, 0);
+    
+    const consumedInSession = progressUpdates
+      .filter(upd => upd.activityId === prodActId)
+      .flatMap(upd => upd.materialConsumptions || [])
+      .filter(c => c.materialId === materialId)
+      .reduce((sum, c) => sum + c.quantityUsed, 0);
+    
+    const currentFormConsumed = currentConsumptions
+      .filter(c => c.materialId === materialId)
+      .reduce((sum, c) => sum + c.quantityUsed, 0);
+
+    const availableOnSite = delivered - consumedInSession - currentFormConsumed;
+
+    if (quantity > availableOnSite) {
+      alert(isRtl 
+        ? `الكمية المتوفرة في الموقع (${availableOnSite} ${mat.unit}) أقل من الكمية المطلوبة.` 
+        : `Available on site (${availableOnSite} ${mat.unit}) is less than requested quantity.`);
+      return;
+    }
+
+    const consumption: MaterialConsumption = {
+      materialId,
+      materialNameEn: mat.nameEn,
+      materialNameAr: mat.nameAr,
+      quantityUsed: quantity,
+      unit: mat.unit
+    };
+
+    setCurrentConsumptions(prev => [...prev, consumption]);
   };
 
   // Safety Submit
@@ -895,6 +1160,19 @@ export default function FieldOperations({
         >
           <Users className="w-3.5 h-3.5" />
           <span>{isRtl ? '٦. تحضير الموظفين والعمالة' : '6. Employee Attendance'}</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('requests')}
+          className={`py-2 px-4 rounded-lg text-xs font-bold transition flex items-center gap-1.5 relative ${activeTab === 'requests' ? 'bg-[#040957] text-white shadow-md' : 'text-gray-500 hover:bg-blue-100/50 hover:text-blue-700'}`}
+        >
+          <ShoppingCart className="w-3.5 h-3.5" />
+          <span>{isRtl ? 'طلبات الموارد الميدانية' : 'Field Resource Requests'}</span>
+          {fieldRequests.filter(r => r.status === 'Pending').length > 0 && (
+            <span className="bg-[#0080FF] text-white text-[9px] rounded-full px-1.5 py-0.5 font-black shrink-0">
+              {fieldRequests.filter(r => r.status === 'Pending').length}
+            </span>
+          )}
         </button>
 
         <button
@@ -1442,6 +1720,116 @@ export default function FieldOperations({
             </form>
           )}
 
+          {/* TAB: FIELD RESOURCE REQUESTS */}
+          {activeTab === 'requests' && (
+            <div className="space-y-6">
+              <div className="border-b border-gray-100 pb-3 flex justify-between items-center">
+                <div>
+                  <h3 className="font-extrabold text-base text-blue-700 font-sans flex items-center gap-2">
+                    <ShoppingCart className="w-5 h-5" />
+                    {isRtl ? 'طلبات الموارد الميدانية للمشرفين' : 'Supervisor Field Resource Requests'}
+                  </h3>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {isRtl ? 'إدارة واعتماد طلبات المواد والمعدات والعمالة الإضافية الواردة من الميدان.' : 'Manage and approve incoming site requests for materials, equipment, and extra manpower.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4">
+                {fieldRequests.length === 0 ? (
+                  <div className="bg-gray-50 border border-dashed border-gray-200 rounded-3xl p-12 text-center">
+                    <Package className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                    <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest">
+                      {isRtl ? 'لا توجد طلبات معلقة حالياً' : 'No pending requests found'}
+                    </h4>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {fieldRequests
+                      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+                      .map(req => (
+                        <div key={req.id} className="bg-white rounded-3xl border border-gray-100 p-4 shadow-sm hover:shadow-md transition group">
+                          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                            <div className="flex items-center gap-4">
+                              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
+                                req.type === 'Material' ? 'bg-blue-50 text-blue-600' : 
+                                req.type === 'Equipment' ? 'bg-amber-50 text-amber-600' : 
+                                'bg-purple-50 text-purple-600'
+                              }`}>
+                                {req.type === 'Material' ? <Package className="w-6 h-6" /> : 
+                                 req.type === 'Equipment' ? <Truck className="w-6 h-6" /> : 
+                                 <Users className="w-6 h-6" />}
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <h4 className="text-sm font-black text-[#040957]">{isRtl ? req.resourceNameAr : req.resourceNameEn}</h4>
+                                  <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
+                                    req.priority === 'Emergency' ? 'bg-red-600 text-white animate-pulse' :
+                                    req.priority === 'Urgent' ? 'bg-amber-500 text-white' :
+                                    'bg-gray-100 text-gray-500'
+                                  }`}>
+                                    {req.priority.toUpperCase()}
+                                  </span>
+                                </div>
+                                <div className="text-[10px] text-gray-500 font-bold flex items-center gap-2 mt-0.5">
+                                  <span>{isRtl ? 'بواسطة:' : 'By:'} {req.supervisorName}</span>
+                                  <span>•</span>
+                                  <span>{new Date(req.timestamp).toLocaleString()}</span>
+                                </div>
+                                {req.notes && (
+                                  <div className="mt-2 text-[10px] text-gray-400 bg-gray-50 p-2 rounded-lg border border-gray-100 italic">
+                                    "{req.notes}"
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-3">
+                              <div className="text-right px-4 border-r border-gray-100">
+                                <div className="text-[10px] font-bold text-gray-400 uppercase">{isRtl ? 'الكمية المطلوبة' : 'Qty Requested'}</div>
+                                <div className="text-lg font-black text-[#040957]">{req.quantity} <span className="text-xs text-gray-400">{req.unit}</span></div>
+                              </div>
+
+                              <div className="flex gap-2">
+                                {req.status === 'Pending' ? (
+                                  <>
+                                    <button
+                                      onClick={() => onUpdateFieldRequest && onUpdateFieldRequest({ ...req, status: 'Approved' })}
+                                      className="bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-4 rounded-xl text-[10px] font-black transition flex items-center gap-1.5 shadow-sm"
+                                    >
+                                      <Check className="w-3.5 h-3.5" />
+                                      {isRtl ? 'اعتماد الطلب' : 'Approve'}
+                                    </button>
+                                    <button
+                                      onClick={() => onUpdateFieldRequest && onUpdateFieldRequest({ ...req, status: 'Rejected' })}
+                                      className="bg-red-50 hover:bg-red-100 text-red-600 py-2 px-4 rounded-xl text-[10px] font-black transition"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                      {isRtl ? 'رفض' : 'Reject'}
+                                    </button>
+                                  </>
+                                ) : (
+                                  <div className={`py-2 px-6 rounded-xl text-[10px] font-black uppercase tracking-widest ${
+                                    req.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' :
+                                    req.status === 'Rejected' ? 'bg-red-100 text-red-700' :
+                                    'bg-blue-100 text-blue-700'
+                                  }`}>
+                                    {req.status === 'Approved' ? (isRtl ? 'تم الاعتماد' : 'Approved') :
+                                     req.status === 'Rejected' ? (isRtl ? 'تم الرفض' : 'Rejected') :
+                                     (isRtl ? 'تم التوريد' : 'Fulfilled')}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* TAB: FIELD WORK APPROVALS QUEUE */}
           {activeTab === 'approvals' && (
             <div className="space-y-6">
@@ -1602,41 +1990,54 @@ export default function FieldOperations({
                             </div>
 
                             {/* Approval/Rejection buttons */}
-                            {isPending && (
-                              <div className="flex gap-2 shrink-0">
-                                <button
-                                  type="button"
-                                  onClick={async () => {
-                                    if (onApproveSubmission) {
-                                      if (confirm(isRtl ? 'هل أنت متأكد من مراجعة واعتماد هذا التقرير اليومي بالكامل ودمجه بقاعدة البيانات؟' : 'Are you sure you want to approve this field report and merge its data?')) {
-                                        await onApproveSubmission(sub.id, currentUser?.name || 'Authorized Manager');
-                                        triggerToast(isRtl ? 'تم اعتماد التقرير الميداني ودمجه بنجاح!' : 'Field Work approved and integrated successfully!');
+                            <div className="flex gap-2 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handlePrintSubmissionPDF(sub)}
+                                disabled={isPrintingSubmission}
+                                className="bg-white hover:bg-gray-100 text-slate-700 border border-gray-200 font-extrabold text-[11px] py-1.5 px-3 rounded-lg shadow-xs flex items-center gap-1 transition cursor-pointer"
+                                title={isRtl ? 'طباعة التفاصيل' : 'Print Details'}
+                              >
+                                {isPrintingSubmission ? <Clock className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
+                                <span className="hidden sm:inline">{isRtl ? 'طباعة' : 'Print'}</span>
+                              </button>
+
+                              {isPending && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      if (onApproveSubmission) {
+                                        if (confirm(isRtl ? 'هل أنت متأكد من مراجعة واعتماد هذا التقرير اليومي بالكامل ودمجه بقاعدة البيانات؟' : 'Are you sure you want to approve this field report and merge its data?')) {
+                                          await onApproveSubmission(sub.id, currentUser?.name || 'Authorized Manager');
+                                          triggerToast(isRtl ? 'تم اعتماد التقرير الميداني ودمجه بنجاح!' : 'Field Work approved and integrated successfully!');
+                                        }
                                       }
-                                    }
-                                  }}
-                                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] py-1.5 px-3 rounded-lg shadow-xs flex items-center gap-1 transition cursor-pointer"
-                                >
-                                  <Check className="w-3.5 h-3.5" />
-                                  <span>{isRtl ? 'اعتماد ودمج' : 'Approve & Sync'}</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={async () => {
-                                    if (onRejectSubmission) {
-                                      const reason = prompt(isRtl ? 'أدخل سبب رفض التقرير والاعتراض الميداني:' : 'Enter reason for rejecting this log submission:');
-                                      if (reason !== null) {
-                                        await onRejectSubmission(sub.id, reason || 'Incomplete data');
-                                        triggerToast(isRtl ? 'تم رفض التقرير وإعادته للمشرف للتعديل' : 'Field Work rejected and sent back to supervisor');
+                                    }}
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] py-1.5 px-3 rounded-lg shadow-xs flex items-center gap-1 transition cursor-pointer"
+                                  >
+                                    <Check className="w-3.5 h-3.5" />
+                                    <span>{isRtl ? 'اعتماد ودمج' : 'Approve & Sync'}</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      if (onRejectSubmission) {
+                                        const reason = prompt(isRtl ? 'أدخل سبب رفض التقرير والاعتراض الميداني:' : 'Enter reason for rejecting this log submission:');
+                                        if (reason !== null) {
+                                          await onRejectSubmission(sub.id, reason || 'Incomplete data');
+                                          triggerToast(isRtl ? 'تم رفض التقرير وإعادته للمشرف للتعديل' : 'Field Work rejected and sent back to supervisor');
+                                        }
                                       }
-                                    }
-                                  }}
-                                  className="bg-red-600 hover:bg-red-700 text-white font-extrabold text-[11px] py-1.5 px-3 rounded-lg shadow-xs flex items-center gap-1 transition cursor-pointer"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                  <span>{isRtl ? 'رفض' : 'Reject'}</span>
-                                </button>
-                              </div>
-                            )}
+                                    }}
+                                    className="bg-red-600 hover:bg-red-700 text-white font-extrabold text-[11px] py-1.5 px-3 rounded-lg shadow-xs flex items-center gap-1 transition cursor-pointer"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                    <span>{isRtl ? 'رفض' : 'Reject'}</span>
+                                  </button>
+                                </>
+                              )}
+                            </div>
 
                             {isApproved && (
                               <div className="text-[10px] text-emerald-600 font-extrabold">
@@ -1905,6 +2306,33 @@ export default function FieldOperations({
                       />
                     </div>
 
+                    {/* Workers Involved Input */}
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-gray-500 flex justify-between items-center">
+                        <span>{isRtl ? 'عدد العمال المشاركين:' : 'Workers Involved:'}</span>
+                        <span className="text-amber-600 font-mono text-[10px]">
+                          ({isRtl ? 'الحاضرون:' : 'Present:'} {presentWorkersCount})
+                        </span>
+                      </label>
+                      <input 
+                        type="number" 
+                        value={prodWorkersUsed}
+                        max={presentWorkersCount}
+                        min={0}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          if (val > presentWorkersCount) {
+                            setProdWorkersUsed(presentWorkersCount);
+                          } else if (val < 0) {
+                            setProdWorkersUsed(0);
+                          } else {
+                            setProdWorkersUsed(val);
+                          }
+                        }}
+                        className="w-full border border-gray-200 rounded-xl p-2.5 text-xs font-semibold focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+
                     {/* Calculated Progress Display (Automatic & Cumulative) */}
                     <div className="space-y-1">
                       <label className="block text-xs font-bold text-gray-500">{t.progressPercentage} ({isRtl ? 'تلقائي تراكمي' : 'Auto Cumulative'})</label>
@@ -1983,6 +2411,147 @@ export default function FieldOperations({
                           ⚠️ {isRtl ? `تنبيه: لقد استهلكت كامل الرصيد المتبقي المتاح (${remainingQty} ${currentActivity?.unit})` : `Warning: You are recording the entire remaining scope (${remainingQty} ${currentActivity?.unit})`}
                         </div>
                       )}
+                    </div>
+
+                    {/* MATERIAL MANAGEMENT SECTION */}
+                    <div className="sm:col-span-3 space-y-4 pt-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-[11px] font-black text-[#040957] uppercase tracking-widest flex items-center gap-1.5">
+                          🏗️ {isRtl ? 'إدارة المواد والمخزون الميداني' : 'On-Site Material & Inventory Management'}
+                        </h4>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Delivery from Warehouse */}
+                        <div className="bg-amber-50/50 border border-amber-100 rounded-2xl p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-amber-800 uppercase">
+                              {isRtl ? 'إضافة مواد من المستودع للموقع (توريد)' : 'Add Materials from Warehouse (Delivery)'}
+                            </span>
+                            <Truck className="w-4 h-4 text-amber-500" />
+                          </div>
+                          <div className="flex flex-col gap-2">
+                            <select
+                              value={tempDelId}
+                              onChange={(e) => setTempDelId(e.target.value)}
+                              className="w-full border border-gray-200 rounded-xl p-2 text-[11px] font-bold bg-white"
+                            >
+                              <option value="">{isRtl ? 'اختر المادة...' : 'Select Material...'}</option>
+                              {materials.map(m => (
+                                <option key={m.id} value={m.id}>{isRtl ? m.nameAr : m.nameEn} ({m.unit})</option>
+                              ))}
+                            </select>
+                            <div className="flex gap-2">
+                              <input 
+                                type="number"
+                                value={tempDelQty}
+                                onChange={(e) => setTempDelQty(Number(e.target.value))}
+                                placeholder={isRtl ? 'الكمية' : 'Qty'}
+                                className="w-full border border-gray-200 rounded-xl p-2 text-[11px] font-bold bg-white"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (tempDelId && tempDelQty > 0) {
+                                    handleAddMaterialDelivery(tempDelId, tempDelQty);
+                                    setTempDelId('');
+                                    setTempDelQty(0);
+                                  }
+                                }}
+                                className="bg-amber-400 hover:bg-amber-500 text-slate-900 font-bold py-2 px-4 rounded-xl text-[10px] transition shrink-0"
+                              >
+                                {isRtl ? 'تسجيل توريد' : 'Record Delivery'}
+                              </button>
+                            </div>
+                          </div>
+
+                          {materialDeliveries.filter(d => d.activityId === prodActId).length > 0 && (
+                            <div className="pt-2 flex flex-wrap gap-2">
+                              {materialDeliveries.filter(d => d.activityId === prodActId).map((d, i) => (
+                                <div key={i} className="bg-white px-2 py-1 rounded-lg border border-amber-200 text-[9px] font-bold flex items-center gap-1.5">
+                                  🚚 {isRtl ? d.materialNameAr : d.materialNameEn}: {d.quantityDelivered} {d.unit}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Consumption Tracking */}
+                        <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-blue-800 uppercase">
+                              {isRtl ? 'تسجيل الاستهلاك لهذا التحديث' : 'Record Consumption for this Update'}
+                            </span>
+                            <Package className="w-4 h-4 text-blue-500" />
+                          </div>
+                          
+                          <div className="flex flex-col gap-2">
+                            <select
+                              value={tempMatId}
+                              onChange={(e) => setTempMatId(e.target.value)}
+                              className="w-full border border-gray-200 rounded-xl p-2 text-[11px] font-bold bg-white"
+                            >
+                              <option value="">{isRtl ? 'اختر المادة للموقع...' : 'Select Material...'}</option>
+                              {materials.map(m => {
+                                const delivered = materialDeliveries
+                                  .filter(d => d.activityId === prodActId && d.materialId === m.id)
+                                  .reduce((sum, d) => sum + d.quantityDelivered, 0);
+                                const consumed = progressUpdates
+                                  .filter(upd => upd.activityId === prodActId)
+                                  .flatMap(upd => upd.materialConsumptions || [])
+                                  .filter(c => c.materialId === m.id)
+                                  .reduce((sum, c) => sum + c.quantityUsed, 0);
+                                const onSite = delivered - consumed;
+                                if (onSite <= 0) return null;
+                                return (
+                                  <option key={m.id} value={m.id}>
+                                    {isRtl ? m.nameAr : m.nameEn} ({isRtl ? 'المتوفر:' : 'Avail:'} {onSite} {m.unit})
+                                  </option>
+                                );
+                              })}
+                            </select>
+                            <div className="flex gap-2">
+                              <input 
+                                type="number"
+                                value={tempMatQty}
+                                onChange={(e) => setTempMatQty(Number(e.target.value))}
+                                placeholder={isRtl ? 'الكمية' : 'Qty'}
+                                className="w-full border border-gray-200 rounded-xl p-2 text-[11px] font-bold bg-white"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (tempMatId && tempMatQty > 0) {
+                                    handleAddConsumption(tempMatId, tempMatQty);
+                                    setTempMatId('');
+                                    setTempMatQty(0);
+                                  }
+                                }}
+                                className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-xl text-[10px] transition shrink-0"
+                              >
+                                {isRtl ? 'إضافة استهلاك' : 'Add Consumption'}
+                              </button>
+                            </div>
+                          </div>
+
+                          {currentConsumptions.length > 0 && (
+                            <div className="pt-2 flex flex-wrap gap-2">
+                              {currentConsumptions.map((c, i) => (
+                                <div key={i} className="bg-white px-2 py-1 rounded-lg border border-blue-200 text-[9px] font-bold flex items-center gap-1.5 group">
+                                  ⚙️ {isRtl ? c.materialNameAr : c.materialNameEn}: -{c.quantityUsed} {c.unit}
+                                  <button 
+                                    type="button"
+                                    onClick={() => setCurrentConsumptions(prev => prev.filter((_, idx) => idx !== i))}
+                                    className="text-red-500 hover:text-red-700"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
 
