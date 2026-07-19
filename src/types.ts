@@ -54,6 +54,7 @@ export interface Activity {
   materialAllocations?: { id: string; quantity: number }[];
   equipmentAllocations?: { id: string; quantity: number }[];
   dependsOnActivityId?: string;
+  isCritical?: boolean;
   // Smart planning fields calculated on run
   plannedDailyProduction?: number;
   expectedDurationDays?: number;
@@ -155,6 +156,7 @@ export interface ProgressUpdate {
   time: string; // e.g. "10:00 AM" or full ISO
   completedQuantity: number;
   numberOfWorkers: number;
+  workerNames?: string[];
   equipmentUsed: string[];
   materialConsumptions?: MaterialConsumption[]; // Added tracking for materials
   completionPercentage: number;
@@ -341,5 +343,15 @@ export interface FieldRequest {
   notes?: string;
   timestamp: string;
 }
+
+export interface QuickNote {
+  id: string;
+  userId: string;
+  userName: string;
+  content: string;
+  timestamp: string; // ISO String
+  date: string; // YYYY-MM-DD
+}
+
 
 

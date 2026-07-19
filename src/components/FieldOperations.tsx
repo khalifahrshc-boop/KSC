@@ -151,6 +151,73 @@ export default function FieldOperations({
 
   const [selectedProjectId, setSelectedProjectId] = useState<string>(projects[0]?.id || '');
 
+  // AI Audit States
+  const [auditingSubId, setAuditingSubId] = useState<string | null>(null);
+  const [auditResults, setAuditResults] = useState<Record<string, {
+    integrityScore: number;
+    status: 'Verified' | 'Warning' | 'High Risk';
+    verificationSummaryEn: string;
+    verificationSummaryAr: string;
+    anomalies: Array<{ typeEn: string; typeAr: string; severity: 'Low' | 'Medium' | 'High'; detailsEn: string; detailsAr: string }>;
+    processImprovements: Array<{ titleEn: string; titleAr: string; descriptionEn: string; descriptionAr: string; impact: string }>;
+  }>>({});
+  const [auditError, setAuditError] = useState<Record<string, string>>({});
+  const [auditLoadingMessage, setAuditLoadingMessage] = useState<string>('');
+
+  const runSmartAudit = async (submission: any) => {
+    setAuditingSubId(submission.id);
+    setAuditError(prev => ({ ...prev, [submission.id]: '' }));
+    
+    const messages = isRtl 
+      ? [
+          'جاري فحص توافق أعداد العمالة المسجلة...',
+          'جاري مقارنة الكميات المنجزة مع الحدود الإنشائية المخططة...',
+          'جاري تدقيق السجلات المتقاطعة مع محاضر الأعطال والطقس...',
+          'جاري صياغة التوصيات الإدارية وتحسين خطط تدارك التأخير...'
+        ]
+      : [
+          'Analyzing workforce attendance ratios...',
+          'Checking reported quantities against structural planning targets...',
+          'Cross-referencing production output logs with reported delays...',
+          'Generating strategic process optimization plans...'
+        ];
+        
+    let msgIdx = 0;
+    setAuditLoadingMessage(messages[0]);
+    const interval = setInterval(() => {
+      msgIdx = (msgIdx + 1) % messages.length;
+      setAuditLoadingMessage(messages[msgIdx]);
+    }, 2000);
+
+    try {
+      const response = await fetch('/api/gemini/audit-submission', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          submission,
+          activities,
+          workers
+        })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Failed to complete smart audit');
+      }
+
+      const result = await response.json();
+      setAuditResults(prev => ({ ...prev, [submission.id]: result }));
+    } catch (err: any) {
+      console.error(err);
+      setAuditError(prev => ({ ...prev, [submission.id]: err.message }));
+    } finally {
+      clearInterval(interval);
+      setAuditingSubId(null);
+    }
+  };
+
   // Sub Module view tabs
   const [activeTab, setActiveTab] = useState<'checkin' | 'attendance' | 'production' | 'safety' | 'delays' | 'issues' | 'approvals' | 'requests'>('checkin');
   const [portalCopied, setPortalCopied] = useState(false);
@@ -1055,14 +1122,14 @@ export default function FieldOperations({
           <motion.div 
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-white dark:bg-[#1C2638] p-8 rounded-3xl shadow-2xl flex flex-col items-center gap-6 border border-slate-200 dark:border-slate-800"
+            className="bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center gap-6 border border-slate-200"
           >
-            <div className="relative text-[#040957] dark:text-[#0080FF]">
+            <div className="relative text-[#040957]">
               <div className="w-16 h-16 border-4 border-current border-t-transparent rounded-full animate-spin"></div>
               <Printer className="w-6 h-6 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
             </div>
             <div className="text-center">
-              <h3 className="text-lg font-black text-[#040957] dark:text-white uppercase tracking-widest mb-2">
+              <h3 className="text-lg font-black text-[#040957] uppercase tracking-widest mb-2">
                 {isRtl ? 'جاري تصدير التقرير' : 'Generating Report'}
               </h3>
               <p className="text-xs text-slate-400 font-bold uppercase tracking-tight">
@@ -1082,26 +1149,26 @@ export default function FieldOperations({
       )}
 
       {/* Blue Header Site Tablet banner */}
-      <div className="bg-[#040957] text-white p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-blue-900">
+      <div className="bg-white border-b border-gray-200 p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <span className="text-[10px] bg-red-500 hover:bg-red-600 text-white py-0.5 px-2.5 rounded-full font-bold uppercase tracking-wider animate-pulse">
+          <span className="text-[10px] bg-blue-50 border border-blue-100 text-[#0080FF] py-1 px-3 rounded-full font-bold uppercase tracking-wider">
             {isRtl ? 'نظام التحكم والمراقبة اللوحي بالموقع' : 'Site Field Tablet Controller'}
           </span>
-          <h2 className="text-xl font-black mt-1 font-sans">
+          <h2 className="text-xl font-black mt-2 font-sans text-[#040957]">
             {t.fieldDashboard}
           </h2>
-          <p className="text-xs text-blue-100">
+          <p className="text-xs text-gray-500 font-medium">
             {isRtl ? 'تحديث فوري كل ساعتين، إمضاء حضور، رصد مخالفات هاس، وتسجيل المعوقات' : 'Continuous 2-hour logs, safety compliance seals, and delay audits'}
           </p>
         </div>
 
         {/* Project Selector inside controller */}
         <div className="flex items-center gap-2">
-          <label className="text-xs font-bold text-gray-300 hidden md:inline">{isRtl ? 'المشروع القائم' : 'Focused project'}:</label>
+          <label className="text-xs font-bold text-gray-500 hidden md:inline">{isRtl ? 'المشروع القائم' : 'Focused project'}:</label>
           <select
             value={selectedProjectId}
             onChange={(e) => setSelectedProjectId(e.target.value)}
-            className="bg-white/10 text-white font-bold border border-white/20 py-1.5 px-3 rounded-lg text-xs outline-none focus:ring-2 focus:ring-[#0080FF]"
+            className="bg-slate-50 text-slate-800 font-bold border border-gray-200 py-1.5 px-3 rounded-lg text-xs outline-none focus:ring-2 focus:ring-[#0080FF] cursor-pointer"
           >
             {projects.map(p => (
               <option key={p.id} value={p.id} className="text-[#040957]">
@@ -1113,10 +1180,10 @@ export default function FieldOperations({
       </div>
 
       {/* Under-header Operations Selector Buttons */}
-      <div className="bg-white border-b border-gray-200 p-2 flex flex-wrap gap-1.5 scrollbar-thin">
+      <div className="bg-slate-50/50 border-b border-gray-200 p-2.5 flex flex-wrap gap-1.5 scrollbar-thin">
         <button
           onClick={() => setActiveTab('checkin')}
-          className={`py-2 px-4 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${activeTab === 'checkin' ? 'bg-[#040957] text-white shadow-xs' : 'text-gray-500 hover:bg-gray-100'}`}
+          className={`py-2 px-3.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border cursor-pointer ${activeTab === 'checkin' ? 'bg-blue-50 border-blue-200 text-[#0080FF] font-extrabold shadow-xs' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}`}
         >
           <User className="w-3.5 h-3.5" />
           <span>{isRtl ? '١. توقيع حضور المشرف' : '1. Supervisor Verify'}</span>
@@ -1124,7 +1191,7 @@ export default function FieldOperations({
 
         <button
           onClick={() => setActiveTab('production')}
-          className={`py-2 px-4 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${activeTab === 'production' ? 'bg-[#040957] text-white shadow-xs' : 'text-gray-500 hover:bg-gray-100'}`}
+          className={`py-2 px-3.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border cursor-pointer ${activeTab === 'production' ? 'bg-blue-50 border-blue-200 text-[#0080FF] font-extrabold shadow-xs' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}`}
         >
           <Clock className="w-3.5 h-3.5" />
           <span>{isRtl ? '٢. تحديز الإنجاز (ساعتين)' : '2. Production Input'}</span>
@@ -1132,7 +1199,7 @@ export default function FieldOperations({
 
         <button
           onClick={() => setActiveTab('safety')}
-          className={`py-2 px-4 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${activeTab === 'safety' ? 'bg-[#040957] text-white shadow-xs' : 'text-gray-500 hover:bg-gray-100'}`}
+          className={`py-2 px-3.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border cursor-pointer ${activeTab === 'safety' ? 'bg-blue-50 border-blue-200 text-[#0080FF] font-extrabold shadow-xs' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}`}
         >
           <ShieldAlert className="w-3.5 h-3.5" />
           <span>{isRtl ? '٣. تدقيق السلامة EHS' : '3. Safety Audit'}</span>
@@ -1140,7 +1207,7 @@ export default function FieldOperations({
 
         <button
           onClick={() => setActiveTab('delays')}
-          className={`py-2 px-4 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${activeTab === 'delays' ? 'bg-[#040957] text-white shadow-xs' : 'text-gray-500 hover:bg-gray-100'}`}
+          className={`py-2 px-3.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border cursor-pointer ${activeTab === 'delays' ? 'bg-blue-50 border-blue-200 text-[#0080FF] font-extrabold shadow-xs' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}`}
         >
           <AlertTriangle className="w-3.5 h-3.5" />
           <span>{isRtl ? '٤. سجل تأخيرات الموقع' : '4. Delays Registrar'}</span>
@@ -1148,7 +1215,7 @@ export default function FieldOperations({
 
         <button
           onClick={() => setActiveTab('issues')}
-          className={`py-2 px-4 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${activeTab === 'issues' ? 'bg-[#040957] text-white shadow-xs' : 'text-gray-500 hover:bg-gray-100'}`}
+          className={`py-2 px-3.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border cursor-pointer ${activeTab === 'issues' ? 'bg-blue-50 border-blue-200 text-[#0080FF] font-extrabold shadow-xs' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}`}
         >
           <ShieldAlert className="w-3.5 h-3.5" />
           <span>{isRtl ? '٥. شكاوي وبلاغات معوقة' : '5. Issue Dispatcher'}</span>
@@ -1156,7 +1223,7 @@ export default function FieldOperations({
 
         <button
           onClick={() => setActiveTab('attendance')}
-          className={`py-2 px-4 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${activeTab === 'attendance' ? 'bg-[#040957] text-white shadow-xs' : 'text-gray-500 hover:bg-gray-100'}`}
+          className={`py-2 px-3.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border cursor-pointer ${activeTab === 'attendance' ? 'bg-blue-50 border-blue-200 text-[#0080FF] font-extrabold shadow-xs' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}`}
         >
           <Users className="w-3.5 h-3.5" />
           <span>{isRtl ? '٦. تحضير الموظفين والعمالة' : '6. Employee Attendance'}</span>
@@ -1164,7 +1231,7 @@ export default function FieldOperations({
 
         <button
           onClick={() => setActiveTab('requests')}
-          className={`py-2 px-4 rounded-lg text-xs font-bold transition flex items-center gap-1.5 relative ${activeTab === 'requests' ? 'bg-[#040957] text-white shadow-md' : 'text-gray-500 hover:bg-blue-100/50 hover:text-blue-700'}`}
+          className={`py-2 px-3.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 relative border cursor-pointer ${activeTab === 'requests' ? 'bg-blue-50 border-blue-200 text-[#0080FF] font-extrabold shadow-xs' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}`}
         >
           <ShoppingCart className="w-3.5 h-3.5" />
           <span>{isRtl ? 'طلبات الموارد الميدانية' : 'Field Resource Requests'}</span>
@@ -1177,7 +1244,7 @@ export default function FieldOperations({
 
         <button
           onClick={() => setActiveTab('approvals')}
-          className={`py-2 px-4 rounded-lg text-xs font-bold transition flex items-center gap-1.5 relative ${activeTab === 'approvals' ? 'bg-[#040957] text-white shadow-md' : 'text-gray-500 hover:bg-amber-100/50 hover:text-amber-700'}`}
+          className={`py-2 px-3.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 relative border cursor-pointer ${activeTab === 'approvals' ? 'bg-blue-50 border-blue-200 text-[#0080FF] font-extrabold shadow-xs' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}`}
         >
           <span>⭐</span>
           <span>{isRtl ? 'اعتمادات العمل الميداني' : 'Field Approvals Queue'}</span>
@@ -1751,11 +1818,7 @@ export default function FieldOperations({
                         <div key={req.id} className="bg-white rounded-3xl border border-gray-100 p-4 shadow-sm hover:shadow-md transition group">
                           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                             <div className="flex items-center gap-4">
-                              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
-                                req.type === 'Material' ? 'bg-blue-50 text-blue-600' : 
-                                req.type === 'Equipment' ? 'bg-amber-50 text-amber-600' : 
-                                'bg-purple-50 text-purple-600'
-                              }`}>
+                              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${ req.type === 'Material' ? 'bg-blue-50 text-blue-600' : req.type === 'Equipment' ? 'bg-amber-50 text-amber-600' : 'bg-purple-50 text-purple-600' }`}>
                                 {req.type === 'Material' ? <Package className="w-6 h-6" /> : 
                                  req.type === 'Equipment' ? <Truck className="w-6 h-6" /> : 
                                  <Users className="w-6 h-6" />}
@@ -1763,11 +1826,7 @@ export default function FieldOperations({
                               <div>
                                 <div className="flex items-center gap-2">
                                   <h4 className="text-sm font-black text-[#040957]">{isRtl ? req.resourceNameAr : req.resourceNameEn}</h4>
-                                  <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
-                                    req.priority === 'Emergency' ? 'bg-red-600 text-white animate-pulse' :
-                                    req.priority === 'Urgent' ? 'bg-amber-500 text-white' :
-                                    'bg-gray-100 text-gray-500'
-                                  }`}>
+                                  <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${ req.priority === 'Emergency' ? 'bg-red-600 text-white animate-pulse' : req.priority === 'Urgent' ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-500' }`}>
                                     {req.priority.toUpperCase()}
                                   </span>
                                 </div>
@@ -1809,11 +1868,7 @@ export default function FieldOperations({
                                     </button>
                                   </>
                                 ) : (
-                                  <div className={`py-2 px-6 rounded-xl text-[10px] font-black uppercase tracking-widest ${
-                                    req.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' :
-                                    req.status === 'Rejected' ? 'bg-red-100 text-red-700' :
-                                    'bg-blue-100 text-blue-700'
-                                  }`}>
+                                  <div className={`py-2 px-6 rounded-xl text-[10px] font-black uppercase tracking-widest ${ req.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : req.status === 'Rejected' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700' }`}>
                                     {req.status === 'Approved' ? (isRtl ? 'تم الاعتماد' : 'Approved') :
                                      req.status === 'Rejected' ? (isRtl ? 'تم الرفض' : 'Rejected') :
                                      (isRtl ? 'تم التوريد' : 'Fulfilled')}
@@ -1849,14 +1904,14 @@ export default function FieldOperations({
               </div>
 
               {/* Field Portal Link Quick Share Card */}
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-[#1C2638] dark:to-[#182132] border border-blue-100 dark:border-gray-800 p-5 rounded-2xl space-y-3 shadow-xs">
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 p-5 rounded-2xl space-y-3 shadow-xs">
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                   <div className="space-y-1">
-                    <h4 className="text-xs font-black text-[#040957] dark:text-amber-400 flex items-center gap-1.5 font-sans">
+                    <h4 className="text-xs font-black text-[#040957] flex items-center gap-1.5 font-sans">
                       <span>📱</span>
                       {isRtl ? 'رابط بوابة العمل الميداني للمشرفين' : 'Supervisor Field Portal Link'}
                     </h4>
-                    <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed font-sans">
+                    <p className="text-[11px] text-gray-500 leading-relaxed font-sans">
                       {isRtl 
                         ? 'انسخ هذا الرابط المباشر وأرسله للمشرفين الميدانيين لتسجيل الحضور، تحديثات الإنجاز اليومي، السلامة، والبلاغات مباشرة من هواتفهم.' 
                         : 'Distribute this URL to field supervisors. They can record attendance, production, safety logs, and escalate issues directly from their mobile web browsers.'}
@@ -1879,7 +1934,7 @@ export default function FieldOperations({
                     type="text"
                     readOnly
                     value={`${window.location.origin}${window.location.pathname}?portal=field#portal=field`}
-                    className="flex-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-2 text-[11px] font-mono font-bold text-gray-500 dark:text-gray-350"
+                    className="flex-1 bg-white border border-gray-200 rounded-lg p-2 text-[11px] font-mono font-bold text-gray-500"
                     onClick={(e) => (e.target as HTMLInputElement).select()}
                   />
                   <button
@@ -1912,11 +1967,7 @@ export default function FieldOperations({
                         document.body.removeChild(textArea);
                       }
                     }}
-                    className={`shrink-0 font-bold text-[10px] py-2 px-4 rounded-lg transition font-sans flex items-center gap-1.5 border ${
-                      portalCopied 
-                        ? 'bg-emerald-500 text-white border-emerald-500' 
-                        : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200'
-                    }`}
+                    className={`shrink-0 font-bold text-[10px] py-2 px-4 rounded-lg transition font-sans flex items-center gap-1.5 border ${ portalCopied ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-700 ' }`}
                   >
                     {portalCopied ? (
                       <>
@@ -1957,28 +2008,16 @@ export default function FieldOperations({
                       return (
                         <div 
                           key={sub.id} 
-                          className={`border rounded-2xl overflow-hidden transition-all duration-200 ${
-                            isPending 
-                              ? 'border-amber-250 bg-amber-50/15 hover:border-amber-350 shadow-sm' 
-                              : isApproved 
-                              ? 'border-emerald-250 bg-emerald-50/5' 
-                              : 'border-red-250 bg-red-50/5'
-                          }`}
+                          className={`border rounded-2xl overflow-hidden transition-all duration-200 ${ isPending ? 'border-amber-250 bg-amber-50/15 hover:border-amber-350 shadow-sm' : isApproved ? 'border-emerald-250 bg-emerald-50/5' : 'border-red-250 bg-red-50/5' }`}
                         >
                           {/* Submission Header Panel */}
-                          <div className="p-4 flex flex-wrap items-center justify-between gap-4 border-b bg-gray-50/60 dark:bg-[#141B29]/40 border-gray-150">
+                          <div className="p-4 flex flex-wrap items-center justify-between gap-4 border-b bg-gray-50/60 border-gray-150">
                             <div>
                               <div className="flex items-center gap-2">
-                                <span className="font-extrabold text-xs text-gray-800 dark:text-gray-200">
+                                <span className="font-extrabold text-xs text-gray-800">
                                   {isRtl ? 'تقرير المشرف:' : 'Supervisor:'} {sub.supervisorName}
                                 </span>
-                                <span className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${
-                                  isPending 
-                                    ? 'bg-amber-100 text-amber-800 border border-amber-200' 
-                                    : isApproved 
-                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
-                                    : 'bg-red-100 text-red-800 border border-red-200'
-                                }`}>
+                                <span className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${ isPending ? 'bg-amber-100 text-amber-800 border border-amber-200' : isApproved ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-red-100 text-red-800 border border-red-200' }`}>
                                   {isRtl 
                                     ? (isPending ? 'قيد المراجعة' : isApproved ? 'تم الاعتماد والدمج' : 'مرفوض') 
                                     : sub.status}
@@ -2053,7 +2092,183 @@ export default function FieldOperations({
                           </div>
 
                           {/* Submission Content Summary Card */}
-                          <div className="p-4 bg-white/40 dark:bg-transparent text-xs space-y-4">
+                          <div className="p-4 bg-white/40 text-xs space-y-4">
+                            
+                            {/* Smart AI Audit and Process Optimization Section */}
+                            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3 shadow-xs">
+                              <div className="flex flex-wrap items-center justify-between gap-3">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-base">🛡️</span>
+                                  <div>
+                                    <h4 className="font-extrabold text-[#040957] text-xs">
+                                      {isRtl ? 'تدقيق سلامة المخرجات الميدانية ومؤشرات الإنتاجية' : 'Smart Output Integrity & Process Audit'}
+                                    </h4>
+                                    <p className="text-[10px] text-slate-500">
+                                      {isRtl ? 'يكتشف تضخيم الكميات والتناقضات الميدانية ويقدم توصيات لمعالجة الانحرافات' : 'Identifies over-reporting, attendance-production mismatches, and suggests recovery tracks'}
+                                    </p>
+                                  </div>
+                                </div>
+                                
+                                {!auditResults[sub.id] && auditingSubId !== sub.id && (
+                                  <button
+                                    type="button"
+                                    onClick={() => runSmartAudit(sub)}
+                                    className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold text-[11px] py-1.5 px-4 rounded-xl shadow-md transition flex items-center gap-1.5 cursor-pointer"
+                                  >
+                                    <span>⚡</span>
+                                    <span>{isRtl ? 'بدء التحليل والتدقيق' : 'Run Smart AI Audit'}</span>
+                                  </button>
+                                )}
+                              </div>
+
+                              {auditingSubId === sub.id && (
+                                <div className="bg-white border border-blue-100 rounded-xl p-4 flex flex-col items-center justify-center text-center gap-2">
+                                  <div className="relative w-8 h-8">
+                                    <div className="absolute inset-0 rounded-full border-4 border-blue-100"></div>
+                                    <div className="absolute inset-0 rounded-full border-4 border-blue-600 border-t-transparent animate-spin"></div>
+                                  </div>
+                                  <p className="text-xs font-black text-[#040957]">{isRtl ? 'جاري تحليل سلامة التقرير...' : 'Analyzing report integrity...'}</p>
+                                  <p className="text-[10px] text-blue-600 font-bold animate-pulse">{auditLoadingMessage}</p>
+                                </div>
+                              )}
+
+                              {auditError[sub.id] && (
+                                <div className="bg-red-50 border border-red-100 rounded-xl p-3 text-[10px] font-semibold text-red-700 space-y-1">
+                                  <p className="font-extrabold">⚠️ {isRtl ? 'فشل التدقيق الذكي' : 'Smart Audit Failed'}</p>
+                                  <p>{auditError[sub.id]}</p>
+                                  <button 
+                                    onClick={() => runSmartAudit(sub)}
+                                    className="text-blue-600 underline font-bold"
+                                  >
+                                    {isRtl ? 'إعادة المحاولة' : 'Try Again'}
+                                  </button>
+                                </div>
+                              )}
+
+                              {auditResults[sub.id] && (
+                                <div className="space-y-3 divide-y divide-slate-150">
+                                  {/* 1. Score & Status Summary Panel */}
+                                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3 pb-3">
+                                    <div className="md:col-span-3 flex flex-col items-center justify-center p-3 bg-white border rounded-xl text-center">
+                                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">{isRtl ? 'درجة الموثوقية' : 'Integrity Score'}</span>
+                                      <div className={`text-3xl font-black mt-1 ${
+                                        auditResults[sub.id].integrityScore >= 80 ? 'text-emerald-600' :
+                                        auditResults[sub.id].integrityScore >= 60 ? 'text-amber-500' : 'text-red-500'
+                                      }`}>
+                                        {auditResults[sub.id].integrityScore}%
+                                      </div>
+                                      <span className={`text-[9px] font-black px-2 py-0.5 mt-1 rounded-full ${
+                                        auditResults[sub.id].status === 'Verified' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
+                                        auditResults[sub.id].status === 'Warning' ? 'bg-amber-50 text-amber-700 border border-amber-100' :
+                                        'bg-red-50 text-red-700 border border-red-100'
+                                      }`}>
+                                        {isRtl 
+                                          ? (auditResults[sub.id].status === 'Verified' ? 'موثوق ومعتمد' : auditResults[sub.id].status === 'Warning' ? 'تنبيه/ملاحظات' : 'مخاطر عالية/اشتباه تضخيم')
+                                          : auditResults[sub.id].status
+                                        }
+                                      </span>
+                                    </div>
+                                    <div className="md:col-span-9 flex flex-col justify-center p-3 bg-white border rounded-xl">
+                                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">{isRtl ? 'ملخص التدقيق الذكي' : 'Audit Verdict Summary'}</span>
+                                      <p className="text-[11px] font-semibold text-slate-700 mt-1.5 leading-relaxed">
+                                        {isRtl ? auditResults[sub.id].verificationSummaryAr : auditResults[sub.id].verificationSummaryEn}
+                                      </p>
+                                      {auditResults[sub.id].status !== 'Verified' && isPending && (
+                                        <div className="mt-3 flex gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const prefill = isRtl 
+                                                ? `ملاحظات التدقيق الذكي: ${auditResults[sub.id].verificationSummaryAr}` 
+                                                : `AI Audit: ${auditResults[sub.id].verificationSummaryEn}`;
+                                              const reason = prompt(isRtl ? 'تعديل سبب الرفض الموجه للمشرف مسبقاً:' : 'Edit the rejection feedback for the supervisor:', prefill);
+                                              if (reason !== null) {
+                                                onRejectSubmission && onRejectSubmission(sub.id, reason || 'Incomplete/bloated data');
+                                                triggerToast(isRtl ? 'تم رفض التقرير وإرساله لإعادة التدقيق مسبقاً' : 'Report rejected and supervisor requested to revise.');
+                                              }
+                                            }}
+                                            className="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-extrabold text-[10px] py-1 px-2.5 rounded-lg transition flex items-center gap-1 cursor-pointer"
+                                          >
+                                            <span>🚫</span>
+                                            {isRtl ? 'رفض مع إرفاق ملاحظات التدقيق الذكي' : 'Reject & Autofill AI Reason'}
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* 2. Detected Anomalies / Anti-Fraud Checks */}
+                                  <div className="pt-3">
+                                    <h5 className="font-extrabold text-[#040957] text-[11px] flex items-center gap-1 mb-2">
+                                      <span>🛡️</span>
+                                      {isRtl ? 'رصد تناقضات البيانات والإنجازات:' : 'Discrepancy & Over-reporting Checks:'}
+                                    </h5>
+                                    {auditResults[sub.id].anomalies.length === 0 ? (
+                                      <div className="p-2.5 bg-emerald-50/50 border border-emerald-100 text-emerald-800 rounded-xl text-[10px] font-bold flex items-center gap-2">
+                                        <span>✓</span>
+                                        {isRtl ? 'لم يتم العثور على أي تناقضات أو اشتباه في تضخيم الإنجازات.' : 'No output inconsistencies or suspected over-reporting found. Ratios are aligned.'}
+                                      </div>
+                                    ) : (
+                                      <div className="space-y-2">
+                                        {auditResults[sub.id].anomalies.map((anom, idx) => (
+                                          <div key={idx} className={`p-2.5 border rounded-xl flex gap-2 text-[10px] leading-relaxed ${
+                                            anom.severity === 'High' ? 'bg-red-50 border-red-150 text-red-900' :
+                                            anom.severity === 'Medium' ? 'bg-amber-50 border-amber-150 text-amber-900' :
+                                            'bg-slate-50 border-slate-200 text-slate-800'
+                                          }`}>
+                                            <span className="text-xs shrink-0">{anom.severity === 'High' ? '🚨' : anom.severity === 'Medium' ? '⚠️' : 'ℹ️'}</span>
+                                            <div>
+                                              <span className="font-black block uppercase text-[9px] tracking-wide opacity-80">
+                                                {isRtl ? anom.typeAr : anom.typeEn} ({anom.severity})
+                                              </span>
+                                              <p className="mt-0.5 font-semibold">
+                                                {isRtl ? anom.detailsAr : anom.detailsEn}
+                                              </p>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* 3. Decision Support & Process Optimizations */}
+                                  <div className="pt-3">
+                                    <h5 className="font-extrabold text-indigo-900 text-[11px] flex items-center gap-1 mb-2">
+                                      <span>💡</span>
+                                      {isRtl ? 'مساعد اتخاذ القرار وتوصيات تحسين العمليات الميدانية:' : 'Decision Support & Field Process Improvements:'}
+                                    </h5>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                      {auditResults[sub.id].processImprovements.map((imp, idx) => (
+                                        <div key={idx} className="bg-white border border-slate-200 rounded-xl p-2.5 space-y-1 shadow-2xs">
+                                          <div className="flex items-center justify-between gap-2">
+                                            <span className="font-black text-[10px] text-indigo-950 block">
+                                              {isRtl ? imp.titleAr : imp.titleEn}
+                                            </span>
+                                            <span className="text-[8px] font-black uppercase bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-100 shrink-0">
+                                              {imp.impact}
+                                            </span>
+                                          </div>
+                                          <p className="text-[10px] text-slate-600 font-semibold leading-relaxed">
+                                            {isRtl ? imp.descriptionAr : imp.descriptionEn}
+                                          </p>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                  
+                                  {/* 4. Action footer */}
+                                  <div className="pt-2 flex justify-end">
+                                    <button
+                                      type="button"
+                                      onClick={() => runSmartAudit(sub)}
+                                      className="text-slate-500 hover:text-slate-800 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                                    >
+                                      🔄 {isRtl ? 'إعادة تحليل التقرير' : 'Re-run Analysis'}
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
                             
                             {/* 1. Attendance section */}
                             {sub.attendanceRecords && sub.attendanceRecords.length > 0 && (
@@ -2064,18 +2279,12 @@ export default function FieldOperations({
                                 </h5>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                                   {sub.attendanceRecords.map(rec => (
-                                    <div key={rec.id} className="bg-gray-50 dark:bg-slate-800/40 p-2 rounded-lg border border-gray-150 flex justify-between items-center">
+                                    <div key={rec.id} className="bg-gray-50 p-2 rounded-lg border border-gray-150 flex justify-between items-center">
                                       <div>
-                                        <div className="font-extrabold text-[10px] text-gray-700 dark:text-gray-200">{rec.workerName}</div>
+                                        <div className="font-extrabold text-[10px] text-gray-700">{rec.workerName}</div>
                                         <div className="text-[9px] text-gray-400">{isRtl ? rec.professionAr : rec.professionEn}</div>
                                       </div>
-                                      <span className={`text-[9px] px-1.5 py-0.5 rounded font-black ${
-                                        rec.status === 'Present' 
-                                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
-                                          : rec.status === 'Late' 
-                                          ? 'bg-amber-50 text-amber-700 border border-amber-100' 
-                                          : 'bg-red-50 text-red-700 border border-red-100'
-                                      }`}>
+                                      <span className={`text-[9px] px-1.5 py-0.5 rounded font-black ${ rec.status === 'Present' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : rec.status === 'Late' ? 'bg-amber-50 text-amber-700 border border-amber-100' : 'bg-red-50 text-red-700 border border-red-100' }`}>
                                         {rec.status}
                                       </span>
                                     </div>
@@ -2095,7 +2304,7 @@ export default function FieldOperations({
                                   {sub.progressUpdates.map(p => {
                                     const actObj = activities.find(a => a.id === p.activityId);
                                     return (
-                                      <div key={p.id} className="bg-amber-50/20 dark:bg-[#1E2640]/10 p-3 rounded-xl border border-amber-150/40">
+                                      <div key={p.id} className="bg-amber-50/20 p-3 rounded-xl border border-amber-150/40">
                                         <div className="flex justify-between items-start">
                                           <div>
                                             <span className="font-black text-xs text-amber-800">
@@ -2139,11 +2348,7 @@ export default function FieldOperations({
                                     {isRtl ? 'حالة تدقيق السلامة EHS:' : 'EHS Safety Audit Log:'}
                                   </span>
                                 </div>
-                                <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full ${
-                                  sub.safetyRecord.isSafe 
-                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
-                                    : 'bg-red-100 text-red-800 border border-red-200'
-                                }`}>
+                                <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full ${ sub.safetyRecord.isSafe ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-red-100 text-red-800 border border-red-200' }`}>
                                   {sub.safetyRecord.isSafe 
                                     ? (isRtl ? 'آمن وممتثل بالكامل' : 'Safe & Secure') 
                                     : (isRtl ? `مخالفات (${sub.safetyRecord.violationsCount})` : `Unsafe: ${sub.safetyRecord.violationsCount} violations`)}
@@ -2878,7 +3083,7 @@ export default function FieldOperations({
                 <motion.div 
                   initial={{ opacity: 0, scale: 0.95, y: 20 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
-                  className="bg-white dark:bg-gray-900 w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden border border-white/20"
+                  className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden border border-white/20"
                 >
                   {/* Modal Header */}
                   <div className="bg-gradient-to-r from-[#040957] to-blue-900 p-6 text-white flex justify-between items-center text-left">
@@ -2907,19 +3112,19 @@ export default function FieldOperations({
                   <div className={`p-6 max-h-[70vh] overflow-y-auto custom-scrollbar space-y-6 ${isRtl ? 'text-right' : 'text-left'}`}>
                     {/* Basic Info */}
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-700">
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
                           {isRtl ? 'اسم النشاط (Ar)' : 'Activity Name (Ar)'}
                         </span>
-                        <p className="text-sm font-black text-slate-800 dark:text-white leading-tight">
+                        <p className="text-sm font-black text-slate-800 leading-tight">
                           {activityForDetails.nameAr}
                         </p>
                       </div>
-                      <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-700">
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
                           {isRtl ? 'Activity Name (En)' : 'Activity Name (En)'}
                         </span>
-                        <p className="text-sm font-black text-slate-800 dark:text-white leading-tight">
+                        <p className="text-sm font-black text-slate-800 leading-tight">
                           {activityForDetails.nameEn}
                         </p>
                       </div>
@@ -2927,30 +3132,30 @@ export default function FieldOperations({
 
                     {/* Quantities & Schedule */}
                     <div className="grid grid-cols-3 gap-4">
-                      <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800">
-                        <div className={`flex items-center gap-2 mb-1 text-blue-600 dark:text-blue-400 ${isRtl ? 'flex-row-reverse' : ''}`}>
+                      <div className="p-4 rounded-2xl bg-blue-50 border border-blue-100">
+                        <div className={`flex items-center gap-2 mb-1 text-blue-600 ${isRtl ? 'flex-row-reverse' : ''}`}>
                           <Calculator className="w-3.5 h-3.5" />
                           <span className="text-[9px] font-black uppercase tracking-wider">{isRtl ? 'الكمية الإجمالية' : 'Total Qty'}</span>
                         </div>
-                        <p className="text-lg font-black text-blue-900 dark:text-blue-100 font-mono">
+                        <p className="text-lg font-black text-blue-900 font-mono">
                           {activityForDetails.totalQuantity} <span className="text-xs font-bold">{activityForDetails.unit}</span>
                         </p>
                       </div>
-                      <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800">
-                        <div className={`flex items-center gap-2 mb-1 text-amber-600 dark:text-amber-400 ${isRtl ? 'flex-row-reverse' : ''}`}>
+                      <div className="p-4 rounded-2xl bg-amber-50 border border-amber-100">
+                        <div className={`flex items-center gap-2 mb-1 text-amber-600 ${isRtl ? 'flex-row-reverse' : ''}`}>
                           <Calendar className="w-3.5 h-3.5" />
                           <span className="text-[9px] font-black uppercase tracking-wider">{isRtl ? 'البداية' : 'Start'}</span>
                         </div>
-                        <p className="text-sm font-black text-amber-900 dark:text-amber-100 font-mono">
+                        <p className="text-sm font-black text-amber-900 font-mono">
                           {activityForDetails.startDate}
                         </p>
                       </div>
-                      <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800">
-                        <div className={`flex items-center gap-2 mb-1 text-emerald-600 dark:text-emerald-400 ${isRtl ? 'flex-row-reverse' : ''}`}>
+                      <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-100">
+                        <div className={`flex items-center gap-2 mb-1 text-emerald-600 ${isRtl ? 'flex-row-reverse' : ''}`}>
                           <CheckCircle className="w-3.5 h-3.5" />
                           <span className="text-[9px] font-black uppercase tracking-wider">{isRtl ? 'النهاية' : 'End'}</span>
                         </div>
-                        <p className="text-sm font-black text-emerald-900 dark:text-emerald-100 font-mono">
+                        <p className="text-sm font-black text-emerald-900 font-mono">
                           {activityForDetails.endDate}
                         </p>
                       </div>
@@ -2958,25 +3163,25 @@ export default function FieldOperations({
 
                     {/* Resource Allocations */}
                     <div className="space-y-4">
-                      <h4 className={`text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2 ${isRtl ? 'flex-row-reverse' : ''}`}>
+                      <h4 className={`text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2 ${isRtl ? 'flex-row-reverse' : ''}`}>
                         <Users className="w-4 h-4 text-indigo-500" />
                         {isRtl ? 'تخصيص الموارد المخططة' : 'Planned Resource Allocations'}
                       </h4>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {/* Workers */}
-                        <div className="bg-white dark:bg-gray-850 rounded-2xl border border-slate-100 dark:border-gray-800 p-4">
-                          <div className={`flex items-center gap-2 mb-3 pb-2 border-b border-slate-50 dark:border-gray-800 ${isRtl ? 'flex-row-reverse' : ''}`}>
+                        <div className="bg-white rounded-2xl border border-slate-100 p-4">
+                          <div className={`flex items-center gap-2 mb-3 pb-2 border-b border-slate-50 ${isRtl ? 'flex-row-reverse' : ''}`}>
                             <UserCheck className="w-4 h-4 text-emerald-500" />
-                            <span className="text-xs font-bold text-slate-600 dark:text-gray-300">{isRtl ? 'العمالة المخصصة' : 'Allocated Workers'}</span>
+                            <span className="text-xs font-bold text-slate-600">{isRtl ? 'العمالة المخصصة' : 'Allocated Workers'}</span>
                           </div>
                           <div className="space-y-2">
                             {activityForDetails.workerIds.length > 0 ? (
                               activityForDetails.workerIds.map(id => {
                                 const w = workers.find(worker => worker.id === id);
                                 return (
-                                  <div key={id} className={`flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl text-[11px] font-bold ${isRtl ? 'flex-row-reverse text-right' : ''}`}>
-                                    <span className="text-slate-700 dark:text-gray-200">{w ? w.fullName : id}</span>
+                                  <div key={id} className={`flex items-center justify-between bg-slate-50 p-2 rounded-xl text-[11px] font-bold ${isRtl ? 'flex-row-reverse text-right' : ''}`}>
+                                    <span className="text-slate-700">{w ? w.fullName : id}</span>
                                     <span className="text-slate-400 font-mono text-[9px]">{w?.badgeNumber}</span>
                                   </div>
                                 );
@@ -2988,16 +3193,16 @@ export default function FieldOperations({
                         </div>
 
                         {/* Equipment */}
-                        <div className="bg-white dark:bg-gray-850 rounded-2xl border border-slate-100 dark:border-gray-800 p-4">
-                          <div className={`flex items-center gap-2 mb-3 pb-2 border-b border-slate-50 dark:border-gray-800 ${isRtl ? 'flex-row-reverse' : ''}`}>
+                        <div className="bg-white rounded-2xl border border-slate-100 p-4">
+                          <div className={`flex items-center gap-2 mb-3 pb-2 border-b border-slate-50 ${isRtl ? 'flex-row-reverse' : ''}`}>
                             <Wrench className="w-4 h-4 text-amber-500" />
-                            <span className="text-xs font-bold text-slate-600 dark:text-gray-300">{isRtl ? 'المعدات والآليات' : 'Equipment & Machinery'}</span>
+                            <span className="text-xs font-bold text-slate-600">{isRtl ? 'المعدات والآليات' : 'Equipment & Machinery'}</span>
                           </div>
                           <div className="space-y-2">
                             {activityForDetails.equipmentAllocations && activityForDetails.equipmentAllocations.length > 0 ? (
                               activityForDetails.equipmentAllocations.map((eq, i) => (
-                                <div key={i} className={`flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl text-[11px] font-bold ${isRtl ? 'flex-row-reverse text-right' : ''}`}>
-                                  <span className="text-slate-700 dark:text-gray-200">{isRtl ? eq.equipmentNameAr : eq.equipmentNameEn}</span>
+                                <div key={i} className={`flex items-center justify-between bg-slate-50 p-2 rounded-xl text-[11px] font-bold ${isRtl ? 'flex-row-reverse text-right' : ''}`}>
+                                  <span className="text-slate-700">{isRtl ? eq.equipmentNameAr : eq.equipmentNameEn}</span>
                                   <span className="text-blue-600 font-mono text-[10px]">{eq.quantity} {isRtl ? 'وحدة' : 'Units'}</span>
                                 </div>
                               ))
@@ -3008,16 +3213,16 @@ export default function FieldOperations({
                         </div>
 
                         {/* Materials */}
-                        <div className="md:col-span-2 bg-white dark:bg-gray-850 rounded-2xl border border-slate-100 dark:border-gray-800 p-4">
-                          <div className={`flex items-center gap-2 mb-3 pb-2 border-b border-slate-50 dark:border-gray-800 ${isRtl ? 'flex-row-reverse' : ''}`}>
+                        <div className="md:col-span-2 bg-white rounded-2xl border border-slate-100 p-4">
+                          <div className={`flex items-center gap-2 mb-3 pb-2 border-b border-slate-50 ${isRtl ? 'flex-row-reverse' : ''}`}>
                             <Package className="w-4 h-4 text-blue-500" />
-                            <span className="text-xs font-bold text-slate-600 dark:text-gray-300">{isRtl ? 'المواد المخطط استهلاكها' : 'Planned Materials'}</span>
+                            <span className="text-xs font-bold text-slate-600">{isRtl ? 'المواد المخطط استهلاكها' : 'Planned Materials'}</span>
                           </div>
                           <div className="grid grid-cols-2 gap-2">
                             {activityForDetails.materialAllocations && activityForDetails.materialAllocations.length > 0 ? (
                               activityForDetails.materialAllocations.map((mat, i) => (
-                                <div key={i} className={`flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl text-[11px] font-bold ${isRtl ? 'flex-row-reverse text-right' : ''}`}>
-                                  <span className="text-slate-700 dark:text-gray-200">{isRtl ? mat.materialNameAr : mat.materialNameEn}</span>
+                                <div key={i} className={`flex items-center justify-between bg-slate-50 p-2 rounded-xl text-[11px] font-bold ${isRtl ? 'flex-row-reverse text-right' : ''}`}>
+                                  <span className="text-slate-700">{isRtl ? mat.materialNameAr : mat.materialNameEn}</span>
                                   <span className="text-emerald-600 font-mono text-[10px]">{mat.quantity} {mat.unit}</span>
                                 </div>
                               ))
@@ -3033,7 +3238,7 @@ export default function FieldOperations({
                   </div>
 
                   {/* Modal Footer */}
-                  <div className={`p-6 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-700 flex justify-end ${isRtl ? 'flex-row-reverse' : ''}`}>
+                  <div className={`p-6 bg-slate-50 border-t border-slate-100 flex justify-end ${isRtl ? 'flex-row-reverse' : ''}`}>
                     <button 
                       onClick={() => setIsActivityDetailsOpen(false)}
                       className="px-8 py-3 bg-[#040957] text-white rounded-2xl text-xs font-black hover:bg-blue-900 transition shadow-lg shadow-blue-900/20"

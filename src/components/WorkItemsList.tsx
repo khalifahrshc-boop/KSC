@@ -44,8 +44,12 @@ import {
   AlertTriangle,
   Edit,
   Eye,
-  Printer
+  Printer,
+  Download,
+  UploadCloud,
+  FileSpreadsheet
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 interface WorkItemsListProps {
   lang: 'ar' | 'en';
@@ -253,6 +257,7 @@ export default function WorkItemsList({
   const [equipmentAllocations, setEquipmentAllocations] = useState<{id: string, quantity: number}[]>([]);
   const [selectedWorkerIds, setSelectedWorkerIds] = useState<string[]>([]);
   const [dependsOnId, setDependsOnId] = useState<string>('');
+  const [actIsCritical, setActIsCritical] = useState<boolean>(false);
 
   // Active planning inspection
   const [inspectedActivityId, setInspectedActivityId] = useState<string | null>(null);
@@ -278,6 +283,201 @@ export default function WorkItemsList({
     } else {
       setExpandedWorkItemIds([...expandedWorkItemIds, id]);
     }
+  };
+
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleDownloadExcelTemplate = () => {
+    const templateData = [
+      {
+        "Work Item Code / كود بند العمل": "WI-01",
+        "Work Item Name (Arabic) / اسم بند العمل (عربي)": "أعمال الحفر والردم",
+        "Work Item Name (English) / اسم بند العمل (إنجليزي)": "Excavation Works",
+        "Work Item Type (Primary/Secondary) / نوع بند العمل (رئيسي/ثانوي)": "Primary",
+        "Activity Name (Arabic) / اسم النشاط (عربي)": "حفر التربة العادية",
+        "Activity Name (English) / اسم النشاط (إنجليزي)": "Excavation of standard soil",
+        "Description (Arabic) / الوصف (عربي)": "حفر الموقع للمناسيب المطلوبة حسب المخططات المعتمدة",
+        "Description (English) / الوصف (إنجليزي)": "Site excavation to required levels according to approved drawings",
+        "Total Quantity / الكمية الكلية": 1500,
+        "Unit / الوحدة": "m3",
+        "Is Critical? (Yes/No) / هل هو نشاط حرج؟ (نعم/لا)": "Yes",
+        "Planned Daily Production / الإنتاجية اليومية المستهدفة": 150
+      },
+      {
+        "Work Item Code / كود بند العمل": "WI-01",
+        "Work Item Name (Arabic) / اسم بند العمل (عربي)": "أعمال الحفر والردم",
+        "Work Item Name (English) / اسم بند العمل (إنجليزي)": "Excavation Works",
+        "Work Item Type (Primary/Secondary) / نوع بند العمل (رئيسي/ثانوي)": "Primary",
+        "Activity Name (Arabic) / اسم النشاط (عربي)": "ردم طبقات الأساس",
+        "Activity Name (English) / اسم النشاط (إنجليزي)": "Backfilling Foundation Layers",
+        "Description (Arabic) / الوصف (عربي)": "الردم على طبقات مع الدمك والرش بالماء لنسبة دك 95٪",
+        "Description (English) / الوصف (إنجليزي)": "Backfilling in layers with compaction and water spraying to 95% compaction",
+        "Total Quantity / الكمية الكلية": 800,
+        "Unit / الوحدة": "m3",
+        "Is Critical? (Yes/No) / هل هو نشاط حرج؟ (نعم/لا)": "No",
+        "Planned Daily Production / الإنتاجية اليومية المستهدفة": 100
+      },
+      {
+        "Work Item Code / كود بند العمل": "WI-02",
+        "Work Item Name (Arabic) / اسم بند العمل (عربي)": "أعمال الخرسانة المسلحة",
+        "Work Item Name (English) / اسم بند العمل (إنجليزي)": "Reinforced Concrete Works",
+        "Work Item Type (Primary/Secondary) / نوع بند العمل (رئيسي/ثانوي)": "Primary",
+        "Activity Name (Arabic) / اسم النشاط (عربي)": "صب خرسانة القواعد",
+        "Activity Name (English) / اسم النشاط (إنجليزي)": "Pouring Footing Concrete",
+        "Description (Arabic) / الوصف (عربي)": "صب خرسانة مقاومة للكبريتات محتوى 350 كجم/م3 بالقواعد والرقاب",
+        "Description (English) / الوصف (إنجليزي)": "Pouring sulfate-resistant concrete 350kg/m3 in footings and necks",
+        "Total Quantity / الكمية الكلية": 450,
+        "Unit / الوحدة": "m3",
+        "Is Critical? (Yes/No) / هل هو نشاط حرج؟ (نعم/لا)": "Yes",
+        "Planned Daily Production / الإنتاجية اليومية المستهدفة": 45
+      }
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(templateData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "ActivitiesTemplate");
+    
+    ws['!cols'] = [
+      { wch: 15 }, // Code
+      { wch: 25 }, // WI Ar
+      { wch: 25 }, // WI En
+      { wch: 20 }, // WI Type
+      { wch: 25 }, // Act Ar
+      { wch: 25 }, // Act En
+      { wch: 30 }, // Desc Ar
+      { wch: 30 }, // Desc En
+      { wch: 15 }, // Qty
+      { wch: 10 }, // Unit
+      { wch: 15 }, // Is Critical
+      { wch: 25 }  // Daily Prod
+    ];
+
+    XLSX.writeFile(wb, "Field_Activities_Import_Template.xlsx");
+  };
+
+  const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!selectedProjectId) {
+      alert(isRtl ? 'يرجى اختيار المشروع أولاً قبل رفع الأنشطة' : 'Please select a project first before uploading activities.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json<any>(ws);
+
+        if (data.length === 0) {
+          alert(isRtl ? 'ملف الإكسل المرفوع فارغ' : 'The uploaded Excel file contains no data.');
+          return;
+        }
+
+        let addedWorkItems = 0;
+        let addedActivities = 0;
+
+        // Code-to-ID mapping to prevent duplicates during the same import batch
+        const workItemCodeMap = new Map<string, string>();
+        
+        // Populate with existing work items in this project to prevent duplicates
+        projectWorkItems.forEach(wi => {
+          if (wi.itemNumber) {
+            workItemCodeMap.set(wi.itemNumber.trim().toUpperCase(), wi.id);
+          }
+        });
+
+        // We will process row by row
+        data.forEach((row: any, index: number) => {
+          // Find values using keys that can match partial names
+          const findVal = (possibleKeys: string[]): string => {
+            const foundKey = Object.keys(row).find(k => 
+              possibleKeys.some(pk => k.toLowerCase().includes(pk.toLowerCase()))
+            );
+            return foundKey ? String(row[foundKey]).trim() : '';
+          };
+
+          const wiCode = findVal(['work item code', 'كود بند', 'كود البند', 'رمز بند']);
+          const wiNameAr = findVal(['work item name (arabic)', 'اسم بند العمل (عربي)', 'اسم البند (عربي)']);
+          const wiNameEn = findVal(['work item name (english)', 'اسم بند العمل (إنجليزي)', 'اسم البند (إنجليزي)', 'work item name']);
+          const wiTypeStr = findVal(['work item type', 'نوع بند', 'نوع البند', 'type']);
+          
+          const actNameAr = findVal(['activity name (arabic)', 'اسم النشاط (عربي)', 'النشاط (عربي)']);
+          const actNameEn = findVal(['activity name (english)', 'اسم النشاط (إنجليزي)', 'النشاط (إنجليزي)', 'activity name']);
+          const descAr = findVal(['description (arabic)', 'الوصف (عربي)', 'وصف النشاط (عربي)']);
+          const descEn = findVal(['description (english)', 'الوصف (إنجليزي)', 'وصف النشاط (إنجليزي)', 'description']);
+          
+          const qtyVal = findVal(['total quantity', 'الكمية الكلية', 'الكمية', 'quantity']);
+          const qty = qtyVal ? Number(qtyVal) : 0;
+          
+          const unit = findVal(['unit', 'الوحدة', 'وحدة']) || 'units';
+          
+          const isCriticalStr = findVal(['is critical', 'نشاط حرج', 'حرج']).toLowerCase();
+          const isCritical = isCriticalStr.includes('yes') || isCriticalStr.includes('true') || isCriticalStr.includes('نعم') || isCriticalStr.includes('صح');
+          
+          const dailyProdVal = findVal(['planned daily', 'الإنتاجية اليومية', 'الإنتاجية', 'daily production']);
+          const plannedDailyProd = dailyProdVal ? Number(dailyProdVal) : undefined;
+
+          // Validate we have at least a work item code
+          if (!wiCode) return;
+
+          let workItemId = workItemCodeMap.get(wiCode.toUpperCase());
+          if (!workItemId) {
+            workItemId = `wi-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+            const newWi: WorkItem = {
+              id: workItemId,
+              projectId: selectedProjectId,
+              nameAr: wiNameAr || wiNameEn || `${wiCode} - Ar`,
+              nameEn: wiNameEn || wiNameAr || `${wiCode} - En`,
+              itemNumber: wiCode,
+              workType: (wiTypeStr.toLowerCase().includes('secondary') || wiTypeStr.includes('ثانوي')) ? 'Secondary' : 'Primary',
+              responsiblePerson: ''
+            };
+            onAddWorkItem(newWi);
+            workItemCodeMap.set(wiCode.toUpperCase(), workItemId);
+            addedWorkItems++;
+          }
+
+          if (actNameAr || actNameEn) {
+            const actId = `act-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+            const newAct: Activity = {
+              id: actId,
+              workItemId: workItemId,
+              nameAr: actNameAr || actNameEn || `نشاط ${index + 1}`,
+              nameEn: actNameEn || actNameAr || `Activity ${index + 1}`,
+              descriptionAr: descAr || '',
+              descriptionEn: descEn || '',
+              totalQuantity: qty || 1,
+              unit: unit,
+              materialIds: [],
+              equipmentIds: [],
+              workerIds: [],
+              isCritical: isCritical,
+              plannedDailyProduction: plannedDailyProd || undefined
+            };
+            onAddActivity(newAct);
+            addedActivities++;
+          }
+        });
+
+        alert(isRtl
+          ? `تم استيراد وتحليل الملف بنجاح! تم إضافة ${addedWorkItems} بنود عمل رئيسية و ${addedActivities} أنشطة فرعية بنجاح.`
+          : `Excel file successfully imported and analyzed! Added ${addedWorkItems} main work item categories and ${addedActivities} sub-activities.`
+        );
+
+        // Reset file input value
+        if (e.target) e.target.value = '';
+
+      } catch (err) {
+        console.error("Excel import error", err);
+        alert(isRtl ? 'حدث خطأ أثناء قراءة وتحليل ملف الإكسل. تأكد من صحة الملف والبيانات.' : 'An error occurred while reading and analyzing the Excel file. Verify file formatting.');
+      }
+    };
+    reader.readAsBinaryString(file);
   };
 
   // Safe checks for activities per workitem
@@ -365,6 +565,7 @@ export default function WorkItemsList({
     setEquipmentAllocations([]);
     setSelectedWorkerIds([]);
     setDependsOnId('');
+    setActIsCritical(false);
     setIsAddActOpen(true);
   };
 
@@ -384,6 +585,7 @@ export default function WorkItemsList({
     setEquipmentAllocations(act.equipmentAllocations || []);
     setSelectedWorkerIds(act.workerIds || []);
     setDependsOnId(act.dependsOnActivityId || '');
+    setActIsCritical(act.isCritical || false);
     setIsAddActOpen(true);
   };
 
@@ -413,7 +615,8 @@ export default function WorkItemsList({
         materialAllocations: materialAllocations,
         equipmentAllocations: equipmentAllocations,
         workerIds: selectedWorkerIds,
-        dependsOnActivityId: dependsOnId || undefined
+        dependsOnActivityId: dependsOnId || undefined,
+        isCritical: actIsCritical
       });
     } else {
       const newAct: Activity = {
@@ -430,7 +633,8 @@ export default function WorkItemsList({
         materialAllocations: materialAllocations,
         equipmentAllocations: equipmentAllocations,
         workerIds: selectedWorkerIds,
-        dependsOnActivityId: dependsOnId || undefined
+        dependsOnActivityId: dependsOnId || undefined,
+        isCritical: actIsCritical
       };
       onAddActivity(newAct);
     }
@@ -464,6 +668,58 @@ export default function WorkItemsList({
           ))}
         </div>
       </div>
+
+      {/* Excel Templates & Import Section */}
+      {!isReadOnly && (
+        <div className="bg-emerald-50/20 border border-emerald-100 p-5 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs">
+          <div className="flex items-start gap-3">
+            <div className="p-2.5 bg-emerald-600 text-white rounded-xl shadow-sm">
+              <FileSpreadsheet className="w-5 h-5" />
+            </div>
+            <div className="space-y-1">
+              <h4 className="text-xs font-extrabold text-[#040957] uppercase tracking-wider">
+                {isRtl ? 'إدارة استيراد خطط الأنشطة وبنود العمل بالكامل عبر إكسل' : 'Comprehensive Excel Activities Import & Template Management'}
+              </h4>
+              <p className="text-[10px] text-gray-500 font-bold leading-relaxed max-w-xl">
+                {isRtl 
+                  ? 'وفر الوقت بجدولة مشروعك في ثوانٍ. حمل النموذج القياسي، املأ البيانات (الأقسام الرئيسية والأنشطة وحالتها الحرجة)، ثم ارفعه آلياً ليقوم النظام بتحليل وإضافة كل شيء في خطوة واحدة.' 
+                  : 'Saves hours of manual input. Download our standard spreadsheet template with pre-configured headers, fill in your plan (groups, sub-activities & critical statuses), and upload it to auto-parse everything.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 flex-shrink-0">
+            {/* Hidden Input File */}
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              onChange={handleExcelUpload} 
+              accept=".xlsx, .xls" 
+              className="hidden" 
+            />
+
+            {/* Template Download Button */}
+            <button
+              type="button"
+              onClick={handleDownloadExcelTemplate}
+              className="bg-white hover:bg-gray-50 text-emerald-800 border border-emerald-200 py-2 px-4 rounded-xl text-xs font-black transition flex items-center gap-2 shadow-xs"
+            >
+              <Download className="w-4 h-4 text-emerald-600" />
+              <span>{isRtl ? 'تحميل نموذج Excel الفارغ' : 'Download Excel Template'}</span>
+            </button>
+
+            {/* Template Upload Button */}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-4 rounded-xl text-xs font-black transition flex items-center gap-2 shadow-sm"
+            >
+              <UploadCloud className="w-4 h-4" />
+              <span>{isRtl ? 'رفع واستيراد ملف Excel المعبأ' : 'Upload Completed Excel File'}</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main Grid: Work Items list & Smart Planning Sidebar Calculator */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -584,8 +840,13 @@ export default function WorkItemsList({
                                     className={`p-3 rounded-lg border flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 transition-all ${isInspected ? 'border-indigo-400 bg-indigo-50/15 ring-1 ring-indigo-300' : 'border-gray-100 hover:border-gray-200'}`}
                                   >
                                     <div className="space-y-1">
-                                      <h5 className="font-bold text-[#040957] text-xs">
+                                      <h5 className="font-bold text-[#040957] text-xs flex items-center gap-1.5 flex-wrap">
                                         {isRtl ? act.nameAr : act.nameEn}
+                                        {act.isCritical && (
+                                          <span className="bg-rose-50 text-rose-700 text-[8px] font-black px-1.5 py-0.5 rounded-full border border-rose-200 animate-pulse">
+                                            {isRtl ? 'حرج' : 'CRITICAL'}
+                                          </span>
+                                        )}
                                       </h5>
                                       <p className="text-[10px] text-gray-400 line-clamp-1 max-w-sm">
                                         {isRtl ? act.descriptionAr : act.descriptionEn}
@@ -1119,6 +1380,26 @@ export default function WorkItemsList({
                     ))}
                   </select>
                 </div>
+
+                {/* Critical Activity Toggle */}
+                <div className="space-y-1.5 p-3 rounded-xl border border-rose-100 bg-rose-50/30">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input 
+                      type="checkbox"
+                      checked={actIsCritical}
+                      onChange={(e) => setActIsCritical(e.target.checked)}
+                      className="w-4 h-4 text-rose-600 border-rose-300 rounded focus:ring-rose-500 accent-rose-600"
+                    />
+                    <span className="text-xs font-black text-rose-700">
+                      {isRtl ? 'نشاط حرج (Critical Path)' : 'Critical Activity (Critical Path)'}
+                    </span>
+                  </label>
+                  <p className="text-[10px] text-rose-600/80 leading-relaxed font-semibold">
+                    {isRtl 
+                      ? 'الأنشطة الحرجة تؤثر مباشرة على تاريخ انتهاء المشروع. أي تأخير فيها يؤدي إلى تأخير المشروع بالكامل.' 
+                      : 'Critical activities directly affect the project\'s completion date. Any delay here will automatically postpone the overall project delivery.'}
+                  </p>
+                </div>
               </div>
 
               <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
@@ -1162,6 +1443,21 @@ export default function WorkItemsList({
                       ? (activities.find(a => a.id === activityForDetails.dependsOnActivityId)?.nameAr || activityForDetails.dependsOnActivityId)
                       : (isRtl ? 'لا يوجد' : 'None')}
                   </p>
+                </div>
+                <div className="space-y-1 md:col-span-2">
+                  <label className="text-[10px] text-gray-400 font-bold uppercase">{isRtl ? 'تصنيف الأهمية للمشروع' : 'Project Criticality Class'}</label>
+                  <div>
+                    {activityForDetails.isCritical ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black bg-rose-50 text-rose-700 border border-rose-200 shadow-xs">
+                        <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+                        {isRtl ? 'نشاط حرج ومفصلي (تأخيره يؤخر تسليم المشروع بالكامل)' : 'Critical Path (Any delays will postpone full project delivery)'}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                        {isRtl ? 'نشاط قياسي عادي' : 'Standard Routine Activity'}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 

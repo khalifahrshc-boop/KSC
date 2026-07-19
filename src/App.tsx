@@ -41,7 +41,8 @@ import {
   IssueReport,
   SavedKpiReport,
   FieldRequest,
-  FieldWorkSubmission
+  FieldWorkSubmission,
+  QuickNote
 } from './types';
 import { translations } from './utils/translation';
 import { dbApi } from './lib/api';
@@ -79,7 +80,10 @@ import {
   X,
   Printer,
   BarChart3,
-  ChevronRight
+  ChevronRight,
+  Trash2,
+  Square,
+  CheckSquare
 } from 'lucide-react';
 
 export default function App() {
@@ -89,9 +93,7 @@ export default function App() {
     return (saved as 'ar' | 'en') || 'ar'; // Default Language is Arabic
   });
 
-  const [darkMode, setDarkMode] = useState<boolean>(() => {
-    return localStorage.getItem('pm_dark_active') === 'true';
-  });
+  const [darkMode, setDarkMode] = useState<boolean>(false);
 
   const [activeModule, setActiveModule] = useState<string>('dashboard');
   const [preselectedReport, setPreselectedReport] = useState<{category: any, id: string | string[], action?: 'print' | 'pdf'} | null>(null);
@@ -157,6 +159,7 @@ export default function App() {
   };
   const [notifications, setNotifications] = useState<SystemNotification[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [selectedAuditLogIds, setSelectedAuditLogIds] = useState<string[]>([]);
   const [settings, setSettings] = useState<SystemSettings>(defaultSettings);
 
   // Site Operations Submissions
@@ -168,6 +171,7 @@ export default function App() {
   const [issues, setIssues] = useState<IssueReport[]>([]);
   const [savedKpiReports, setSavedKpiReports] = useState<SavedKpiReport[]>([]);
   const [fieldSubmissions, setFieldSubmissions] = useState<FieldWorkSubmission[]>([]);
+  const [quickNotes, setQuickNotes] = useState<QuickNote[]>([]);
   const [isFieldPortal, setIsFieldPortal] = useState<boolean>(() => {
     return window.location.search.includes('portal=field') || window.location.hash.includes('portal=field');
   });
@@ -219,7 +223,8 @@ export default function App() {
           dbUsers, dbProjects, dbWorkItems, dbActivities, 
           dbMaterials, dbEquipment, dbWorkers, dbNotifications, 
           dbAuditLogs, dbSettings, dbCheckIns, dbAttendance, dbProgress, 
-          dbSafety, dbDelays, dbIssues, dbSavedKpiReports, dbFieldSubmissions
+          dbSafety, dbDelays, dbIssues, dbSavedKpiReports, dbFieldSubmissions,
+          dbQuickNotes
         ] = await Promise.all([
           dbApi.getAll<User>('users'),
           dbApi.getAll<Project>('projects'),
@@ -238,7 +243,8 @@ export default function App() {
           dbApi.getAll<DelayRecord>('delayRecords'),
           dbApi.getAll<IssueReport>('issueReports'),
           dbApi.getAll<SavedKpiReport>('savedKpiReports').catch(() => []),
-          dbApi.getAll<FieldWorkSubmission>('fieldSubmissions').catch(() => [])
+          dbApi.getAll<FieldWorkSubmission>('fieldSubmissions').catch(() => []),
+          dbApi.getAll<QuickNote>('quickNotes').catch(() => [])
         ]);
 
 
@@ -297,6 +303,7 @@ export default function App() {
         setIssues(dbIssues);
         setSavedKpiReports(dbSavedKpiReports || []);
         setFieldSubmissions(dbFieldSubmissions || []);
+        setQuickNotes(dbQuickNotes || []);
         
         setCurrentUser(dbUsers[0] || mockUsers[0]);
 
@@ -495,6 +502,59 @@ export default function App() {
       logSystemAction('BULK_DELETE_PROJECTS', `Deleted ${ids.length} projects successfully.`);
     } catch (e) {
       alert("Error during bulk delete");
+    }
+  };
+
+  const handleAddQuickNote = async (noteContent: string) => {
+    try {
+      const newNote: QuickNote = {
+        id: `note-${Date.now()}`,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        content: noteContent,
+        timestamp: new Date().toISOString(),
+        date: new Date().toISOString().split('T')[0]
+      };
+      await dbApi.save('quickNotes', newNote);
+      setQuickNotes(prev => [newNote, ...prev]);
+      logSystemAction('ADD_QUICK_NOTE', `Rapid status memo added: "${noteContent.substring(0, 30)}..."`);
+    } catch (e) {
+      console.error('Failed to save quick note:', e);
+      alert('Error saving quick note');
+    }
+  };
+
+  const handleDeleteQuickNote = async (id: string) => {
+    try {
+      await dbApi.delete('quickNotes', id);
+      setQuickNotes(prev => prev.filter(n => n.id !== id));
+      logSystemAction('DELETE_QUICK_NOTE', `Ejected quick note id: ${id}`);
+    } catch (e) {
+      console.error('Failed to delete quick note:', e);
+      alert('Error deleting quick note');
+    }
+  };
+
+  const handleDeleteAuditLog = async (id: string) => {
+    try {
+      await dbApi.delete('auditLogs', id);
+      setAuditLogs(prev => prev.filter(log => log.id !== id));
+      setSelectedAuditLogIds(prev => prev.filter(selectedId => selectedId !== id));
+    } catch (e) {
+      console.error('Failed to delete audit log:', e);
+      alert('Error deleting audit log');
+    }
+  };
+
+  const handleDeleteSelectedAuditLogs = async () => {
+    if (selectedAuditLogIds.length === 0) return;
+    try {
+      await Promise.all(selectedAuditLogIds.map(id => dbApi.delete('auditLogs', id)));
+      setAuditLogs(prev => prev.filter(log => !selectedAuditLogIds.includes(log.id)));
+      setSelectedAuditLogIds([]);
+    } catch (e) {
+      console.error('Failed to delete selected audit logs:', e);
+      alert('Error deleting selected audit logs');
     }
   };
 
@@ -1069,10 +1129,10 @@ export default function App() {
 
   if (isLoading) {
     return (
-      <div className={`min-h-screen flex items-center justify-center ${darkMode ? 'bg-[#0F141F]' : 'bg-[#F1F1F1]'}`}>
+      <div className={`min-h-screen flex items-center justify-center ${darkMode ? 'bg-[#FAF6F0]' : 'bg-slate-50'}`}>
         <div className="flex flex-col items-center gap-4 text-center p-8">
           <div className="w-12 h-12 border-4 border-[#0080FF] border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-sm font-bold text-[#040957] dark:text-[#0080FF] uppercase tracking-widest">
+          <p className="text-sm font-bold text-[#040957] uppercase tracking-widest">
             {lang === 'ar' ? 'جاري الاتصال السحابي الآمن...' : 'ESTABLISHING SECURE CLOUD SYNC...'}
           </p>
         </div>
@@ -1082,10 +1142,10 @@ export default function App() {
 
   if (initError) {
     return (
-      <div className={`min-h-screen flex items-center justify-center ${darkMode ? 'bg-[#0F141F]' : 'bg-[#F1F1F1]'}`}>
-        <div className="bg-white dark:bg-[#1C2638] p-8 rounded-2xl shadow-xl border border-red-200 max-w-md text-center space-y-4">
+      <div className={`min-h-screen flex items-center justify-center ${darkMode ? 'bg-[#FAF6F0]' : 'bg-slate-50'}`}>
+        <div className="bg-white p-8 rounded-2xl shadow-xl border border-red-200 max-w-md text-center space-y-4">
           <ShieldAlert className="w-12 h-12 text-red-500 mx-auto" />
-          <h2 className="text-xl font-black text-gray-800 dark:text-white">
+          <h2 className="text-xl font-black text-gray-800">
             {lang === 'ar' ? 'فشل الاتصال بقاعدة البيانات' : 'DATABASE_CONNECTION_FAILED'}
           </h2>
           <p className="text-xs text-gray-500">
@@ -1093,7 +1153,7 @@ export default function App() {
               ? 'لم نتمكن من الوصول إلى سجلات المشروع. يرجى التأكد من اتصال الإنترنت أو صلاحيات الوصول.' 
               : 'Unable to reach project ledgers. Verify network connectivity or RBAC permissions.'}
           </p>
-          <p className="text-[10px] font-mono text-red-400 bg-red-50 dark:bg-red-900/10 p-2 rounded">
+          <p className="text-[10px] font-mono text-red-400 bg-red-50 p-2 rounded">
             {initError}
           </p>
           <button 
@@ -1110,7 +1170,7 @@ export default function App() {
   if (isFieldPortal) {
     return (
       <div 
-        className={`min-h-screen ${darkMode ? 'bg-[#0F141F] text-gray-100' : 'bg-[#F1F1F1] text-gray-800'}`}
+        className="min-h-screen bg-slate-50 text-slate-800"
         style={{ 
           fontFamily: lang === 'ar' ? 'Cairo, sans-serif' : 'Inter, sans-serif',
           direction: lang === 'ar' ? 'rtl' : 'ltr'
@@ -1142,10 +1202,25 @@ export default function App() {
     );
   }
 
+  const isAllSelected = auditLogs.length > 0 && selectedAuditLogIds.length === auditLogs.length;
+  const toggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedAuditLogIds([]);
+    } else {
+      setSelectedAuditLogIds(auditLogs.map(log => log.id));
+    }
+  };
+
+  const toggleSelectLog = (id: string) => {
+    setSelectedAuditLogIds(prev => 
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
   return (
     <div 
       id="app-main-layout"
-      className={`min-h-screen ${darkMode ? 'bg-[#0F141F] text-gray-100' : 'bg-[#F1F1F1] text-gray-800'}`}
+      className={`min-h-screen ${darkMode ? 'bg-[#FCF9F2] text-[#422006]' : 'bg-slate-50 text-slate-800'}`}
 
       style={{ 
         fontFamily: lang === 'ar' ? 'Cairo, sans-serif' : 'Inter, sans-serif',
@@ -1154,7 +1229,7 @@ export default function App() {
     >
       
       {/* Universal Enterprise Corporate Top-Header */}
-      <header className={`sticky top-0 z-40 px-6 py-4 flex items-center justify-between border-b ${darkMode ? 'bg-[#182132] border-[#222E45]' : 'bg-white border-gray-250'} shadow-sm`}>
+      <header className={`sticky top-0 z-40 px-6 py-4 flex items-center justify-between border-b ${darkMode ? 'bg-[#F5EFEB] border-[#E8DCD3]' : 'bg-white border-slate-200'} shadow-sm`}>
         <div className="flex items-center gap-4">
           {/* Mobile Sidebar open button */}
           <button 
@@ -1206,16 +1281,16 @@ export default function App() {
           <div className="relative">
             <button 
               onClick={() => setShowRoleSelector(!showRoleSelector)}
-              className="bg-gray-100 dark:bg-[#202B3E] hover:bg-[#0080FF]/15 border border-gray-200 dark:border-gray-700 py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-gray-700 dark:text-gray-200"
+              className="bg-gray-100 hover:bg-[#0080FF]/15 border border-gray-200 py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-gray-700"
             >
               <UserCircle className="w-4 h-4 text-[#0080FF]" />
               <span className="hidden md:inline">{textDict.roleLabel}:</span>
-              <span className="text-[#040957] dark:text-[#0080FF] font-black">{currentUser.role}</span>
+              <span className="text-[#040957] font-black">{currentUser.role}</span>
             </button>
 
             {showRoleSelector && (
-              <div className={`absolute top-full mt-2 ${lang === 'ar' ? 'left-0' : 'right-0'} z-50 bg-white dark:bg-[#1C2638] border border-gray-200 dark:border-gray-700 shadow-2xl rounded-xl w-60 py-2 text-xs divide-y divide-gray-100 dark:divide-gray-800`}>
-                <div className="px-4 py-2 font-black text-[#040957] dark:text-[#0080FF] uppercase tracking-wider">{lang === 'ar' ? 'مسح واختبار الهويات' : 'Test strict RBAC Access'}</div>
+              <div className={`absolute top-full mt-2 ${lang === 'ar' ? 'left-0' : 'right-0'} z-50 bg-white border border-gray-200 shadow-2xl rounded-xl w-60 py-2 text-xs divide-y divide-gray-100`}>
+                <div className="px-4 py-2 font-black text-[#040957] uppercase tracking-wider">{lang === 'ar' ? 'مسح واختبار الهويات' : 'Test strict RBAC Access'}</div>
                 {mockUsers.map(usr => (
                   <button
                     key={usr.id}
@@ -1224,10 +1299,10 @@ export default function App() {
                       setShowRoleSelector(false);
                       logSystemAction('ROLE_SWITCH', `Switched active credentials to ${usr.role}`);
                     }}
-                    className="w-full text-right p-2.5 px-4 block hover:bg-blue-50/50 dark:hover:bg-blue-900/20 font-semibold transition text-gray-700 dark:text-gray-300 flex justify-between items-center"
+                    className="w-full text-right p-2.5 px-4 block hover:bg-blue-50/50 font-semibold transition text-gray-700 flex justify-between items-center"
                   >
                     <span>{usr.name}</span>
-                    <span className="text-[10px] bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded text-gray-500 font-bold">{usr.role}</span>
+                    <span className="text-[10px] bg-gray-100 px-2 py-0.5 rounded text-gray-500 font-bold">{usr.role}</span>
                   </button>
                 ))}
               </div>
@@ -1237,18 +1312,29 @@ export default function App() {
           {/* Lang switcher */}
           <button 
             onClick={handleToggleLanguage}
-            className="p-2 bg-gray-100 dark:bg-[#202B3E] hover:bg-[#0080FF]/15 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-700 dark:text-gray-200 hover:text-[#0080FF] transition"
+            className="p-2 bg-gray-100 hover:bg-[#0080FF]/15 border border-gray-200 rounded-lg text-gray-700 hover:text-[#0080FF] transition"
             title={textDict.langToggle}
           >
             <Globe className="w-4.5 h-4.5" />
           </button>
 
-          {/* Dark light toggling */}
+          {/* Light/Warm comfort mode toggle */}
           <button 
             onClick={handleToggleDarkMode}
-            className="p-2 bg-gray-100 dark:bg-[#202B3E] hover:bg-[#0080FF]/15 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-700 dark:text-gray-200 hover:text-[#0080FF] transition"
+            className="p-2 bg-gray-100 hover:bg-[#0080FF]/15 border border-gray-200 rounded-lg text-gray-700 hover:text-[#0080FF] transition flex items-center gap-1.5"
+            title={lang === 'ar' ? 'تغيير المظهر الفاتح (حديث / دافئ)' : 'Toggle Light Theme (Modern Slate / Warm Sand)'}
           >
-            {darkMode ? <Sun className="w-4.5 h-4.5 text-amber-400" /> : <Moon className="w-4.5 h-4.5 text-gray-600" />}
+            {darkMode ? (
+              <>
+                <Sun className="w-4.5 h-4.5 text-amber-500 animate-spin" style={{ animationDuration: '6s' }} />
+                <span className="text-[9px] font-black uppercase text-amber-700 hidden sm:inline">{lang === 'ar' ? 'مظهر دافئ' : 'Warm Sand'}</span>
+              </>
+            ) : (
+              <>
+                <Moon className="w-4.5 h-4.5 text-slate-500" />
+                <span className="text-[9px] font-black uppercase text-slate-700 hidden sm:inline">{lang === 'ar' ? 'مظهر حديث' : 'Slate Light'}</span>
+              </>
+            )}
           </button>
         </div>
       </header>
@@ -1257,7 +1343,7 @@ export default function App() {
       <div className="flex">
         
         {/* DESKTOP SIDEBAR NAVIGATION PANEL */}
-        <aside className={`${isSidebarCollapsed ? 'w-20' : 'w-72'} border-e hidden md:flex flex-col min-h-[calc(100vh-76px)] flex-shrink-0 transition-all duration-300 ease-in-out ${darkMode ? 'bg-[#141B29] border-[#222E45]' : 'bg-white border-gray-250'}`}>
+        <aside className={`${isSidebarCollapsed ? 'w-20' : 'w-72'} border-e hidden md:flex flex-col min-h-[calc(100vh-76px)] flex-shrink-0 transition-all duration-300 ease-in-out ${darkMode ? 'bg-[#FAF6F0] border-[#E8DCD3]' : 'bg-white border-slate-200'}`}>
           <div className="p-4 space-y-1 flex-1 overflow-y-auto scrollbar-hide">
             <span className={`text-[9px] uppercase tracking-widest text-gray-400 font-bold px-3 block mb-3 transition-opacity duration-300 ${isSidebarCollapsed ? 'opacity-0 h-0 overflow-hidden' : 'opacity-100'}`}>
               {lang === 'ar' ? 'الرقابة التنظيمية' : 'Corporate Modules'}
@@ -1283,9 +1369,9 @@ export default function App() {
                   key={m.id}
                   onClick={() => setActiveModule(m.id)}
                   title={isSidebarCollapsed ? m.label : ''}
-                  className={`w-full py-3 px-4 rounded-xl text-xs font-bold transition-all flex items-center gap-3 ${active ? 'bg-[#040957] text-white shadow-lg' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-805 hover:text-[#040957]'} ${isSidebarCollapsed ? 'justify-center px-0' : 'text-right'}`}
+                  className={`w-full py-3 px-4 rounded-xl text-xs font-bold transition-all flex items-center gap-3 ${active ? 'bg-[#040957] text-white shadow-lg' : 'text-gray-500 hover:bg-gray-50 hover:text-[#040957]'} ${isSidebarCollapsed ? 'justify-center px-0' : 'text-right'}`}
                 >
-                  <Icon className={`w-5 h-5 flex-shrink-0 ${isSidebarCollapsed ? '' : ''}`} />
+                  <Icon className={`w-5 h-5 flex-shrink-0`} />
                   {!isSidebarCollapsed && <span className="truncate">{m.label}</span>}
                 </button>
               );
@@ -1294,18 +1380,18 @@ export default function App() {
 
           {/* Quick Stats sidebar widget */}
           <div className={`p-4 transition-all duration-300 ${isSidebarCollapsed ? 'opacity-0 h-0 overflow-hidden p-0' : 'opacity-100'}`}>
-            <div className={`p-4 rounded-2xl ${darkMode ? 'bg-[#1C2638] border-[#25334B]' : 'bg-[#F1F1F1] border-gray-220'} border text-xs space-y-2`}>
-              <div className="font-extrabold text-[#040957] dark:text-[#0080FF]">{lang === 'ar' ? 'الإنتاج السحابي' : 'Cloud Synchronization'}</div>
+            <div className={`p-4 rounded-2xl ${darkMode ? 'bg-[#F5EFEB] border-[#E8DCD3]' : 'bg-slate-50 border-slate-200'} border text-xs space-y-2`}>
+              <div className="font-extrabold text-[#040957]">{lang === 'ar' ? 'الإنتاج السحابي' : 'Cloud Synchronization'}</div>
               <p className="text-[10px] text-gray-400 leading-relaxed">{lang === 'ar' ? 'قاعدة البيانات الميدانية مشفرة ومصادقة بالكامل وفقاً لمنظومة الهاس.' : 'Automatic encryption ledger synced to central servers continuously.'}</p>
               <div className="text-[10px] text-emerald-600 font-bold font-mono text-right animate-pulse">● CONNECTED_SSL_OK</div>
             </div>
           </div>
 
           {/* Toggle Button at the bottom */}
-          <div className="p-4 border-t border-gray-100 dark:border-gray-800">
+          <div className="p-4 border-t border-gray-100">
             <button
               onClick={handleToggleSidebar}
-              className={`w-full py-2.5 flex items-center justify-center rounded-xl text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-[#040957] dark:hover:text-[#0080FF] transition-all bg-slate-50/50 dark:bg-transparent`}
+              className={`w-full py-2.5 flex items-center justify-center rounded-xl text-gray-400 hover:bg-slate-50 hover:text-[#040957] transition-all bg-slate-50/50`}
             >
               {isSidebarCollapsed ? (
                 <div className="flex items-center gap-2">
@@ -1325,11 +1411,11 @@ export default function App() {
         {isSidebarMobileOpen && (
           <div className="fixed inset-0 bg-black/40 backdrop-blur-xs z-50 md:hidden" onClick={() => setIsSidebarMobileOpen(false)}>
             <div 
-              className={`w-64 h-full p-5 space-y-4 absolute top-0 ${lang === 'ar' ? 'right-0' : 'left-0'} ${darkMode ? 'bg-[#141B29]' : 'bg-white'} animate-slideIn`}
+              className={`w-64 h-full p-5 space-y-4 absolute top-0 ${lang === 'ar' ? 'right-0' : 'left-0'} ${darkMode ? 'bg-[#FAF6F0]' : 'bg-white'} animate-slideIn`}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex justify-between items-center pb-2 border-b">
-                <span className="font-black text-[#040957] dark:text-[#0080FF]">{lang === 'ar' ? 'القائمة الرئيسية' : 'Quick Navigation'}</span>
+                <span className="font-black text-[#040957]">{lang === 'ar' ? 'القائمة الرئيسية' : 'Quick Navigation'}</span>
                 <button onClick={() => setIsSidebarMobileOpen(false)} className="text-gray-400"><X className="w-5 h-5" /></button>
               </div>
 
@@ -1413,6 +1499,9 @@ export default function App() {
               onNavigate={(mod) => setActiveModule(mod)}
               onDeleteProgressUpdate={handleDeleteProgressUpdate}
               settings={settings}
+              quickNotes={quickNotes}
+              onSaveQuickNote={handleAddQuickNote}
+              onDeleteQuickNote={handleDeleteQuickNote}
             />
           )}
 
@@ -1625,29 +1714,74 @@ export default function App() {
           {/* AUDIT CRITICAL SYSTEMS TRANSACTIONS LOG PANEL */}
           {activeModule === 'logs' && (
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 space-y-4">
-              <div className="border-b border-gray-150 pb-3">
-                <h2 className="text-lg font-black text-[#040957] font-sans flex items-center gap-1.5">
-                  <ShieldAlert className="w-5 h-5 text-red-500 animate-pulse" />
-                  {textDict.systemLogsTitle}
-                </h2>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  {lang === 'ar' ? 'سجل رقابي مشفر فوري لجميع عمليات الإضافة والحذف وتجربة الهويات لتلبية شروط الهيئة الهندسية.' : 'High-security trace detailing system logins, role selections, and data edits.'}
-                </p>
+              <div className="border-b border-gray-150 pb-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div>
+                  <h2 className="text-lg font-black text-[#040957] font-sans flex items-center gap-1.5">
+                    <ShieldAlert className="w-5 h-5 text-red-500 animate-pulse" />
+                    {textDict.systemLogsTitle}
+                  </h2>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {lang === 'ar' ? 'سجل رقابي مشفر فوري لجميع عمليات الإضافة والحذف وتجربة الهويات لتلبية شروط الهيئة الهندسية.' : 'High-security trace detailing system logins, role selections, and data edits.'}
+                  </p>
+                </div>
+                {selectedAuditLogIds.length > 0 && (
+                  <button
+                    onClick={() => {
+                      if (window.confirm(lang === 'ar' ? `هل أنت متأكد من حذف السجلات المحددة (${selectedAuditLogIds.length})؟` : `Are you sure you want to delete the selected (${selectedAuditLogIds.length}) audit log entries?`)) {
+                        handleDeleteSelectedAuditLogs();
+                      }
+                    }}
+                    className="bg-red-50 text-red-600 hover:bg-red-100 font-bold px-3 py-1.5 rounded-lg text-xs uppercase flex items-center gap-1.5 border border-red-200 cursor-pointer transition shadow-sm"
+                  >
+                    <Trash2 className="w-4 h-4 text-red-600" />
+                    <span>{lang === 'ar' ? `حذف المحدد (${selectedAuditLogIds.length})` : `Delete Selected (${selectedAuditLogIds.length})`}</span>
+                  </button>
+                )}
               </div>
 
               <div className="overflow-x-auto rounded-xl border border-gray-100">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-gray-50 text-gray-400 text-[10px] font-black uppercase tracking-wider border-b border-gray-100">
+                      <th className="p-3 w-12 text-center">
+                        <button 
+                          type="button" 
+                          onClick={toggleSelectAll} 
+                          className="focus:outline-none flex justify-center items-center mx-auto"
+                        >
+                          {isAllSelected ? (
+                            <CheckSquare className="w-4.5 h-4.5 text-[#0080FF]" />
+                          ) : (
+                            <Square className="w-4.5 h-4.5 text-gray-300 hover:text-gray-400" />
+                          )}
+                        </button>
+                      </th>
                       <th className="p-3 w-40">{lang === 'ar' ? 'مشرف العملية' : textDict.userLog}</th>
                       <th className="p-3 w-32">{lang === 'ar' ? 'البوابة' : 'Section'}</th>
                       <th className="p-3">{textDict.actionLog}</th>
                       <th className="p-3 text-right w-44">{textDict.timeLog}</th>
+                      <th className="p-3 w-16 text-center">{lang === 'ar' ? 'خيارات' : 'Actions'}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 font-medium text-xs text-gray-700">
                     {auditLogs.map(log => (
-                      <tr key={log.id} className="hover:bg-gray-50/50 transition">
+                      <tr 
+                        key={log.id} 
+                        className={`hover:bg-gray-50/50 transition ${selectedAuditLogIds.includes(log.id) ? 'bg-blue-50/25' : ''}`}
+                      >
+                        <td className="p-3 w-12 text-center">
+                          <button 
+                            type="button" 
+                            onClick={() => toggleSelectLog(log.id)} 
+                            className="focus:outline-none flex justify-center items-center mx-auto"
+                          >
+                            {selectedAuditLogIds.includes(log.id) ? (
+                              <CheckSquare className="w-4.5 h-4.5 text-[#0080FF]" />
+                            ) : (
+                              <Square className="w-4.5 h-4.5 text-gray-300 hover:text-gray-400" />
+                            )}
+                          </button>
+                        </td>
                         <td className="p-3 font-bold text-gray-800">
                           {log.userName}
                           <span className="block text-[8px] text-gray-400 uppercase font-black tracking-widest">{log.userRole}</span>
@@ -1663,8 +1797,28 @@ export default function App() {
                         <td className="p-3 text-right font-mono font-bold text-gray-400 text-[10px]">
                           {new Date(log.timestamp).toLocaleString(lang === 'ar' ? 'ar-SA' : 'en-US')}
                         </td>
+                        <td className="p-3 text-center">
+                          <button
+                            onClick={() => {
+                              if (window.confirm(lang === 'ar' ? 'هل أنت متأكد من حذف هذا السجل؟' : 'Are you sure you want to delete this log entry?')) {
+                                handleDeleteAuditLog(log.id);
+                              }
+                            }}
+                            className="text-gray-300 hover:text-red-500 p-1.5 rounded hover:bg-red-50 cursor-pointer transition flex items-center justify-center mx-auto"
+                            title={lang === 'ar' ? 'حذف' : 'Delete'}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
                       </tr>
                     ))}
+                    {auditLogs.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="p-8 text-center text-gray-400 font-bold italic">
+                          {lang === 'ar' ? 'لا توجد سجلات تدقيق متوفرة حالياً.' : 'No audit logs available at this time.'}
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>

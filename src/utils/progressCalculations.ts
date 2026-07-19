@@ -78,8 +78,10 @@ export function getProjectPlannedProgress(project: Project): number {
 export function getActivityStatus(
   activity: Activity,
   progressUpdates: ProgressUpdate[],
-  materials: WarehouseMaterial[]
-): { status: 'On Track' | 'Delayed' | 'Completed'; reason?: string } {
+  materials: WarehouseMaterial[],
+  project?: Project,
+  allActivities?: Activity[]
+): { status: 'On Track' | 'Delayed' | 'Completed' | 'Ahead'; reason?: string } {
   const progress = getActivityProgress(activity, progressUpdates);
   if (progress >= 100) return { status: 'Completed' };
 
@@ -96,6 +98,39 @@ export function getActivityStatus(
   const lowStock = linkedMaterials.some(m => m.quantity < m.minThreshold);
   if (lowStock) {
     return { status: 'Delayed', reason: 'Material Shortage' };
+  }
+
+  // 3. Dynamic Progress-to-Schedule Comparison
+  if (project) {
+    let startStr = project.startDate;
+    if (activity.dependsOnActivityId && allActivities) {
+      const dep = allActivities.find(a => a.id === activity.dependsOnActivityId);
+      if (dep && dep.expectedFinishDate) {
+        startStr = dep.expectedFinishDate;
+      }
+    }
+    const endStr = activity.expectedFinishDate || project.endDate;
+
+    const start = new Date(startStr).getTime();
+    const end = new Date(endStr).getTime();
+
+    const realNow = new Date().getTime();
+    const anchorTime = new Date('2026-06-25').getTime();
+    const nowTime = realNow > anchorTime ? Math.min(realNow, new Date('2026-12-25').getTime()) : anchorTime;
+
+    if (nowTime > start) {
+      const total = end - start;
+      if (total > 0) {
+        const elapsed = nowTime - start;
+        const plannedProgress = Math.min(100, Math.round((elapsed / total) * 100));
+
+        if (progress > plannedProgress + 5) {
+          return { status: 'Ahead' };
+        } else if (progress < plannedProgress - 5) {
+          return { status: 'Delayed', reason: 'Behind Schedule' };
+        }
+      }
+    }
   }
 
   return { status: 'On Track' };
@@ -142,7 +177,7 @@ export function getProjectStatusDetails(
   );
   
   const delayedActs = projectActivities.filter(act => {
-    const s = getActivityStatus(act, progressUpdates, materials);
+    const s = getActivityStatus(act, progressUpdates, materials, project, activities);
     return s.status === 'Delayed';
   });
 
@@ -150,7 +185,17 @@ export function getProjectStatusDetails(
     reasons.push(`${delayedActs.length} active activities are delayed`);
   }
 
-  const status = (actual >= planned - 2) ? (actual > planned + 5 ? 'Ahead' : 'On Track') : 'Delayed';
+  // 4. Critical Activity Delays (Crucial constraint: delay in critical activity delays project delivery)
+  const delayedCriticalActs = projectActivities.filter(act => 
+    act.isCritical && getActivityStatus(act, progressUpdates, materials, project, activities).status === 'Delayed'
+  );
+
+  delayedCriticalActs.forEach(act => {
+    reasons.push(`Critical activity "${act.nameEn}" is delayed! This automatically postpones project delivery.`);
+  });
+
+  const hasDelayedCritical = delayedCriticalActs.length > 0;
+  const status = (actual >= planned - 2 && !hasDelayedCritical) ? (actual > planned + 5 ? 'Ahead' : 'On Track') : 'Delayed';
 
   return { status, reasons, progress: actual, planned };
 }

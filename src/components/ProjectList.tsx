@@ -392,9 +392,9 @@ export default function ProjectList({
   };
 
   return (
-    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 space-y-6">
+    <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 space-y-4">
       
-      <div id="project-list-printable-content" className="space-y-6">
+      <div id="project-list-printable-content" className="space-y-4">
         {/* Notifications Toast is NOT part of printable content */}
       {notification && (
         <div className={`fixed bottom-5 ${isRtl ? 'left-5' : 'right-5'} z-50 bg-[#040957] text-white py-3 px-6 rounded-xl shadow-2xl flex items-center gap-3 animate-bounce border border-blue-400`}>
@@ -733,6 +733,7 @@ export default function ProjectList({
           workItems={workItems}
           activities={activities}
           progressUpdates={progressUpdates}
+          materials={materials}
         />
       )}
 

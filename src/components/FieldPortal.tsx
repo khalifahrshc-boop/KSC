@@ -140,6 +140,8 @@ export default function FieldPortal({
   const [prodTime, setProdTime] = useState('10:00 AM');
   const [prodCompletedQty, setProdCompletedQty] = useState<number>(10);
   const [prodWorkersUsed, setProdWorkersUsed] = useState<number>(2);
+  const [prodWorkerNames, setProdWorkerNames] = useState<string[]>([]);
+  const [customWorkerName, setCustomWorkerName] = useState('');
   const [prodNotes, setProdNotes] = useState('');
   const [uploadedFiles, setUploadedFiles] = useState<{name: string, content: string}[]>([]);
   const [dragActive, setDragActive] = useState(false);
@@ -472,6 +474,7 @@ export default function FieldPortal({
       time: prodTime,
       completedQuantity: qtyToAdd,
       numberOfWorkers: prodWorkersUsed,
+      workerNames: prodWorkerNames,
       equipmentUsed: [],
       materialConsumptions: currentConsumptions,
       completionPercentage: Math.round(((activityProgress + qtyToAdd) / activityObj.totalQuantity) * 100),
@@ -482,9 +485,38 @@ export default function FieldPortal({
 
     setProdUpdates(prev => [...prev, newUpdate]);
     setProdNotes('');
+    setProdWorkerNames([]);
     setCurrentConsumptions([]);
     setUploadedFiles([]);
     triggerToast(isRtl ? 'تمت إضافة تحديث الإنتاج بنجاح' : 'Production record added to summary');
+  };
+
+  const toggleWorkerInProduction = (name: string) => {
+    setProdWorkerNames(prev => {
+      const isSelected = prev.includes(name);
+      const newNames = isSelected ? prev.filter(n => n !== name) : [...prev, name];
+      
+      // Auto-sync the count if it matches or if adding
+      if (!isSelected && prodWorkersUsed < newNames.length) {
+        setProdWorkersUsed(newNames.length);
+      }
+      return newNames;
+    });
+  };
+
+  const addCustomWorker = () => {
+    if (customWorkerName.trim()) {
+      if (!prodWorkerNames.includes(customWorkerName.trim())) {
+        setProdWorkerNames(prev => {
+          const newNames = [...prev, customWorkerName.trim()];
+          if (prodWorkersUsed < newNames.length) {
+            setProdWorkersUsed(newNames.length);
+          }
+          return newNames;
+        });
+      }
+      setCustomWorkerName('');
+    }
   };
 
   const handleEditProductionRecord = (idx: number) => {
@@ -495,6 +527,7 @@ export default function FieldPortal({
     setProdTime(update.time);
     setProdCompletedQty(update.completedQuantity);
     setProdWorkersUsed(update.numberOfWorkers);
+    setProdWorkerNames(update.workerNames || []);
     setProdNotes(update.notes);
     // Note: for simplicity we don't reload photos into the upload area
     // as they are already stored in the update record.
@@ -544,6 +577,7 @@ export default function FieldPortal({
       time: prodTime,
       completedQuantity: qtyToAdd,
       numberOfWorkers: prodWorkersUsed,
+      workerNames: prodWorkerNames,
       materialConsumptions: currentConsumptions,
       completionPercentage: Math.round(((adjActivityProgress + qtyToAdd) / activityObj.totalQuantity) * 100),
       notes: prodNotes,
@@ -552,6 +586,7 @@ export default function FieldPortal({
     setProdUpdates(updatedUpdates);
     setEditingProdIdx(null);
     setProdNotes('');
+    setProdWorkerNames([]);
     setCurrentConsumptions([]);
     setUploadedFiles([]);
     triggerToast(isRtl ? 'تم تحديث التحديث بنجاح' : 'Production record updated');
@@ -660,6 +695,21 @@ export default function FieldPortal({
               </div>
             </div>
           </div>
+
+          ${update.workerNames && update.workerNames.length > 0 ? `
+            <div style="margin-bottom: 20px;">
+              <h4 style="font-size: 11px; color: #040957; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; margin-bottom: 8px;">
+                👥 ${isRtl ? 'العمال المشاركون في هذا النشاط' : 'Workers Assigned to this Activity'}
+              </h4>
+              <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                ${update.workerNames.map(name => `
+                  <span style="font-size: 9px; background-color: #f8fafc; color: #334155; padding: 3px 8px; border-radius: 4px; border: 1px solid #e2e8f0; font-weight: bold; display: inline-block;">
+                    👤 ${name}
+                  </span>
+                `).join('')}
+              </div>
+            </div>
+          ` : ''}
 
           ${update.materialConsumptions && update.materialConsumptions.length > 0 ? `
             <div style="margin-bottom: 20px;">
@@ -972,7 +1022,14 @@ export default function FieldPortal({
               <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; color: #475569;">${actName}</td>
               <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: center; font-weight: bold; color: #0f172a;">${p.time}</td>
               <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: center; font-weight: 800; color: #0284c7;">+${p.completedQuantity} ${act?.unit || ''}</td>
-              <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: center; font-weight: bold; color: #475569;">${p.numberOfWorkers}</td>
+              <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: center; font-weight: bold; color: #475569;">
+                ${p.numberOfWorkers}
+                ${p.workerNames && p.workerNames.length > 0 ? `
+                  <div style="font-size: 8px; color: #64748b; font-weight: normal; margin-top: 2px; line-height: 1.2;">
+                    ${p.workerNames.join(', ')}
+                  </div>
+                ` : ''}
+              </td>
               <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; color: #64748b;">${p.notes || '-'}</td>
             </tr>
           `;
@@ -1397,16 +1454,16 @@ export default function FieldPortal({
   return (
     <div className="max-w-4xl mx-auto space-y-6 font-sans py-4 px-2">
       {/* HEADER BAR FOR PORTAL */}
-      <div className="bg-[#040957] text-white p-5 rounded-3xl shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white border border-gray-200 p-6 rounded-2xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <span className="bg-amber-400 text-slate-900 font-extrabold text-[10px] uppercase tracking-widest px-2.5 py-1 rounded-full">
+          <span className="bg-blue-50 text-[#0080FF] border border-blue-100 font-extrabold text-[10px] uppercase tracking-widest px-3 py-1 rounded-full">
             {isRtl ? 'بوابة الإشراف الميداني الرقمية' : 'Digital Field Supervisor Portal'}
           </span>
-          <h1 className="text-xl font-black mt-1.5 flex items-center gap-2">
+          <h1 className="text-xl font-black text-[#040957] mt-2 flex items-center gap-2">
             <span>📱</span>
             {isRtl ? settings.companyNameAr : settings.companyNameEn}
           </h1>
-          <p className="text-xs text-gray-300 mt-1">
+          <p className="text-xs text-gray-500 mt-1 font-medium">
             {isRtl ? 'منصة توثيق ومزامنة بنود العمل والمطالبات المباشرة' : 'Secure offline-ready field supervisor logging system'}
           </p>
         </div>
@@ -1415,16 +1472,16 @@ export default function FieldPortal({
           {/* Language Toggle */}
           <button 
             onClick={onToggleLanguage}
-            className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 px-3 py-2 rounded-xl text-xs font-bold transition text-white border border-white/20"
+            className="flex items-center gap-1.5 bg-slate-50 hover:bg-slate-100 px-3 py-2 rounded-xl text-xs font-bold transition text-slate-700 border border-slate-200 cursor-pointer"
             title={isRtl ? 'Switch to English' : 'تغيير للغة العربية'}
           >
-            <Globe className="w-4 h-4 text-amber-400" />
+            <Globe className="w-4 h-4 text-[#0080FF]" />
             <span>{isRtl ? 'English' : 'العربية'}</span>
           </button>
 
           <button 
             onClick={handleCopyLink}
-            className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 px-3 py-2 rounded-xl text-xs font-bold transition text-amber-300"
+            className="flex items-center gap-1.5 bg-slate-50 hover:bg-slate-100 px-3 py-2 rounded-xl text-xs font-bold transition text-[#0080FF] border border-slate-200 cursor-pointer"
           >
             <Copy className="w-4 h-4" />
             <span>{isRtl ? 'نسخ رابط الجوال' : 'Copy Mobile Link'}</span>
@@ -1443,14 +1500,14 @@ export default function FieldPortal({
         <motion.div 
           initial={{ scale: 0.95, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
-          className="bg-white dark:bg-[#1C2638] p-8 rounded-3xl border border-gray-150 dark:border-gray-800 text-center space-y-6 shadow-2xl"
+          className="bg-white p-8 rounded-3xl border border-gray-150 text-center space-y-6 shadow-2xl"
         >
           <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto text-emerald-600">
             <Check className="w-10 h-10 stroke-[3]" />
           </div>
 
           <div className="space-y-2">
-            <h2 className="text-2xl font-black text-[#040957] dark:text-white">
+            <h2 className="text-2xl font-black text-[#040957]">
               {isRtl ? 'تم رفع التقرير الميداني بنجاح!' : 'Field Report Submitted Successfully!'}
             </h2>
             <p className="text-xs text-gray-400 font-medium">
@@ -1460,24 +1517,24 @@ export default function FieldPortal({
             </p>
           </div>
 
-          <div className="bg-gray-50 dark:bg-gray-900/40 p-4 rounded-2xl max-w-sm mx-auto text-right text-xs space-y-2.5 font-mono border border-gray-100 dark:border-gray-800">
+          <div className="bg-gray-50 p-4 rounded-2xl max-w-sm mx-auto text-right text-xs space-y-2.5 font-mono border border-gray-100">
             <div className="flex justify-between">
               <span className="text-gray-400">{isRtl ? 'كود التقرير:' : 'Report ID:'}</span>
-              <span className="font-bold text-[#040957] dark:text-[#0080FF]">{successSubmissionId}</span>
+              <span className="font-bold text-[#040957]">{successSubmissionId}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-400">{isRtl ? 'المشرف المسؤول:' : 'Supervisor:'}</span>
-              <span className="font-bold text-gray-800 dark:text-gray-200">{supName}</span>
+              <span className="font-bold text-gray-800">{supName}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-400">{isRtl ? 'المشروع:' : 'Project:'}</span>
-              <span className="font-bold text-gray-800 dark:text-gray-200 truncate max-w-[200px]">
+              <span className="font-bold text-gray-800 truncate max-w-[200px]">
                 {selectedProject ? (isRtl ? selectedProject.nameAr : selectedProject.nameEn) : ''}
               </span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-400">{isRtl ? 'التاريخ الميداني:' : 'Work Date:'}</span>
-              <span className="font-bold text-gray-800 dark:text-gray-200">{reportDate}</span>
+              <span className="font-bold text-gray-800">{reportDate}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-400">{isRtl ? 'حالة الاعتماد:' : 'Approval Status:'}</span>
@@ -1491,7 +1548,7 @@ export default function FieldPortal({
             <button
               onClick={handlePrintPDF}
               disabled={isPrinting}
-              className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-400 text-white font-bold py-3 px-6 rounded-2xl text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-100 dark:shadow-none"
+              className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-400 text-white font-bold py-3 px-6 rounded-2xl text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-100"
             >
               <Printer className="w-4 h-4 animate-pulse" />
               <span>
@@ -1519,10 +1576,10 @@ export default function FieldPortal({
         </motion.div>
       ) : (
         /* MULTI-STEP REPORT WIZARD FORM */
-        <div className="bg-white dark:bg-[#182132] border border-gray-150 dark:border-gray-800 rounded-3xl shadow-xl overflow-hidden">
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
           
           {/* STEP INDICATOR TABS */}
-          <div className="grid grid-cols-6 divide-x divide-gray-100 dark:divide-gray-800 border-b border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/10 text-center">
+          <div className="grid grid-cols-6 border-b border-gray-150 bg-slate-50/50 text-center">
             {[
               { id: 1, title: isRtl ? '١. المشرف' : '1. Check-In', icon: User },
               { id: 2, title: isRtl ? '٢. العمالة' : '2. Attendance', icon: Users },
@@ -1540,10 +1597,10 @@ export default function FieldPortal({
                     alert(isRtl ? 'الرجاء إدخال بيانات المشرف والمشروع أولاً' : 'Please initialize supervisor credentials first');
                   }
                 }}
-                className={`py-3.5 px-1 flex flex-col items-center gap-1 transition ${currentStep === step.id ? 'bg-[#040957] text-white' : 'text-gray-400 hover:text-gray-600'}`}
+                className={`py-4 px-1 flex flex-col items-center gap-1.5 transition border-b-2 relative cursor-pointer ${currentStep === step.id ? 'bg-blue-50/40 text-[#0080FF] border-[#0080FF] font-extrabold' : 'border-transparent text-gray-400 hover:text-slate-600 hover:bg-slate-50/20'}`}
               >
-                <step.icon className="w-4 h-4" />
-                <span className="text-[9px] font-black hidden sm:inline">{step.title}</span>
+                <step.icon className="w-4.5 h-4.5" />
+                <span className="text-[10px] font-black hidden sm:inline">{step.title}</span>
               </button>
             ))}
           </div>
@@ -1553,7 +1610,7 @@ export default function FieldPortal({
             {currentStep === 1 && (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
                 <div className="space-y-1">
-                  <h2 className="text-base font-black text-[#040957] dark:text-white">
+                  <h2 className="text-base font-black text-[#040957]">
                     👤 {isRtl ? 'تسجيل حضور المشرف والموقع' : 'Supervisor & Site Setup'}
                   </h2>
                   <p className="text-xs text-gray-400">
@@ -1569,7 +1626,7 @@ export default function FieldPortal({
                       value={supName}
                       onChange={(e) => setSupName(e.target.value)}
                       placeholder={isRtl ? 'مثال: يوسف الحربي' : 'e.g. Yousef Al-Harbi'}
-                      className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white dark:bg-gray-800 text-gray-800 dark:text-white font-bold"
+                      className="w-full border border-gray-200 rounded-xl p-3 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white text-gray-800 font-bold"
                     />
                   </div>
 
@@ -1580,7 +1637,7 @@ export default function FieldPortal({
                       value={supBadge}
                       onChange={(e) => setSupBadge(e.target.value)}
                       placeholder="e.g. BDG-9844"
-                      className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white dark:bg-gray-800 text-gray-800 dark:text-white font-bold"
+                      className="w-full border border-gray-200 rounded-xl p-3 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white text-gray-800 font-bold"
                     />
                   </div>
 
@@ -1591,7 +1648,7 @@ export default function FieldPortal({
                       value={supNationalId}
                       onChange={(e) => setSupNationalId(e.target.value)}
                       placeholder="e.g. 1098471201"
-                      className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white dark:bg-gray-800 text-gray-800 dark:text-white font-bold"
+                      className="w-full border border-gray-200 rounded-xl p-3 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white text-gray-800 font-bold"
                     />
                   </div>
 
@@ -1602,18 +1659,18 @@ export default function FieldPortal({
                       value={supTitle}
                       onChange={(e) => setSupTitle(e.target.value)}
                       placeholder="e.g. Senior Site General Inspector"
-                      className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white dark:bg-gray-800 text-gray-800 dark:text-white font-bold"
+                      className="w-full border border-gray-200 rounded-xl p-3 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white text-gray-800 font-bold"
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-gray-100 dark:border-gray-800">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-gray-100">
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-gray-500">{isRtl ? 'المشروع المستهدف:' : 'Target Project Site:'}</label>
                     <select
                       value={selectedProjectId}
                       onChange={(e) => setSelectedProjectId(e.target.value)}
-                      className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white dark:bg-gray-800 text-gray-800 dark:text-white font-bold"
+                      className="w-full border border-gray-200 rounded-xl p-3 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white text-gray-800 font-bold"
                     >
                       {projects.map(p => (
                         <option key={p.id} value={p.id}>
@@ -1629,13 +1686,13 @@ export default function FieldPortal({
                       type="date" 
                       value={reportDate}
                       onChange={(e) => setReportDate(e.target.value)}
-                      className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white dark:bg-gray-800 text-gray-800 dark:text-white font-bold"
+                      className="w-full border border-gray-200 rounded-xl p-3 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white text-gray-800 font-bold"
                     />
                   </div>
                 </div>
 
                 {/* SIGNATURE SECTION */}
-                <div className="pt-4 border-t border-gray-100 dark:border-gray-800 space-y-3">
+                <div className="pt-4 border-t border-gray-100 space-y-3">
                   <label className="text-xs font-bold text-gray-500 block">✍️ {isRtl ? 'توقيع المشرف الرقمي:' : 'Supervisor Authorized Signature:'}</label>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -1644,7 +1701,7 @@ export default function FieldPortal({
                           ? 'ارسم توقيعك على اللوحة المخصصة للموافقة على التقرير بشكل معتمد.' 
                           : 'Draw your ink signature below to validate reports prior to PM database entry.'}
                       </p>
-                      <div className="border border-gray-200 dark:border-gray-700 rounded-2xl overflow-hidden bg-gray-50 dark:bg-gray-900 relative">
+                      <div className="border border-gray-200 rounded-2xl overflow-hidden bg-gray-50 relative">
                         <canvas
                           ref={canvasRef}
                           width={350}
@@ -1679,7 +1736,7 @@ export default function FieldPortal({
                         value={signatureText}
                         onChange={(e) => setSignatureText(e.target.value)}
                         placeholder={isRtl ? 'اكتب اسمك الثلاثي هنا للتفويض' : 'Type name to authorize'}
-                        className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white dark:bg-gray-800 text-gray-800 dark:text-white font-bold h-28 text-center"
+                        className="w-full border border-gray-200 rounded-xl p-3 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white text-gray-800 font-bold h-28 text-center"
                       />
                     </div>
                   </div>
@@ -1707,7 +1764,7 @@ export default function FieldPortal({
             {currentStep === 2 && (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
                 <div className="space-y-1">
-                  <h2 className="text-base font-black text-[#040957] dark:text-white">
+                  <h2 className="text-base font-black text-[#040957]">
                     📋 {isRtl ? 'كشف تحضير العمالة والموظفين' : 'Workforce Attendance Log'}
                   </h2>
                   <p className="text-xs text-gray-400">
@@ -1715,16 +1772,16 @@ export default function FieldPortal({
                   </p>
                 </div>
 
-                <div className="border border-gray-150 dark:border-gray-800 rounded-2xl overflow-hidden bg-gray-50/50 dark:bg-gray-900/10">
-                  <table className="w-full text-right text-xs divide-y divide-gray-100 dark:divide-gray-800">
-                    <thead className="bg-gray-100/50 dark:bg-gray-800/40 text-[10px] text-gray-400 font-bold uppercase">
+                <div className="border border-gray-150 rounded-2xl overflow-hidden bg-gray-50/50">
+                  <table className="w-full text-right text-xs divide-y divide-gray-100">
+                    <thead className="bg-gray-100/50 text-[10px] text-gray-400 font-bold uppercase">
                       <tr>
                         <th className="p-3 text-right">{isRtl ? 'الموظف / المهنة' : 'Employee / Role'}</th>
                         <th className="p-3 text-center">{isRtl ? 'الحالة' : 'Status'}</th>
                         <th className="p-3 text-right">{isRtl ? 'ساعات وتفاصيل العمل' : 'Times & Notes'}</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100 dark:divide-gray-800 bg-white dark:bg-transparent">
+                    <tbody className="divide-y divide-gray-100 bg-white">
                       {workers.filter(w => w.status === 'Active').map(w => {
                         const state = workerAttendanceState[w.id] || {
                           isPresent: true,
@@ -1751,10 +1808,10 @@ export default function FieldPortal({
                         };
 
                         return (
-                          <tr key={w.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/20">
+                          <tr key={w.id} className="hover:bg-gray-50/50">
                             <td className="p-3">
                               <div className="flex items-center gap-2">
-                                <div className="font-extrabold text-gray-800 dark:text-gray-100 text-xs">{w.fullName}</div>
+                                <div className="font-extrabold text-gray-800 text-xs">{w.fullName}</div>
                                 <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-tighter ${isAssigned ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
                                   {isAssigned ? (isRtl ? 'مخصص لعمل' : 'Assigned') : (isRtl ? 'متاح للعمل' : 'Available')}
                                 </span>
@@ -1765,7 +1822,7 @@ export default function FieldPortal({
                               <select
                                 value={state.status}
                                 onChange={(e) => handleStatusChange(e.target.value)}
-                                className={`text-[11px] font-bold p-1 px-2.5 rounded-lg border bg-white dark:bg-gray-800 text-gray-700 dark:text-white ${state.isPresent ? 'border-emerald-200 text-emerald-600' : 'border-rose-200 text-rose-500'}`}
+                                className={`text-[11px] font-bold p-1 px-2.5 rounded-lg border bg-white text-gray-700 ${state.isPresent ? 'border-emerald-200 text-emerald-600' : 'border-rose-200 text-rose-500'}`}
                               >
                                 <option value="Present">{isRtl ? 'حضور' : 'Present'}</option>
                                 <option value="Late">{isRtl ? 'متأخر' : 'Late'}</option>
@@ -1782,7 +1839,7 @@ export default function FieldPortal({
                                     type="text" 
                                     value={state.startTime}
                                     onChange={(e) => setWorkerAttendanceState(prev => ({ ...prev, [w.id]: { ...state, startTime: e.target.value } }))}
-                                    className="border border-gray-150 dark:border-gray-700 bg-white dark:bg-gray-800 rounded p-1 text-[10px] w-16 text-center font-bold text-gray-700 dark:text-white"
+                                    className="border border-gray-150 bg-white rounded p-1 text-[10px] w-16 text-center font-bold text-gray-700"
                                     title="Start Time"
                                   />
                                   <span className="text-gray-300">-</span>
@@ -1790,7 +1847,7 @@ export default function FieldPortal({
                                     type="text" 
                                     value={state.endTime}
                                     onChange={(e) => setWorkerAttendanceState(prev => ({ ...prev, [w.id]: { ...state, endTime: e.target.value } }))}
-                                    className="border border-gray-150 dark:border-gray-700 bg-white dark:bg-gray-800 rounded p-1 text-[10px] w-16 text-center font-bold text-gray-700 dark:text-white"
+                                    className="border border-gray-150 bg-white rounded p-1 text-[10px] w-16 text-center font-bold text-gray-700"
                                     title="End Time"
                                   />
                                   <input 
@@ -1798,7 +1855,7 @@ export default function FieldPortal({
                                     value={state.notes}
                                     onChange={(e) => setWorkerAttendanceState(prev => ({ ...prev, [w.id]: { ...state, notes: e.target.value } }))}
                                     placeholder={isRtl ? 'ملاحظات المشرف...' : 'Supervisor notes...'}
-                                    className="border border-gray-150 dark:border-gray-700 bg-white dark:bg-gray-800 rounded p-1 text-[10px] flex-1 min-w-[100px] text-gray-700 dark:text-white"
+                                    className="border border-gray-150 bg-white rounded p-1 text-[10px] flex-1 min-w-[100px] text-gray-700"
                                   />
                                 </div>
                               ) : (
@@ -1807,7 +1864,7 @@ export default function FieldPortal({
                                   value={state.notes}
                                   onChange={(e) => setWorkerAttendanceState(prev => ({ ...prev, [w.id]: { ...state, notes: e.target.value } }))}
                                   placeholder={isRtl ? 'سبب الغياب...' : 'Reason for absence...'}
-                                  className="border border-gray-150 dark:border-gray-700 bg-white dark:bg-gray-800 rounded p-1 text-[10px] w-full text-gray-700 dark:text-white"
+                                  className="border border-gray-150 bg-white rounded p-1 text-[10px] w-full text-gray-700"
                                 />
                               )}
                             </td>
@@ -1841,7 +1898,7 @@ export default function FieldPortal({
             {currentStep === 3 && (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
                 <div className="space-y-1">
-                  <h2 className="text-base font-black text-[#040957] dark:text-white">
+                  <h2 className="text-base font-black text-[#040957]">
                     ⏱️ {isRtl ? 'إدخال كميات الإنتاج والمنجز الفعلي' : 'Site Production & Quantities'}
                   </h2>
                   <p className="text-xs text-gray-400">
@@ -1854,8 +1911,8 @@ export default function FieldPortal({
                     ⚠️ {isRtl ? 'الرجاء إضافة بنود عمل للمشروع أولاً.' : 'Please add work items in main program first.'}
                   </div>
                 ) : (
-                  <div className="bg-gray-50 dark:bg-gray-900/20 p-5 rounded-2xl border border-gray-150 dark:border-gray-800 space-y-4">
-                    <h3 className="text-xs font-black text-[#040957] dark:text-[#0080FF] uppercase tracking-wider">
+                  <div className="bg-gray-50 p-5 rounded-2xl border border-gray-150 space-y-4">
+                    <h3 className="text-xs font-black text-[#040957] uppercase tracking-wider">
                       {editingProdIdx !== null ? (
                         <span>✏️ {isRtl ? 'تعديل تحديث ميداني' : 'Edit Production Log'}</span>
                       ) : (
@@ -1869,7 +1926,7 @@ export default function FieldPortal({
                         <select
                           value={prodWiId}
                           onChange={(e) => setProdWiId(e.target.value)}
-                          className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white dark:bg-gray-800 text-gray-850 dark:text-white font-bold"
+                          className="w-full border border-gray-200 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white text-gray-850 font-bold"
                         >
                           {projectWorkItems.map(wi => (
                             <option key={wi.id} value={wi.id}>
@@ -1904,7 +1961,7 @@ export default function FieldPortal({
                         <select
                           value={prodActId}
                           onChange={(e) => setProdActId(e.target.value)}
-                          className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white dark:bg-gray-800 text-gray-850 dark:text-white font-bold"
+                          className="w-full border border-gray-200 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white text-gray-850 font-bold"
                         >
                           {itemActivities.map(act => {
                             const progress = getActivityProgress(act, progressUpdates);
@@ -1946,7 +2003,7 @@ export default function FieldPortal({
                               setProdCompletedQty(val);
                             }
                           }}
-                          className={`w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white dark:bg-gray-800 text-gray-800 dark:text-white font-bold ${isActivityCompleted ? 'opacity-50 cursor-not-allowed bg-gray-50 dark:bg-gray-900' : ''}`}
+                          className={`w-full border border-gray-200 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white text-gray-800 font-bold ${isActivityCompleted ? 'opacity-50 cursor-not-allowed bg-gray-50 ' : ''}`}
                         />
                       </div>
 
@@ -1973,7 +2030,7 @@ export default function FieldPortal({
                               setProdWorkersUsed(val);
                             }
                           }}
-                          className={`w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white dark:bg-gray-800 text-gray-800 dark:text-white font-bold ${isActivityCompleted ? 'opacity-50 cursor-not-allowed bg-gray-50 dark:bg-gray-900' : ''}`}
+                          className={`w-full border border-gray-200 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white text-gray-800 font-bold ${isActivityCompleted ? 'opacity-50 cursor-not-allowed bg-gray-50 ' : ''}`}
                         />
                       </div>
 
@@ -1983,7 +2040,7 @@ export default function FieldPortal({
                           value={prodTime}
                           onChange={(e) => setProdTime(e.target.value)}
                           disabled={isActivityCompleted}
-                          className={`w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white dark:bg-gray-800 text-gray-800 dark:text-white font-bold ${isActivityCompleted ? 'opacity-50 cursor-not-allowed bg-gray-50 dark:bg-gray-900' : ''}`}
+                          className={`w-full border border-gray-200 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white text-gray-800 font-bold ${isActivityCompleted ? 'opacity-50 cursor-not-allowed bg-gray-50 ' : ''}`}
                         >
                           <option value="09:00 AM">09:00 AM</option>
                           <option value="11:00 AM">11:00 AM</option>
@@ -1994,57 +2051,125 @@ export default function FieldPortal({
                       </div>
                     </div>
 
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-500 flex justify-between items-center">
+                        <span>{isRtl ? 'تحديد العمال المباشرين للنشاط:' : 'Select Workers Assigned to this Activity:'}</span>
+                        <span className="text-amber-600 font-mono text-[10px]">
+                          ({isRtl ? 'المختارون:' : 'Selected:'} {prodWorkerNames.length})
+                        </span>
+                      </label>
+                      
+                      <div className="bg-white border border-gray-200 rounded-2xl p-4 space-y-4">
+                        {/* Workers marked as present in Step 2 */}
+                        <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto p-1">
+                          {workers.filter(w => workerAttendanceState[w.id]?.isPresent).map(w => (
+                            <button
+                              key={w.id}
+                              onClick={() => toggleWorkerInProduction(w.fullName)}
+                              className={`px-3 py-1.5 rounded-xl text-[10px] font-bold transition flex items-center gap-1.5 border ${ prodWorkerNames.includes(w.fullName) ? 'bg-[#040957] text-white border-[#040957]' : 'bg-gray-50 text-gray-600 border-gray-100 hover:border-blue-300' }`}
+                            >
+                              {prodWorkerNames.includes(w.fullName) ? <CheckCircle className="w-3 h-3" /> : <Users className="w-3 h-3" />}
+                              {w.fullName}
+                            </button>
+                          ))}
+                          {workers.filter(w => workerAttendanceState[w.id]?.isPresent).length === 0 && (
+                            <div className="w-full text-center py-4 text-[10px] text-gray-400 italic">
+                              {isRtl ? 'يرجى تحضير العمال في الخطوة السابقة أولاً' : 'Please mark workers as present in Step 2 first'}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Custom Worker Addition */}
+                        <div className="flex gap-2 pt-3 border-t border-gray-100">
+                          <div className="relative flex-1">
+                            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                            <input 
+                              type="text"
+                              value={customWorkerName}
+                              onChange={(e) => setCustomWorkerName(e.target.value)}
+                              placeholder={isRtl ? 'إضافة اسم عامل ميداني غير مدرج بالقائمة...' : 'Add unlisted field worker name...'}
+                              className="w-full border border-gray-200 rounded-xl py-2 pl-9 pr-3 text-[10px] bg-gray-50 focus:ring-2 focus:ring-[#0080FF] transition"
+                            />
+                          </div>
+                          <button 
+                            onClick={addCustomWorker}
+                            disabled={!customWorkerName.trim()}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl transition flex items-center gap-1.5 text-[10px] font-bold disabled:opacity-50"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            {isRtl ? 'إضافة' : 'Add'}
+                          </button>
+                        </div>
+
+                        {/* Selected Custom Workers (not in main list) */}
+                        {prodWorkerNames.filter(name => !workers.some(w => w.fullName === name)).length > 0 && (
+                          <div className="flex flex-wrap gap-2 pt-2">
+                            {prodWorkerNames.filter(name => !workers.some(w => w.fullName === name)).map(name => (
+                              <button
+                                key={name}
+                                onClick={() => toggleWorkerInProduction(name)}
+                                className="px-3 py-1.5 rounded-xl text-[10px] font-bold bg-[#040957] text-white flex items-center gap-1.5 shadow-sm"
+                              >
+                                <CheckCircle className="w-3 h-3" />
+                                {name} <span className="opacity-60 text-[8px] font-black">{isRtl ? 'إضافة يدوية' : 'Manual Entry'}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
                     {/* Remaining Balance breakdown panel */}
-                    <div className="bg-gradient-to-r from-blue-50/50 to-indigo-50/30 dark:from-blue-950/20 dark:to-indigo-950/10 border border-blue-100 dark:border-blue-900 rounded-2xl p-4">
+                    <div className="bg-gradient-to-r from-blue-50/50 to-indigo-50/30 border border-blue-100 rounded-2xl p-4">
                       <div className="flex items-center justify-between mb-3">
-                        <span className="text-[11px] font-black uppercase text-[#040957] dark:text-blue-300 tracking-wider flex items-center gap-1.5">
+                        <span className="text-[11px] font-black uppercase text-[#040957] tracking-wider flex items-center gap-1.5">
                           🎯 {isRtl ? 'حالة التوازن والمطابقة للنشاط' : 'Sub-Activity Balance Tracker'}
                         </span>
-                        <span className="bg-blue-100 dark:bg-blue-900/50 text-[#040957] dark:text-blue-200 text-[9px] font-black px-2 py-0.5 rounded-full uppercase">
+                        <span className="bg-blue-100 text-[#040957] text-[9px] font-black px-2 py-0.5 rounded-full uppercase">
                           {currentActivity?.unit}
                         </span>
                       </div>
                       
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
-                        <div className="bg-white dark:bg-gray-800 rounded-xl border border-slate-100 dark:border-gray-700 p-2.5 shadow-sm">
-                          <span className="block text-[14px] font-black text-slate-800 dark:text-gray-200 font-mono leading-none">
+                        <div className="bg-white rounded-xl border border-slate-100 p-2.5 shadow-sm">
+                          <span className="block text-[14px] font-black text-slate-800 font-mono leading-none">
                             {currentActivity?.totalQuantity || 0}
                           </span>
-                          <span className="text-[8px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-wider mt-1 block">
+                          <span className="text-[8px] font-black text-gray-400 uppercase tracking-wider mt-1 block">
                             {isRtl ? 'إجمالي المخطط' : 'Total Planned'}
                           </span>
                         </div>
                         
-                        <div className="bg-white dark:bg-gray-800 rounded-xl border border-slate-100 dark:border-gray-700 p-2.5 shadow-sm">
-                          <span className="block text-[14px] font-black text-indigo-600 dark:text-indigo-400 font-mono leading-none">
+                        <div className="bg-white rounded-xl border border-slate-100 p-2.5 shadow-sm">
+                          <span className="block text-[14px] font-black text-indigo-600 font-mono leading-none">
                             {activityProgress}
                           </span>
-                          <span className="text-[8px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-wider mt-1 block">
+                          <span className="text-[8px] font-black text-gray-400 uppercase tracking-wider mt-1 block">
                             {isRtl ? 'المنجز الإجمالي' : 'Total Done'}
                           </span>
                         </div>
 
-                        <div className="bg-[#040957] dark:bg-indigo-950 rounded-xl p-2.5 shadow-sm text-white">
-                          <span className="block text-[14px] font-black font-mono leading-none text-amber-400">
+                        <div className="bg-amber-50/50 border border-amber-200 rounded-xl p-2.5 shadow-sm text-amber-900">
+                          <span className="block text-[14px] font-black font-mono leading-none text-amber-700">
                             {remainingQty}
                           </span>
-                          <span className="text-[8px] font-black text-slate-300 dark:text-gray-400 uppercase tracking-wider mt-1 block">
+                          <span className="text-[8px] font-black text-amber-600 uppercase tracking-wider mt-1 block">
                             {isRtl ? 'الرصيد المتبقي الحالي' : 'Current Remaining'}
                           </span>
                         </div>
 
-                        <div className="bg-emerald-50 dark:bg-emerald-950/20 rounded-xl border border-emerald-100 dark:border-emerald-900/30 p-2.5 shadow-sm">
-                          <span className="block text-[14px] font-black text-emerald-700 dark:text-emerald-400 font-mono leading-none">
+                        <div className="bg-emerald-50 rounded-xl border border-emerald-100 p-2.5 shadow-sm">
+                          <span className="block text-[14px] font-black text-emerald-700 font-mono leading-none">
                             {Math.max(0, remainingQty - Number(prodCompletedQty))}
                           </span>
-                          <span className="text-[8px] font-black text-emerald-600 dark:text-emerald-500 uppercase tracking-wider mt-1 block">
+                          <span className="text-[8px] font-black text-emerald-600 uppercase tracking-wider mt-1 block">
                             {isRtl ? 'المتبقي بعد التحديث' : 'Projected Remaining'}
                           </span>
                         </div>
                       </div>
 
                       {isActivityCompleted && (
-                        <div className="bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-400 rounded-2xl p-4 mt-2 border-2 border-emerald-200 dark:border-emerald-900/50 flex flex-col items-center justify-center text-center gap-2">
+                        <div className="bg-emerald-50 text-emerald-800 rounded-2xl p-4 mt-2 border-2 border-emerald-200 flex flex-col items-center justify-center text-center gap-2">
                           <CheckCircle className="w-8 h-8 text-emerald-500" />
                           <div>
                             <div className="text-sm font-black uppercase tracking-widest">
@@ -2058,7 +2183,7 @@ export default function FieldPortal({
                       )}
 
                       {!isActivityCompleted && Number(prodCompletedQty) >= remainingQty && remainingQty > 0 && (
-                        <div className="bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-400 rounded-lg p-2 mt-2 text-[10px] font-bold flex items-center gap-1 border border-amber-200 dark:border-amber-900/30">
+                        <div className="bg-amber-50 text-amber-800 rounded-lg p-2 mt-2 text-[10px] font-bold flex items-center gap-1 border border-amber-200">
                           ⚠️ {isRtl ? `تنبيه: لقد استهلكت كامل الرصيد المتبقي المتاح (${remainingQty} ${currentActivity?.unit})` : `Warning: You are recording the entire remaining scope (${remainingQty} ${currentActivity?.unit})`}
                         </div>
                       )}
@@ -2067,15 +2192,15 @@ export default function FieldPortal({
                     {/* MATERIAL MANAGEMENT SECTION */}
                     <div className="space-y-4 pt-2">
                       <div className="flex items-center justify-between">
-                        <h4 className="text-[11px] font-black text-[#040957] dark:text-amber-400 uppercase tracking-widest flex items-center gap-1.5">
+                        <h4 className="text-[11px] font-black text-[#040957] uppercase tracking-widest flex items-center gap-1.5">
                           🏗️ {isRtl ? 'إدارة المواد والمخزون الميداني' : 'On-Site Material & Inventory Management'}
                         </h4>
                       </div>
 
                       {/* Delivery from Warehouse */}
-                      <div className="bg-amber-50/50 dark:bg-amber-950/10 border border-amber-100 dark:border-amber-900/30 rounded-2xl p-4 space-y-3">
+                      <div className="bg-amber-50/50 border border-amber-100 rounded-2xl p-4 space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-bold text-amber-800 dark:text-amber-400 uppercase">
+                          <span className="text-[10px] font-bold text-amber-800 uppercase">
                             {isRtl ? 'إضافة مواد من المستودع للموقع' : 'Add Materials from Warehouse (Delivery)'}
                           </span>
                           <Truck className="w-4 h-4 text-amber-500" />
@@ -2084,7 +2209,7 @@ export default function FieldPortal({
                           <select
                             value={tempDelId}
                             onChange={(e) => setTempDelId(e.target.value)}
-                            className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2 text-[11px] font-bold bg-white dark:bg-gray-800"
+                            className="w-full border border-gray-200 rounded-xl p-2 text-[11px] font-bold bg-white"
                           >
                             <option value="">{isRtl ? 'اختر المادة...' : 'Select Material...'}</option>
                             {materials.map(m => (
@@ -2106,7 +2231,7 @@ export default function FieldPortal({
                                 else setTempDelQty(val);
                               }}
                               placeholder={isRtl ? 'الكمية الموردة' : 'Qty Delivered'}
-                              className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2 text-[11px] font-bold bg-white dark:bg-gray-800"
+                              className="w-full border border-gray-200 rounded-xl p-2 text-[11px] font-bold bg-white"
                             />
                             <button
                               onClick={() => {
@@ -2126,7 +2251,7 @@ export default function FieldPortal({
                         {materialDeliveries.filter(d => d.activityId === prodActId).length > 0 && (
                           <div className="pt-2 flex flex-wrap gap-2">
                             {materialDeliveries.filter(d => d.activityId === prodActId).map((d, i) => (
-                              <div key={i} className="bg-white dark:bg-gray-800 px-2 py-1 rounded-lg border border-amber-200 text-[9px] font-bold flex items-center gap-1.5 shadow-sm">
+                              <div key={i} className="bg-white px-2 py-1 rounded-lg border border-amber-200 text-[9px] font-bold flex items-center gap-1.5 shadow-sm">
                                 🚚 {isRtl ? d.materialNameAr : d.materialNameEn}: {d.quantityDelivered} {d.unit}
                                 <button 
                                   onClick={() => {
@@ -2148,9 +2273,9 @@ export default function FieldPortal({
                       </div>
 
                       {/* Consumption Tracking */}
-                      <div className="bg-blue-50/50 dark:bg-blue-950/10 border border-blue-100 dark:border-blue-900/30 rounded-2xl p-4 space-y-3">
+                      <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-4 space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-bold text-blue-800 dark:text-blue-400 uppercase">
+                          <span className="text-[10px] font-bold text-blue-800 uppercase">
                             {isRtl ? 'تسجيل الاستهلاك لهذا التحديث' : 'Record Consumption for this Update'}
                           </span>
                           <Package className="w-4 h-4 text-blue-500" />
@@ -2160,7 +2285,7 @@ export default function FieldPortal({
                           <select
                             value={tempMatId}
                             onChange={(e) => setTempMatId(e.target.value)}
-                            className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2 text-[11px] font-bold bg-white dark:bg-gray-800"
+                            className="w-full border border-gray-200 rounded-xl p-2 text-[11px] font-bold bg-white"
                           >
                             <option value="">{isRtl ? 'اختر المادة للموقع...' : 'Select Material...'}</option>
                             {materials.map(m => {
@@ -2208,7 +2333,7 @@ export default function FieldPortal({
                                     else setTempMatQty(val);
                                   }}
                                   placeholder={isRtl ? 'الكمية المستخدمة' : 'Qty Used'}
-                                  className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2 text-[11px] font-bold bg-white dark:bg-gray-800"
+                                  className="w-full border border-gray-200 rounded-xl p-2 text-[11px] font-bold bg-white"
                                 />
                               );
                             })()}
@@ -2230,7 +2355,7 @@ export default function FieldPortal({
                         {currentConsumptions.length > 0 && (
                           <div className="pt-2 flex flex-wrap gap-2">
                             {currentConsumptions.map((c, i) => (
-                              <div key={i} className="bg-white dark:bg-gray-800 px-2 py-1 rounded-lg border border-blue-200 text-[9px] font-bold flex items-center gap-1.5 group">
+                              <div key={i} className="bg-white px-2 py-1 rounded-lg border border-blue-200 text-[9px] font-bold flex items-center gap-1.5 group">
                                 ⚙️ {isRtl ? c.materialNameAr : c.materialNameEn}: -{c.quantityUsed} {c.unit}
                                 <button 
                                   onClick={() => setCurrentConsumptions(prev => prev.filter((_, idx) => idx !== i))}
@@ -2251,7 +2376,7 @@ export default function FieldPortal({
                         value={prodNotes}
                         onChange={(e) => setProdNotes(e.target.value)}
                         placeholder={isRtl ? 'صف بالتفصيل حالة الصب أو أعمال الحفريات المنتهية...' : 'Describe poured materials or completed boring depth...'}
-                        className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white dark:bg-gray-800 text-gray-800 dark:text-white font-semibold h-16"
+                        className="w-full border border-gray-200 rounded-xl p-3 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white text-gray-800 font-semibold h-16"
                       />
                     </div>
 
@@ -2266,7 +2391,7 @@ export default function FieldPortal({
                         onDragOver={handleDrag}
                         onDragLeave={handleDrag}
                         onDrop={handleDrop}
-                        className={`border-2 border-dashed rounded-2xl p-6 text-center transition flex flex-col items-center justify-center gap-2 cursor-pointer ${dragActive ? 'border-amber-400 bg-amber-500/10' : 'border-gray-250 dark:border-gray-700 hover:border-amber-400 bg-white dark:bg-gray-900/40'}`}
+                        className={`border-2 border-dashed rounded-2xl p-6 text-center transition flex flex-col items-center justify-center gap-2 cursor-pointer ${dragActive ? 'border-amber-400 bg-amber-500/10' : 'border-gray-250 hover:border-amber-400 bg-white '}`}
                       >
                         <input 
                           type="file"
@@ -2279,7 +2404,7 @@ export default function FieldPortal({
                         <label htmlFor="file-portal-upload" className="cursor-pointer flex flex-col items-center gap-2">
                           <UploadCloud className="w-8 h-8 text-amber-500 animate-pulse" />
                           <div>
-                            <span className="font-extrabold text-xs text-[#040957] dark:text-amber-400">
+                            <span className="font-extrabold text-xs text-[#040957]">
                               {isRtl ? 'اضغط لرفع الصور' : 'Click to upload files'}
                             </span>
                             <span className="text-gray-400 text-[11px] block mt-1">
@@ -2292,7 +2417,7 @@ export default function FieldPortal({
                       {uploadedFiles.length > 0 && (
                         <div className="pt-2 flex flex-wrap gap-2">
                           {uploadedFiles.map((f, i) => (
-                            <div key={i} className="bg-gray-100 dark:bg-gray-800 p-2 rounded-xl text-[10px] font-bold text-gray-700 dark:text-gray-300 flex items-center gap-2 shadow-sm">
+                            <div key={i} className="bg-gray-100 p-2 rounded-xl text-[10px] font-bold text-gray-700 flex items-center gap-2 shadow-sm">
                               {f.name.match(/\.(jpeg|jpg|gif|png)$/i) ? '🖼️' : '📄'}
                               <span className="truncate max-w-[120px]">{f.name}</span>
                               <button 
@@ -2337,7 +2462,7 @@ export default function FieldPortal({
                 {/* CURRENT SUBMITTED LIST */}
                 {prodUpdates.length > 0 && (
                   <div className="space-y-2 pt-2">
-                    <h4 className="text-xs font-extrabold text-[#040957] dark:text-white uppercase tracking-wider">
+                    <h4 className="text-xs font-extrabold text-[#040957] uppercase tracking-wider">
                       📊 {isRtl ? 'قائمة تحديثات اليوم المدخلة للمراجعة:' : 'Today\'s production updates list:'}
                     </h4>
                     <div className="grid grid-cols-1 gap-2.5">
@@ -2345,18 +2470,28 @@ export default function FieldPortal({
                         const act = activities.find(a => a.id === p.activityId);
                         const wi = workItems.find(w => w.id === p.workItemId);
                         return (
-                          <div key={idx} className="bg-white dark:bg-gray-800 p-3.5 rounded-2xl border border-gray-150 dark:border-gray-700 shadow-sm flex items-center justify-between gap-4 hover:border-amber-400 transition">
+                          <div key={idx} className="bg-white p-3.5 rounded-2xl border border-gray-150 shadow-sm flex items-center justify-between gap-4 hover:border-amber-400 transition">
                             <div className="space-y-1 flex-1">
-                              <div className="text-[10px] bg-[#040957] text-white px-2 py-0.5 rounded font-bold w-fit">
+                              <div className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded font-black w-fit">
                                 {p.time}
                               </div>
-                              <h5 className="font-extrabold text-xs text-gray-800 dark:text-gray-200">
+                              <h5 className="font-extrabold text-xs text-gray-800">
                                 {act ? (isRtl ? act.nameAr : act.nameEn) : ''}
                               </h5>
                               <p className="text-[10px] text-gray-400 font-medium">
                                 {wi ? (isRtl ? wi.nameAr : wi.nameEn) : ''} | {isRtl ? 'المنجز:' : 'Completed:'} <strong className="text-emerald-600">{p.completedQuantity} {act?.unit}</strong>
                               </p>
-                              {p.notes && <p className="text-[10px] text-gray-500 dark:text-gray-400 italic">📝 {p.notes}</p>}
+                              {p.workerNames && p.workerNames.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {p.workerNames.map((name, ni) => (
+                                    <span key={ni} className="text-[9px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded border border-amber-100 font-bold flex items-center gap-1">
+                                      <User className="w-2.5 h-2.5" />
+                                      {name}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              {p.notes && <p className="text-[10px] text-gray-500 italic">📝 {p.notes}</p>}
                               {p.photos && p.photos.length > 0 && (
                                 <div className="flex gap-1 pt-1.5">
                                   {p.photos.map((ph, pi) => (
@@ -2427,7 +2562,7 @@ export default function FieldPortal({
             {currentStep === 4 && (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
                 <div className="space-y-1">
-                  <h2 className="text-base font-black text-[#040957] dark:text-white">
+                  <h2 className="text-base font-black text-[#040957]">
                     🛡️ {isRtl ? 'السلامة، معوقات الجدول، والمشكلات الحرجة' : 'Safety, Timeline Delays & Site Incidents'}
                   </h2>
                   <p className="text-xs text-gray-400">
@@ -2436,7 +2571,7 @@ export default function FieldPortal({
                 </div>
 
                 {/* SAFETY SECTION */}
-                <div className="border border-gray-150 dark:border-gray-800 rounded-2xl p-5 space-y-4 bg-gray-50/30 dark:bg-gray-900/10">
+                <div className="border border-gray-150 rounded-2xl p-5 space-y-4 bg-gray-50/30">
                   <div className="flex items-center justify-between">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input 
@@ -2445,12 +2580,12 @@ export default function FieldPortal({
                         onChange={(e) => setHasSafetyRecord(e.target.checked)}
                         className="w-4 h-4 rounded border-gray-300 text-amber-500 focus:ring-amber-400"
                       />
-                      <span className="text-xs font-black text-gray-850 dark:text-white">{isRtl ? 'تفعيل تقرير السلامة للموقع اليوم' : 'Activate Daily Safety Report'}</span>
+                      <span className="text-xs font-black text-gray-850">{isRtl ? 'تفعيل تقرير السلامة للموقع اليوم' : 'Activate Daily Safety Report'}</span>
                     </label>
                   </div>
 
                   {hasSafetyRecord && (
-                    <div className="space-y-4 pt-3 border-t border-gray-150 dark:border-gray-800 animate-fadeIn">
+                    <div className="space-y-4 pt-3 border-t border-gray-150 animate-fadeIn">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-1">
                           <label className="text-xs font-bold text-gray-500 block">{isRtl ? 'حالة الموقع العامة:' : 'Site Safety status:'}</label>
@@ -2478,7 +2613,7 @@ export default function FieldPortal({
                             type="number" 
                             value={safeViolations}
                             onChange={(e) => setSafeViolations(Number(e.target.value))}
-                            className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white dark:bg-gray-800 text-gray-800 dark:text-white font-bold"
+                            className="w-full border border-gray-200 rounded-xl p-2 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white text-gray-800 font-bold"
                           />
                         </div>
                       </div>
@@ -2490,7 +2625,7 @@ export default function FieldPortal({
                             value={safeNotes}
                             onChange={(e) => setSafeNotes(e.target.value)}
                             placeholder={isRtl ? 'مثال: تم التفتيش على الخوذات وأحزمة الأمان...' : 'Helmet compliance, safety nets checked...'}
-                            className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2 h-14 text-xs focus:ring-2 bg-white dark:bg-gray-850 text-gray-800 dark:text-white"
+                            className="w-full border border-gray-200 rounded-xl p-2 h-14 text-xs focus:ring-2 bg-white text-gray-800"
                           />
                         </div>
                         <div className="space-y-1">
@@ -2499,7 +2634,7 @@ export default function FieldPortal({
                             value={safeActions}
                             onChange={(e) => setSafeActions(e.target.value)}
                             placeholder={isRtl ? 'مثال: تم طرد عامل لم يلتزم بالخوذة في النطاق الحرج...' : 'Immediate action details...'}
-                            className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2 h-14 text-xs focus:ring-2 bg-white dark:bg-gray-850 text-gray-800 dark:text-white"
+                            className="w-full border border-gray-200 rounded-xl p-2 h-14 text-xs focus:ring-2 bg-white text-gray-800"
                           />
                         </div>
                       </div>
@@ -2508,7 +2643,7 @@ export default function FieldPortal({
                 </div>
 
                 {/* DELAYS SECTION */}
-                <div className="border border-gray-150 dark:border-gray-800 rounded-2xl p-5 space-y-4 bg-gray-50/30 dark:bg-gray-900/10">
+                <div className="border border-gray-150 rounded-2xl p-5 space-y-4 bg-gray-50/30">
                   <div className="flex items-center justify-between">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input 
@@ -2517,19 +2652,19 @@ export default function FieldPortal({
                         onChange={(e) => setHasDelayRecord(e.target.checked)}
                         className="w-4 h-4 rounded border-gray-300 text-amber-500 focus:ring-amber-400"
                       />
-                      <span className="text-xs font-black text-gray-850 dark:text-white">{isRtl ? 'تسجيل تأخير في سير العمل اليوم' : 'Log Site Work Delay'}</span>
+                      <span className="text-xs font-black text-gray-850">{isRtl ? 'تسجيل تأخير في سير العمل اليوم' : 'Log Site Work Delay'}</span>
                     </label>
                   </div>
 
                   {hasDelayRecord && (
-                    <div className="space-y-4 pt-3 border-t border-gray-150 dark:border-gray-800 animate-fadeIn">
+                    <div className="space-y-4 pt-3 border-t border-gray-150 animate-fadeIn">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-1">
                           <label className="text-xs font-bold text-gray-500">{isRtl ? 'نوع التأخير الميداني:' : 'Delay Classification:'}</label>
                           <select
                             value={delayType}
                             onChange={(e) => setDelayType(e.target.value as any)}
-                            className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-xs focus:ring-2 bg-white dark:bg-gray-850 text-gray-850 dark:text-white font-bold"
+                            className="w-full border border-gray-200 rounded-xl p-2.5 text-xs focus:ring-2 bg-white text-gray-850 font-bold"
                           >
                             <option value="Material Shortage">{isRtl ? 'نقص مواد المخزن' : 'Material Shortage'}</option>
                             <option value="Equipment Breakdown">{isRtl ? 'عطل الآليات والمعدات' : 'Equipment Breakdown'}</option>
@@ -2545,7 +2680,7 @@ export default function FieldPortal({
                           <select
                             value={delayImpact}
                             onChange={(e) => setDelayImpact(e.target.value as any)}
-                            className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-xs focus:ring-2 bg-white dark:bg-gray-850 text-gray-850 dark:text-white font-bold"
+                            className="w-full border border-gray-200 rounded-xl p-2.5 text-xs focus:ring-2 bg-white text-gray-850 font-bold"
                           >
                             <option value="Low">{isRtl ? 'منخفض (ساعات بسيطة)' : 'Low (Minor)'}</option>
                             <option value="Medium">{isRtl ? 'متوسط (يؤخر شفت واحد)' : 'Medium'}</option>
@@ -2562,7 +2697,7 @@ export default function FieldPortal({
                             value={delayReasonAr}
                             onChange={(e) => setDelayReasonAr(e.target.value)}
                             placeholder="مثال: تأخر توريد الرمل من المورد بسبب شح السائقين..."
-                            className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2 h-14 text-xs focus:ring-2 bg-white dark:bg-gray-850 text-gray-800 dark:text-white"
+                            className="w-full border border-gray-200 rounded-xl p-2 h-14 text-xs focus:ring-2 bg-white text-gray-800"
                           />
                         </div>
                         <div className="space-y-1">
@@ -2571,7 +2706,7 @@ export default function FieldPortal({
                             value={delayReasonEn}
                             onChange={(e) => setDelayReasonEn(e.target.value)}
                             placeholder="e.g. Concrete ready mix truck delayed due to highway traffic..."
-                            className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2 h-14 text-xs focus:ring-2 bg-white dark:bg-gray-850 text-gray-800 dark:text-white"
+                            className="w-full border border-gray-200 rounded-xl p-2 h-14 text-xs focus:ring-2 bg-white text-gray-800"
                           />
                         </div>
                       </div>
@@ -2580,7 +2715,7 @@ export default function FieldPortal({
                 </div>
 
                 {/* CRITICAL ISSUES SECTION */}
-                <div className="border border-gray-150 dark:border-gray-800 rounded-2xl p-5 space-y-4 bg-gray-50/30 dark:bg-gray-900/10">
+                <div className="border border-gray-150 rounded-2xl p-5 space-y-4 bg-gray-50/30">
                   <div className="flex items-center justify-between">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input 
@@ -2589,12 +2724,12 @@ export default function FieldPortal({
                         onChange={(e) => setHasIssueReport(e.target.checked)}
                         className="w-4 h-4 rounded border-gray-300 text-amber-500 focus:ring-amber-400"
                       />
-                      <span className="text-xs font-black text-gray-850 dark:text-white">{isRtl ? 'الإبلاغ عن حادث أو مشكلة طارئة وحرجة' : 'Dispatch Emergency Site Ticket'}</span>
+                      <span className="text-xs font-black text-gray-850">{isRtl ? 'الإبلاغ عن حادث أو مشكلة طارئة وحرجة' : 'Dispatch Emergency Site Ticket'}</span>
                     </label>
                   </div>
 
                   {hasIssueReport && (
-                    <div className="space-y-4 pt-3 border-t border-gray-150 dark:border-gray-800 animate-fadeIn">
+                    <div className="space-y-4 pt-3 border-t border-gray-150 animate-fadeIn">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-1">
                           <label className="text-xs font-bold text-gray-500">{isRtl ? 'عنوان البلاغ (عربي):' : 'Incident Title (Arabic):'}</label>
@@ -2603,7 +2738,7 @@ export default function FieldPortal({
                             value={issueTitleAr}
                             onChange={(e) => setIssueTitleAr(e.target.value)}
                             placeholder="مثال: تسرب مياه عميق بنطاق الحفر المائل"
-                            className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2 h-10 text-xs focus:ring-2 bg-white dark:bg-gray-850 text-gray-800 dark:text-white font-bold"
+                            className="w-full border border-gray-200 rounded-xl p-2 h-10 text-xs focus:ring-2 bg-white text-gray-800 font-bold"
                           />
                         </div>
                         <div className="space-y-1">
@@ -2613,7 +2748,7 @@ export default function FieldPortal({
                             value={issueTitleEn}
                             onChange={(e) => setIssueTitleEn(e.target.value)}
                             placeholder="e.g. Ground water leakage at Pile segment"
-                            className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2 h-10 text-xs focus:ring-2 bg-white dark:bg-gray-850 text-gray-800 dark:text-white font-bold"
+                            className="w-full border border-gray-200 rounded-xl p-2 h-10 text-xs focus:ring-2 bg-white text-gray-800 font-bold"
                           />
                         </div>
                       </div>
@@ -2624,7 +2759,7 @@ export default function FieldPortal({
                           <select
                             value={issuePriority}
                             onChange={(e) => setIssuePriority(e.target.value as any)}
-                            className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-xs focus:ring-2 bg-white dark:bg-gray-850 text-gray-850 dark:text-white font-bold"
+                            className="w-full border border-gray-200 rounded-xl p-2.5 text-xs focus:ring-2 bg-white text-gray-850 font-bold"
                           >
                             <option value="Low">{isRtl ? 'منخفضة (للمطالعة لاحقاً)' : 'Low'}</option>
                             <option value="Medium">{isRtl ? 'متوسطة' : 'Medium'}</option>
@@ -2638,7 +2773,7 @@ export default function FieldPortal({
                             value={issueDesc}
                             onChange={(e) => setIssueDesc(e.target.value)}
                             placeholder={isRtl ? 'اكتب هنا كل التفاصيل الميدانية...' : 'Write all field findings here...'}
-                            className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2 h-14 text-xs focus:ring-2 bg-white dark:bg-gray-850 text-gray-800 dark:text-white"
+                            className="w-full border border-gray-200 rounded-xl p-2 h-14 text-xs focus:ring-2 bg-white text-gray-800"
                           />
                         </div>
                       </div>
@@ -2669,7 +2804,7 @@ export default function FieldPortal({
             {currentStep === 5 && (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
                 <div className="space-y-1">
-                  <h2 className="text-base font-black text-[#040957] dark:text-white">
+                  <h2 className="text-base font-black text-[#040957]">
                     🛒 {isRtl ? 'طلب موارد ومعدات وعمالة إضافية' : 'Request Resources, Equipment & Manpower'}
                   </h2>
                   <p className="text-xs text-gray-400">
@@ -2677,11 +2812,11 @@ export default function FieldPortal({
                   </p>
                 </div>
 
-                <div className="bg-gray-50/50 dark:bg-gray-900/10 border border-gray-150 dark:border-gray-800 rounded-3xl p-6 space-y-5">
+                <div className="bg-gray-50/50 border border-gray-150 rounded-3xl p-6 space-y-5">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                     <div className="space-y-1.5">
                       <label className="text-xs font-bold text-gray-500">{isRtl ? 'نوع المورد المطلوب:' : 'Resource Category:'}</label>
-                      <div className="flex bg-white dark:bg-gray-800 p-1 rounded-xl border border-gray-200 dark:border-gray-700">
+                      <div className="flex bg-white p-1 rounded-xl border border-gray-200">
                         {[
                           { id: 'Material', label: isRtl ? 'مواد' : 'Material', icon: Package },
                           { id: 'Equipment', label: isRtl ? 'معدات' : 'Equipment', icon: Truck },
@@ -2693,7 +2828,7 @@ export default function FieldPortal({
                               setReqType(type.id as any);
                               setReqResourceId('');
                             }}
-                            className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-[10px] font-black transition ${reqType === type.id ? 'bg-[#040957] text-white shadow-md' : 'text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                            className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-[10px] font-black transition cursor-pointer ${reqType === type.id ? 'bg-blue-50 border border-blue-200 text-[#0080FF] shadow-xs' : 'text-gray-400 hover:bg-gray-50 border border-transparent'}`}
                           >
                             <type.icon className="w-3.5 h-3.5" />
                             <span>{type.label}</span>
@@ -2712,7 +2847,7 @@ export default function FieldPortal({
                         <select
                           value={reqResourceId}
                           onChange={(e) => setReqResourceId(e.target.value)}
-                          className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-xs font-bold bg-white dark:bg-gray-800 focus:ring-2"
+                          className="w-full border border-gray-200 rounded-xl p-2.5 text-xs font-bold bg-white focus:ring-2"
                         >
                           <option value="">{isRtl ? 'اختر مادة...' : 'Select Material...'}</option>
                           {materials.map(m => (
@@ -2723,7 +2858,7 @@ export default function FieldPortal({
                         <select
                           value={reqResourceId}
                           onChange={(e) => setReqResourceId(e.target.value)}
-                          className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-xs font-bold bg-white dark:bg-gray-800 focus:ring-2"
+                          className="w-full border border-gray-200 rounded-xl p-2.5 text-xs font-bold bg-white focus:ring-2"
                         >
                           <option value="">{isRtl ? 'اختر معدة...' : 'Select Equipment...'}</option>
                           {equipment.map(e => (
@@ -2736,7 +2871,7 @@ export default function FieldPortal({
                           value={reqResourceId}
                           onChange={(e) => setReqResourceId(e.target.value)}
                           placeholder={isRtl ? 'مثال: نجار مسلح' : 'e.g. Concrete Carpenter'}
-                          className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-xs font-bold bg-white dark:bg-gray-800 focus:ring-2"
+                          className="w-full border border-gray-200 rounded-xl p-2.5 text-xs font-bold bg-white focus:ring-2"
                         />
                       )}
                     </div>
@@ -2750,7 +2885,7 @@ export default function FieldPortal({
                         value={reqQuantity}
                         onChange={(e) => setReqQuantity(Number(e.target.value))}
                         min={1}
-                        className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-xs font-bold bg-white dark:bg-gray-800 focus:ring-2"
+                        className="w-full border border-gray-200 rounded-xl p-2.5 text-xs font-bold bg-white focus:ring-2"
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -2758,7 +2893,7 @@ export default function FieldPortal({
                       <select
                         value={reqPriority}
                         onChange={(e) => setReqPriority(e.target.value as any)}
-                        className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 text-xs font-bold bg-white dark:bg-gray-800 focus:ring-2"
+                        className="w-full border border-gray-200 rounded-xl p-2.5 text-xs font-bold bg-white focus:ring-2"
                       >
                         <option value="Normal">{isRtl ? 'عادية' : 'Normal'}</option>
                         <option value="Urgent">{isRtl ? 'عاجلة' : 'Urgent'}</option>
@@ -2773,14 +2908,14 @@ export default function FieldPortal({
                       value={reqNotes}
                       onChange={(e) => setReqNotes(e.target.value)}
                       placeholder={isRtl ? 'اشرح هنا سبب الاحتياج أو تفاصيل إضافية...' : 'Explain the reason or any extra specifications...'}
-                      className="w-full border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-xs bg-white dark:bg-gray-800 h-20 focus:ring-2"
+                      className="w-full border border-gray-200 rounded-xl p-3 text-xs bg-white h-20 focus:ring-2"
                     />
                   </div>
 
                   <button
                     onClick={handleSubmitFieldRequest}
                     disabled={isSubmittingRequest || !reqResourceId}
-                    className="w-full bg-[#0080FF] hover:bg-blue-600 disabled:bg-gray-300 text-white font-black py-4 rounded-2xl text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-blue-100 dark:shadow-none"
+                    className="w-full bg-[#0080FF] hover:bg-blue-600 disabled:bg-gray-300 text-white font-black py-4 rounded-2xl text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-blue-100"
                   >
                     {isSubmittingRequest ? <Clock className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
                     <span>{isRtl ? 'إرسال طلب الموارد رسمياً' : 'Submit Official Resource Request'}</span>
@@ -2788,7 +2923,7 @@ export default function FieldPortal({
 
                   {/* Recent Requests List */}
                   {fieldRequests && fieldRequests.length > 0 && (
-                    <div className="pt-4 border-t border-gray-100 dark:border-gray-800">
+                    <div className="pt-4 border-t border-gray-100">
                       <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">
                         {isRtl ? 'طلباتك الأخيرة' : 'Your Recent Requests'}
                       </h3>
@@ -2797,19 +2932,15 @@ export default function FieldPortal({
                           .filter(r => r.supervisorId === (supBadge || '000'))
                           .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
                           .map(req => (
-                            <div key={req.id} className="bg-white dark:bg-gray-800/50 p-3 rounded-2xl border border-gray-100 dark:border-gray-800 flex justify-between items-center group">
+                            <div key={req.id} className="bg-white p-3 rounded-2xl border border-gray-100 flex justify-between items-center group">
                               <div className="flex items-center gap-3">
-                                <div className={`p-2 rounded-xl ${
-                                  req.type === 'Material' ? 'bg-blue-50 text-blue-600' : 
-                                  req.type === 'Equipment' ? 'bg-amber-50 text-amber-600' : 
-                                  'bg-purple-50 text-purple-600'
-                                }`}>
+                                <div className={`p-2 rounded-xl ${ req.type === 'Material' ? 'bg-blue-50 text-blue-600' : req.type === 'Equipment' ? 'bg-amber-50 text-amber-600' : 'bg-purple-50 text-purple-600' }`}>
                                   {req.type === 'Material' ? <Package className="w-3.5 h-3.5" /> : 
                                    req.type === 'Equipment' ? <Truck className="w-3.5 h-3.5" /> : 
                                    <Users className="w-3.5 h-3.5" />}
                                 </div>
                                 <div>
-                                  <div className="text-[11px] font-black text-[#040957] dark:text-white">
+                                  <div className="text-[11px] font-black text-[#040957]">
                                     {isRtl ? req.resourceNameAr : req.resourceNameEn}
                                   </div>
                                   <div className="text-[9px] text-gray-400 font-bold">
@@ -2817,12 +2948,7 @@ export default function FieldPortal({
                                   </div>
                                 </div>
                               </div>
-                              <div className={`text-[9px] font-black px-2.5 py-1 rounded-full ${
-                                req.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' :
-                                req.status === 'Rejected' ? 'bg-red-100 text-red-700' :
-                                req.status === 'Fulfilled' ? 'bg-blue-100 text-blue-700' :
-                                'bg-gray-100 text-gray-600'
-                              }`}>
+                              <div className={`text-[9px] font-black px-2.5 py-1 rounded-full ${ req.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : req.status === 'Rejected' ? 'bg-red-100 text-red-700' : req.status === 'Fulfilled' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600' }`}>
                                 {req.status === 'Pending' ? (isRtl ? 'قيد الانتظار' : 'Pending') : 
                                  req.status === 'Approved' ? (isRtl ? 'تم الاعتماد' : 'Approved') :
                                  req.status === 'Rejected' ? (isRtl ? 'مرفوض' : 'Rejected') :
@@ -2858,7 +2984,7 @@ export default function FieldPortal({
             {currentStep === 6 && (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
                 <div className="space-y-1">
-                  <h2 className="text-base font-black text-[#040957] dark:text-white">
+                  <h2 className="text-base font-black text-[#040957]">
                     📝 {isRtl ? 'مراجعة وتوقيع التقرير اليومي الشامل' : 'Daily Report Consolidated Review'}
                   </h2>
                   <p className="text-xs text-gray-400">
@@ -2866,21 +2992,21 @@ export default function FieldPortal({
                   </p>
                 </div>
 
-                <div className="bg-gray-50 dark:bg-gray-900/30 p-5 rounded-2xl border border-gray-150 dark:border-gray-800 space-y-4 text-xs font-sans">
+                <div className="bg-gray-50 p-5 rounded-2xl border border-gray-150 space-y-4 text-xs font-sans">
                   
                   {/* Supervisor Header Review */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pb-4 border-b">
                     <div>
                       <span className="text-gray-400 text-[10px] uppercase font-bold">{isRtl ? 'اسم المشرف:' : 'Supervisor:'}</span>
-                      <p className="font-extrabold text-gray-800 dark:text-gray-100 mt-0.5">{supName}</p>
+                      <p className="font-extrabold text-gray-800 mt-0.5">{supName}</p>
                     </div>
                     <div>
                       <span className="text-gray-400 text-[10px] uppercase font-bold">{isRtl ? 'المشروع:' : 'Project:'}</span>
-                      <p className="font-extrabold text-[#040957] dark:text-[#0080FF] mt-0.5 truncate">{selectedProject ? (isRtl ? selectedProject.nameAr : selectedProject.nameEn) : ''}</p>
+                      <p className="font-extrabold text-[#040957] mt-0.5 truncate">{selectedProject ? (isRtl ? selectedProject.nameAr : selectedProject.nameEn) : ''}</p>
                     </div>
                     <div>
                       <span className="text-gray-400 text-[10px] uppercase font-bold">{isRtl ? 'التاريخ الميداني:' : 'Log Date:'}</span>
-                      <p className="font-extrabold text-gray-800 dark:text-gray-100 mt-0.5 font-mono">{reportDate}</p>
+                      <p className="font-extrabold text-gray-800 mt-0.5 font-mono">{reportDate}</p>
                     </div>
                     <div>
                       <span className="text-gray-400 text-[10px] uppercase font-bold">{isRtl ? 'توقيع المصادقة:' : 'Authorized Signature:'}</span>
@@ -2890,14 +3016,14 @@ export default function FieldPortal({
 
                   {/* Sections Review */}
                   <div className="space-y-3 pt-2">
-                    <h4 className="font-extrabold text-[#040957] dark:text-amber-400 text-xs tracking-wider">{isRtl ? 'ملخص الأقسام الجاهزة للإرسال:' : 'Draft Sections Ready for Central Queue:'}</h4>
+                    <h4 className="font-extrabold text-[#040957] text-xs tracking-wider">{isRtl ? 'ملخص الأقسام الجاهزة للإرسال:' : 'Draft Sections Ready for Central Queue:'}</h4>
                     
                     {/* Attendance section summary */}
-                    <div className="flex items-center justify-between p-3 rounded-xl bg-white dark:bg-gray-800 border">
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-white border">
                       <div className="flex items-center gap-2">
                         <Users className="w-4.5 h-4.5 text-blue-500" />
                         <div>
-                          <span className="font-extrabold text-gray-850 dark:text-gray-250 block text-xs">{isRtl ? 'كشف تحضير العمالة' : 'Workforce Attendance checklist'}</span>
+                          <span className="font-extrabold text-gray-850 block text-xs">{isRtl ? 'كشف تحضير العمالة' : 'Workforce Attendance checklist'}</span>
                           <span className="text-[10px] text-gray-400">{isRtl ? 'يتم تحضير كافة عمال شفت الموقع المسجلين.' : 'Ready to push to database logs.'}</span>
                         </div>
                       </div>
@@ -2907,11 +3033,11 @@ export default function FieldPortal({
                     </div>
 
                     {/* Progress updates section summary */}
-                    <div className="flex items-center justify-between p-3 rounded-xl bg-white dark:bg-gray-800 border">
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-white border">
                       <div className="flex items-center gap-2">
                         <Clock className="w-4.5 h-4.5 text-amber-500" />
                         <div>
-                          <span className="font-extrabold text-gray-850 dark:text-gray-250 block text-xs">{isRtl ? 'تحديثات الإنتاج والمنجز' : 'Production Output registers'}</span>
+                          <span className="font-extrabold text-gray-850 block text-xs">{isRtl ? 'تحديثات الإنتاج والمنجز' : 'Production Output registers'}</span>
                           <span className="text-[10px] text-gray-400">
                             {isRtl ? `تم تسجيل ${prodUpdates.length} تحديثات تقدم ميدانية.` : `Contains ${prodUpdates.length} shift logs.`}
                           </span>
@@ -2923,11 +3049,11 @@ export default function FieldPortal({
                     </div>
 
                     {/* Safety section summary */}
-                    <div className="flex items-center justify-between p-3 rounded-xl bg-white dark:bg-gray-800 border">
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-white border">
                       <div className="flex items-center gap-2">
                         <ShieldAlert className="w-4.5 h-4.5 text-emerald-500" />
                         <div>
-                          <span className="font-extrabold text-gray-850 dark:text-gray-250 block text-xs">{isRtl ? 'سجل الامتثال والسلامة اليومية' : 'Daily Safety compliance log'}</span>
+                          <span className="font-extrabold text-gray-850 block text-xs">{isRtl ? 'سجل الامتثال والسلامة اليومية' : 'Daily Safety compliance log'}</span>
                           <span className="text-[10px] text-gray-400">
                             {hasSafetyRecord 
                               ? (isRtl ? `الحالة: ${safeStatus ? 'آمن' : 'غير آمن'}, المخالفات: ${safeViolations}` : `Status: ${safeStatus ? 'Safe' : 'Unsafe'}, Violations: ${safeViolations}`) 
@@ -2941,11 +3067,11 @@ export default function FieldPortal({
                     </div>
 
                     {/* Delay & Incident section summary */}
-                    <div className="flex items-center justify-between p-3 rounded-xl bg-white dark:bg-gray-800 border">
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-white border">
                       <div className="flex items-center gap-2">
                         <AlertTriangle className="w-4.5 h-4.5 text-red-500" />
                         <div>
-                          <span className="font-extrabold text-gray-850 dark:text-gray-250 block text-xs">{isRtl ? 'معوقات الجدول الحركي وبلاغات الطوارئ' : 'Timeline delays & Incident tickets'}</span>
+                          <span className="font-extrabold text-gray-850 block text-xs">{isRtl ? 'معوقات الجدول الحركي وبلاغات الطوارئ' : 'Timeline delays & Incident tickets'}</span>
                           <span className="text-[10px] text-gray-400">
                             {hasDelayRecord || hasIssueReport 
                               ? (isRtl ? 'تم صياغة حوادث معوقات لرفعها لمهندس المشروع.' : 'Ready to escalate with critical priority.')
@@ -2958,6 +3084,32 @@ export default function FieldPortal({
                       </span>
                     </div>
 
+                  </div>
+                </div>
+
+                {/* Pre-submission Data Integrity and Audit reminder */}
+                <div className="bg-[#040957]/5 border border-[#040957]/10 rounded-2xl p-4 text-xs space-y-2 mb-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">🛡️</span>
+                    <h4 className="font-extrabold text-[#040957]">
+                      {isRtl ? 'ميثاق الموثوقية وتدقيق المخرجات الإنشائية' : 'Site Output Integrity & Anti-Fraud Pledge'}
+                    </h4>
+                  </div>
+                  <p className="text-gray-600 text-[11px] leading-relaxed">
+                    {isRtl 
+                      ? 'قبل إرسال التقرير اليومي، يرجى التحقق من دقة كشوف الحضور والكميات المنجزة. يخضع هذا التقرير لتدقيق ذكي متقاطر تلقائياً لمقارنة القوى العاملة الحاضرة بالإنتاجية الفعلية ومحاضر الأعطال لمنع تضخيم الإنجازات وتسريع مراجعة المهندس.'
+                      : 'Before transmitting your daily field log, please ensure workforce attendance rates match your reported progress. All submissions undergo automated multi-factor cross-verification comparing crew sizing with physics-based productivity limits to eliminate bloated achievements.'
+                    }
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px] text-gray-500 pt-1">
+                    <div className="flex items-center gap-1.5 font-semibold">
+                      <span className="text-emerald-600">✓</span>
+                      <span>{isRtl ? 'الحضور والتحضير يتوافق مع القوة الإنشائية' : 'Attendance matches progressive crew allocation'}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 font-semibold">
+                      <span className="text-emerald-600">✓</span>
+                      <span>{isRtl ? 'الكميات منجزة ومقاسة وفقاً لواقع الموقع' : 'Completed quantities physically measured'}</span>
+                    </div>
                   </div>
                 </div>
 
@@ -2997,7 +3149,7 @@ export default function FieldPortal({
           <motion.div 
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            className="bg-white dark:bg-gray-900 w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden border border-white/20"
+            className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden border border-white/20"
           >
             {/* Modal Header */}
             <div className="bg-gradient-to-r from-[#040957] to-blue-900 p-6 text-white flex justify-between items-center">
@@ -3026,19 +3178,19 @@ export default function FieldPortal({
             <div className="p-6 max-h-[70vh] overflow-y-auto custom-scrollbar space-y-6">
               {/* Basic Info */}
               <div className="grid grid-cols-2 gap-4">
-                <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-700">
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
                     {isRtl ? 'اسم النشاط (Ar)' : 'Activity Name (Ar)'}
                   </span>
-                  <p className="text-sm font-black text-slate-800 dark:text-white leading-tight">
+                  <p className="text-sm font-black text-slate-800 leading-tight">
                     {activityForDetails.nameAr}
                   </p>
                 </div>
-                <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-700">
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
                     {isRtl ? 'Activity Name (En)' : 'Activity Name (En)'}
                   </span>
-                  <p className="text-sm font-black text-slate-800 dark:text-white leading-tight">
+                  <p className="text-sm font-black text-slate-800 leading-tight">
                     {activityForDetails.nameEn}
                   </p>
                 </div>
@@ -3046,30 +3198,30 @@ export default function FieldPortal({
 
               {/* Quantities & Schedule */}
               <div className="grid grid-cols-3 gap-4">
-                <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800">
-                  <div className="flex items-center gap-2 mb-1 text-blue-600 dark:text-blue-400">
+                <div className="p-4 rounded-2xl bg-blue-50 border border-blue-100">
+                  <div className="flex items-center gap-2 mb-1 text-blue-600">
                     <Calculator className="w-3.5 h-3.5" />
                     <span className="text-[9px] font-black uppercase tracking-wider">{isRtl ? 'الكمية الإجمالية' : 'Total Qty'}</span>
                   </div>
-                  <p className="text-lg font-black text-blue-900 dark:text-blue-100 font-mono">
+                  <p className="text-lg font-black text-blue-900 font-mono">
                     {activityForDetails.totalQuantity} <span className="text-xs font-bold">{activityForDetails.unit}</span>
                   </p>
                 </div>
-                <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800">
-                  <div className="flex items-center gap-2 mb-1 text-amber-600 dark:text-amber-400">
+                <div className="p-4 rounded-2xl bg-amber-50 border border-amber-100">
+                  <div className="flex items-center gap-2 mb-1 text-amber-600">
                     <Calendar className="w-3.5 h-3.5" />
                     <span className="text-[9px] font-black uppercase tracking-wider">{isRtl ? 'البداية' : 'Start'}</span>
                   </div>
-                  <p className="text-sm font-black text-amber-900 dark:text-amber-100 font-mono">
+                  <p className="text-sm font-black text-amber-900 font-mono">
                     {activityForDetails.startDate}
                   </p>
                 </div>
-                <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800">
-                  <div className="flex items-center gap-2 mb-1 text-emerald-600 dark:text-emerald-400">
+                <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-100">
+                  <div className="flex items-center gap-2 mb-1 text-emerald-600">
                     <CheckCircle className="w-3.5 h-3.5" />
                     <span className="text-[9px] font-black uppercase tracking-wider">{isRtl ? 'النهاية' : 'End'}</span>
                   </div>
-                  <p className="text-sm font-black text-emerald-900 dark:text-emerald-100 font-mono">
+                  <p className="text-sm font-black text-emerald-900 font-mono">
                     {activityForDetails.endDate}
                   </p>
                 </div>
@@ -3077,25 +3229,25 @@ export default function FieldPortal({
 
               {/* Resource Allocations */}
               <div className="space-y-4">
-                <h4 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
                   <Users className="w-4 h-4 text-indigo-500" />
                   {isRtl ? 'تخصيص الموارد المخططة' : 'Planned Resource Allocations'}
                 </h4>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Workers */}
-                  <div className="bg-white dark:bg-gray-850 rounded-2xl border border-slate-100 dark:border-gray-800 p-4">
-                    <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-50 dark:border-gray-800">
+                  <div className="bg-white rounded-2xl border border-slate-100 p-4">
+                    <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-50">
                       <UserCheck className="w-4 h-4 text-emerald-500" />
-                      <span className="text-xs font-bold text-slate-600 dark:text-gray-300">{isRtl ? 'العمالة المخصصة' : 'Allocated Workers'}</span>
+                      <span className="text-xs font-bold text-slate-600">{isRtl ? 'العمالة المخصصة' : 'Allocated Workers'}</span>
                     </div>
                     <div className="space-y-2">
                       {activityForDetails.workerIds.length > 0 ? (
                         activityForDetails.workerIds.map(id => {
                           const w = workers.find(worker => worker.id === id);
                           return (
-                            <div key={id} className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl text-[11px] font-bold">
-                              <span className="text-slate-700 dark:text-gray-200">{w ? w.fullName : id}</span>
+                            <div key={id} className="flex items-center justify-between bg-slate-50 p-2 rounded-xl text-[11px] font-bold">
+                              <span className="text-slate-700">{w ? w.fullName : id}</span>
                               <span className="text-slate-400 font-mono text-[9px]">{w?.badgeNumber}</span>
                             </div>
                           );
@@ -3107,16 +3259,16 @@ export default function FieldPortal({
                   </div>
 
                   {/* Equipment */}
-                  <div className="bg-white dark:bg-gray-850 rounded-2xl border border-slate-100 dark:border-gray-800 p-4">
-                    <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-50 dark:border-gray-800">
+                  <div className="bg-white rounded-2xl border border-slate-100 p-4">
+                    <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-50">
                       <Wrench className="w-4 h-4 text-amber-500" />
-                      <span className="text-xs font-bold text-slate-600 dark:text-gray-300">{isRtl ? 'المعدات والآليات' : 'Equipment & Machinery'}</span>
+                      <span className="text-xs font-bold text-slate-600">{isRtl ? 'المعدات والآليات' : 'Equipment & Machinery'}</span>
                     </div>
                     <div className="space-y-2">
                       {activityForDetails.equipmentAllocations && activityForDetails.equipmentAllocations.length > 0 ? (
                         activityForDetails.equipmentAllocations.map((eq, i) => (
-                          <div key={i} className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl text-[11px] font-bold">
-                            <span className="text-slate-700 dark:text-gray-200">{isRtl ? eq.equipmentNameAr : eq.equipmentNameEn}</span>
+                          <div key={i} className="flex items-center justify-between bg-slate-50 p-2 rounded-xl text-[11px] font-bold">
+                            <span className="text-slate-700">{isRtl ? eq.equipmentNameAr : eq.equipmentNameEn}</span>
                             <span className="text-blue-600 font-mono text-[10px]">{eq.quantity} {isRtl ? 'وحدة' : 'Units'}</span>
                           </div>
                         ))
@@ -3127,16 +3279,16 @@ export default function FieldPortal({
                   </div>
 
                   {/* Materials */}
-                  <div className="md:col-span-2 bg-white dark:bg-gray-850 rounded-2xl border border-slate-100 dark:border-gray-800 p-4">
-                    <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-50 dark:border-gray-800">
+                  <div className="md:col-span-2 bg-white rounded-2xl border border-slate-100 p-4">
+                    <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-50">
                       <Package className="w-4 h-4 text-blue-500" />
-                      <span className="text-xs font-bold text-slate-600 dark:text-gray-300">{isRtl ? 'المواد المخطط استهلاكها' : 'Planned Materials'}</span>
+                      <span className="text-xs font-bold text-slate-600">{isRtl ? 'المواد المخطط استهلاكها' : 'Planned Materials'}</span>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       {activityForDetails.materialAllocations && activityForDetails.materialAllocations.length > 0 ? (
                         activityForDetails.materialAllocations.map((mat, i) => (
-                          <div key={i} className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl text-[11px] font-bold">
-                            <span className="text-slate-700 dark:text-gray-200">{isRtl ? mat.materialNameAr : mat.materialNameEn}</span>
+                          <div key={i} className="flex items-center justify-between bg-slate-50 p-2 rounded-xl text-[11px] font-bold">
+                            <span className="text-slate-700">{isRtl ? mat.materialNameAr : mat.materialNameEn}</span>
                             <span className="text-emerald-600 font-mono text-[10px]">{mat.quantity} {mat.unit}</span>
                           </div>
                         ))
@@ -3152,7 +3304,7 @@ export default function FieldPortal({
             </div>
 
             {/* Modal Footer */}
-            <div className="p-6 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-700 flex justify-end">
+            <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end">
               <button 
                 onClick={() => setIsActivityDetailsOpen(false)}
                 className="px-8 py-3 bg-[#040957] text-white rounded-2xl text-xs font-black hover:bg-blue-900 transition shadow-lg shadow-blue-900/20"
