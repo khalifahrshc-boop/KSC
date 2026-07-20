@@ -2996,15 +2996,15 @@ export default function ReportsPanel({
 
                     <div className="space-y-2">
                       <span className="text-[10px] text-gray-400 block">{isRtl ? 'تفصيل سجل الأحداث المؤتمت والإنذارات (أمن وسلامة):' : 'Automated Diagnostic Event Log (Safety):'}</span>
-                      <div className="bg-gray-900 text-green-400 p-3 rounded-xl font-mono text-[9px] space-y-1.5 border border-gray-800 max-h-40 overflow-y-auto">
-                        <p className="text-gray-400">// BEGIN SYSTEM SYSTEMATIC AUDIT LOGS TRACE // animate_online: true</p>
+                      <div className="bg-slate-50 text-slate-700 p-3.5 rounded-xl font-mono text-[9px] space-y-1.5 border border-slate-200 max-h-40 overflow-y-auto">
+                        <p className="text-slate-400 font-bold">// SYSTEM AUTOMATIC AUDIT LOG TRACE //</p>
                         {(selectedArchivedReport.data.systemLogs || []).map((l: any, idx: number) => (
-                          <div key={idx} className="flex justify-between border-b border-white/5 pb-1">
-                            <span>&gt; {l.action} (Operator: {l.userName})</span>
-                            <span className="text-gray-500">{l.timestamp}</span>
+                          <div key={idx} className="flex justify-between border-b border-slate-200/50 pb-1">
+                            <span className="font-medium text-slate-700">&gt; {l.action} ({isRtl ? 'المشرف:' : 'Supervisor:'} {l.userName})</span>
+                            <span className="text-slate-450 font-bold">{l.timestamp}</span>
                           </div>
                         ))}
-                        <p className="text-emerald-500">// ALL PROCESS CORES ARE GREEN. AUTOMATION SEQUENCE DOCUMENTED SUCCESSFULLY.</p>
+                        <p className="text-emerald-600 font-bold">// ALL CONSOLE CORES COMPLIANT. AUTOMATION SEQUENCE DOCUMENTED SUCCESSFULLY.</p>
                       </div>
                     </div>
                   </div>

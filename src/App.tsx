@@ -1158,7 +1158,7 @@ export default function App() {
           </p>
           <button 
             onClick={() => window.location.reload()}
-            className="w-full bg-[#040957] text-white py-3 rounded-xl font-bold text-xs hover:bg-blue-700 transition"
+            className="w-full bg-[#0080FF] text-white py-3 rounded-xl font-bold text-xs hover:bg-[#0080FF]/90 transition"
           >
             {lang === 'ar' ? 'إعادة المحاولة' : 'RETRY_SYNC'}
           </button>
@@ -1244,7 +1244,7 @@ export default function App() {
             {settings.companyLogoUrl && (settings.companyLogoUrl.startsWith('data:') || settings.companyLogoUrl.startsWith('http')) ? (
               <img src={settings.companyLogoUrl} alt="Logo" className="h-10 w-auto object-contain shrink-0 rounded-lg shadow-sm" referrerPolicy="no-referrer" />
             ) : (
-              <div className="w-10 h-10 bg-[#040957] text-white flex items-center justify-center rounded-xl text-2xl font-bold shadow-md overflow-hidden shrink-0">
+              <div className="w-10 h-10 bg-[#0080FF] text-white flex items-center justify-center rounded-xl text-2xl font-bold shadow-md overflow-hidden shrink-0">
                 {settings.companyLogoUrl || '🏢'}
               </div>
             )}
@@ -1369,7 +1369,7 @@ export default function App() {
                   key={m.id}
                   onClick={() => setActiveModule(m.id)}
                   title={isSidebarCollapsed ? m.label : ''}
-                  className={`w-full py-3 px-4 rounded-xl text-xs font-bold transition-all flex items-center gap-3 ${active ? 'bg-[#040957] text-white shadow-lg' : 'text-gray-500 hover:bg-gray-50 hover:text-[#040957]'} ${isSidebarCollapsed ? 'justify-center px-0' : 'text-right'}`}
+                  className={`w-full py-3 px-4 rounded-xl text-xs font-bold transition-all flex items-center gap-3 ${active ? 'bg-[#0080FF] text-white shadow-md' : 'text-gray-500 hover:bg-blue-50/50 hover:text-[#0080FF]'} ${isSidebarCollapsed ? 'justify-center px-0' : 'text-right'}`}
                 >
                   <Icon className={`w-5 h-5 flex-shrink-0`} />
                   {!isSidebarCollapsed && <span className="truncate">{m.label}</span>}
@@ -1439,7 +1439,7 @@ export default function App() {
                     <button
                       key={m.id}
                       onClick={() => { setActiveModule(m.id); setIsSidebarMobileOpen(false); }}
-                      className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold transition-all text-right flex items-center gap-3 ${active ? 'bg-[#040957] text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+                      className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold transition-all text-right flex items-center gap-3 ${active ? 'bg-[#0080FF] text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100 hover:text-[#0080FF]'}`}
                     >
                       <Icon className="w-4.5 h-4.5" />
                       <span>{m.label}</span>

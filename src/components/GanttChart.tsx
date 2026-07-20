@@ -59,6 +59,7 @@ export default function GanttChart({
   // Interactive filters
   const [showCriticalOnly, setShowCriticalOnly] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [hoveredActivityId, setHoveredActivityId] = useState<string | null>(null);
   
   // Fixed Today's reference date matching the system current local time (July 19, 2026)
   const todayDate = useMemo(() => new Date('2026-07-19'), []);
@@ -372,7 +373,7 @@ export default function GanttChart({
             {/* MONTH ROW */}
             <div className="flex border-b border-slate-200 bg-slate-50 h-11 items-stretch">
               {/* Sticky Corner Header */}
-              <div className="w-80 sticky left-0 z-30 bg-slate-100 border-r border-slate-200 flex items-center px-4 text-[10px] font-extrabold text-slate-500 uppercase tracking-wider shadow-xs">
+              <div className="w-48 md:w-64 lg:w-80 shrink-0 sticky left-0 z-30 bg-slate-100 border-r border-slate-200 flex items-center px-4 text-[10px] font-extrabold text-slate-500 uppercase tracking-wider shadow-xs">
                 {isRtl ? 'بند العمل / الأنشطة والمؤشرات' : 'Work Item / Activities & KPI'}
               </div>
               
@@ -393,7 +394,7 @@ export default function GanttChart({
             {/* DAY NUMBER ROW */}
             <div className="flex border-b border-slate-200 bg-white h-14 items-stretch">
               {/* Sticky Details Sub-header */}
-              <div className="w-80 sticky left-0 z-30 bg-slate-50 border-r border-slate-200 flex items-center justify-between px-4 text-[9px] font-extrabold text-slate-400 uppercase tracking-wider shadow-xs">
+              <div className="w-48 md:w-64 lg:w-80 shrink-0 sticky left-0 z-30 bg-slate-50 border-r border-slate-200 flex items-center justify-between px-4 text-[9px] font-extrabold text-slate-400 uppercase tracking-wider shadow-xs">
                 <span>{isRtl ? 'الخطة والإنتاجية اليومية المستهدفة' : 'Day Counts & Target Production'}</span>
                 <span className="font-mono text-[9px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md border border-blue-100 font-extrabold">
                   {daysList.length}d
@@ -439,7 +440,7 @@ export default function GanttChart({
                 <React.Fragment key={project.id}>
                   {/* PROJECT ROW HEADER */}
                   <div className="flex bg-blue-50/30 border-b border-slate-200 items-stretch">
-                    <div className="w-80 sticky left-0 z-20 bg-blue-50/95 border-r border-slate-200 p-3.5 flex items-center justify-between shadow-xs">
+                    <div className="w-48 md:w-64 lg:w-80 shrink-0 sticky left-0 z-20 bg-blue-50/95 border-r border-slate-200 p-3.5 flex items-center justify-between shadow-xs">
                       <div className="flex items-center gap-2 truncate">
                         <div className="w-2 h-2 rounded-full bg-blue-600 animate-pulse"></div>
                         <span className="font-extrabold text-xs text-[#040957] truncate">
@@ -508,7 +509,7 @@ export default function GanttChart({
                       <React.Fragment key={wi.id}>
                         {/* WORK ITEM ROW */}
                         <div className="flex border-b border-slate-100 bg-slate-50/20 items-stretch">
-                          <div className="w-80 sticky left-0 z-20 bg-slate-50 border-r border-slate-200 p-3 pl-6 flex items-center justify-between shadow-2xs">
+                          <div className="w-48 md:w-64 lg:w-80 shrink-0 sticky left-0 z-20 bg-slate-50 border-r border-slate-200 p-3 pl-6 flex items-center justify-between shadow-2xs">
                             <div className="flex items-center gap-1.5 truncate">
                               <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
                               <span className="font-extrabold text-[11px] text-slate-700 truncate">
@@ -560,11 +561,59 @@ export default function GanttChart({
                           const elapsedDaysAct = Math.max(0, Math.ceil((todayDate.getTime() - actStart.getTime()) / (1000 * 60 * 60 * 24)));
                           const remainingDaysAct = Math.max(0, Math.ceil((actEnd.getTime() - todayDate.getTime()) / (1000 * 60 * 60 * 24)));
 
+                          // Dynamic calculation of scheduling overlaps with sibling activities in the same work item
+                          const siblingActivities = activities.filter(a => a.id !== act.id && a.workItemId === act.workItemId);
+                          const overlappingSiblings = siblingActivities.filter(sibling => {
+                            let sibStartStr = project.startDate;
+                            if (sibling.dependsOnActivityId) {
+                              const dep = activities.find(a => a.id === sibling.dependsOnActivityId);
+                              if (dep && dep.expectedFinishDate) {
+                                sibStartStr = dep.expectedFinishDate;
+                              }
+                            }
+                            const sibEndStr = sibling.expectedFinishDate || project.endDate;
+                            const sibStart = new Date(sibStartStr);
+                            const sibEnd = new Date(sibEndStr);
+
+                            const maxStart = Math.max(actStart.getTime(), sibStart.getTime());
+                            const minEnd = Math.min(actEnd.getTime(), sibEnd.getTime());
+                            return maxStart < minEnd; // true if scheduling overlaps
+                          });
+
+                          const hasOverlap = overlappingSiblings.length > 0;
+
+                          // Interactive dependency chain state detection
+                          const isHovered = hoveredActivityId === act.id;
+                          const isPredecessorOfHovered = hoveredActivityId ? (() => {
+                            const hoveredAct = activities.find(a => a.id === hoveredActivityId);
+                            return hoveredAct?.dependsOnActivityId === act.id;
+                          })() : false;
+                          const isDependentOfHovered = hoveredActivityId ? act.dependsOnActivityId === hoveredActivityId : false;
+
+                          let rowAccentClass = '';
+                          if (isHovered) {
+                            rowAccentClass = 'bg-[#0080FF]/5 border-l-4 border-l-[#0080FF]';
+                          } else if (isPredecessorOfHovered) {
+                            rowAccentClass = 'bg-violet-50/20 border-l-4 border-l-violet-500';
+                          } else if (isDependentOfHovered) {
+                            rowAccentClass = 'bg-emerald-50/10 border-l-4 border-l-emerald-500';
+                          }
+
                           return (
-                            <div key={act.id} className="flex border-b border-slate-100 hover:bg-slate-50/30 group transition-all duration-150 items-stretch">
+                            <div 
+                              key={act.id} 
+                              className={`flex border-b border-slate-100 hover:bg-slate-50/30 group transition-all duration-150 items-stretch ${rowAccentClass}`}
+                              onMouseEnter={() => setHoveredActivityId(act.id)}
+                              onMouseLeave={() => setHoveredActivityId(null)}
+                            >
                               
                               {/* Sticky Activity Info Column */}
-                              <div className="w-80 sticky left-0 z-20 bg-white border-r border-slate-200 p-3 pl-8 flex flex-col justify-center shadow-xs group-hover:bg-slate-50 transition-all">
+                              <div className={`w-48 md:w-64 lg:w-80 shrink-0 sticky left-0 z-20 border-r border-slate-200 p-3 pl-8 flex flex-col justify-center shadow-xs transition-all ${
+                                isHovered ? 'bg-blue-50/95' :
+                                isPredecessorOfHovered ? 'bg-violet-50/90' :
+                                isDependentOfHovered ? 'bg-emerald-50/90' :
+                                'bg-white group-hover:bg-slate-50'
+                              }`}>
                                 <div className="flex items-center justify-between gap-2">
                                   <span className="font-extrabold text-[10.5px] text-slate-800 truncate max-w-[190px]">
                                     {isRtl ? act.nameAr : act.nameEn}
@@ -608,6 +657,39 @@ export default function GanttChart({
                                      actStatus === 'Delayed' ? (isRtl ? 'متأخر ⚠️' : 'Delayed') :
                                      (isRtl ? 'في المسار' : 'On Track')}
                                   </span>
+
+                                  {/* Dynamic Dependency Badge */}
+                                  {act.dependsOnActivityId && (() => {
+                                    const depAct = activities.find(a => a.id === act.dependsOnActivityId);
+                                    if (!depAct) return null;
+                                    return (
+                                      <span 
+                                        className="text-[7.5px] font-bold text-violet-800 bg-violet-50 border border-violet-100 px-1.5 py-0.5 rounded flex items-center gap-0.5" 
+                                        title={isRtl ? `يعتمد على: ${depAct.nameAr}` : `Depends on: ${depAct.nameEn}`}
+                                      >
+                                        <ArrowRightLeft className="w-2.5 h-2.5 text-violet-500" />
+                                        <span>
+                                          {isRtl ? `بعد: ${depAct.nameAr.slice(0, 10)}...` : `After: ${depAct.nameEn.slice(0, 10)}...`}
+                                        </span>
+                                      </span>
+                                    );
+                                  })()}
+
+                                  {/* Dynamic Overlap Badge */}
+                                  {hasOverlap && (
+                                    <span 
+                                      className="text-[7.5px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded flex items-center gap-0.5 animate-pulse" 
+                                      title={isRtl 
+                                        ? `تداخل مع: ${overlappingSiblings.map(s => isRtl ? s.nameAr : s.nameEn).join(', ')}` 
+                                        : `Overlaps with: ${overlappingSiblings.map(s => s.nameEn).join(', ')}`
+                                      }
+                                    >
+                                      <AlertCircle className="w-2.5 h-2.5 text-amber-500" />
+                                      <span>
+                                        {isRtl ? 'تداخل زمني ⚠️' : 'Overlap ⚠️'}
+                                      </span>
+                                    </span>
+                                  )}
                                 </div>
                               </div>
 
@@ -634,6 +716,15 @@ export default function GanttChart({
                                     if (progress >= 100) {
                                       cellBgClass = 'bg-emerald-100/50 hover:bg-emerald-150/70 text-emerald-800';
                                       cellBorderClass = 'border-emerald-200';
+                                    } else if (isHovered) {
+                                      cellBgClass = 'bg-[#0080FF]/30 hover:bg-[#0080FF]/40 text-[#0080FF] font-extrabold shadow-sm';
+                                      cellBorderClass = 'border-[#0080FF]';
+                                    } else if (isPredecessorOfHovered) {
+                                      cellBgClass = 'bg-violet-100/40 hover:bg-violet-200/50 text-violet-900 font-extrabold';
+                                      cellBorderClass = 'border-violet-300';
+                                    } else if (isDependentOfHovered) {
+                                      cellBgClass = 'bg-teal-100/40 hover:bg-teal-200/50 text-teal-900 font-extrabold';
+                                      cellBorderClass = 'border-teal-300';
                                     } else if (act.isCritical) {
                                       cellBgClass = 'bg-rose-100/40 hover:bg-rose-200/50 text-rose-900 font-extrabold';
                                       cellBorderClass = 'border-rose-300';
@@ -667,24 +758,24 @@ export default function GanttChart({
                                       )}
 
                                       {/* Hover tooltip for Employee */}
-                                      <div className="absolute left-1/2 bottom-full mb-2 -translate-x-1/2 hidden group-hover/cell:flex flex-col bg-slate-950 text-white p-3 rounded-2xl shadow-xl border border-white/10 z-50 w-56 text-[10px] pointer-events-none transition-all duration-200 ease-out">
-                                        <div className="font-extrabold text-[11px] text-blue-400 border-b border-white/10 pb-1.5 mb-1.5">
+                                      <div className="absolute left-1/2 bottom-full mb-2 -translate-x-1/2 hidden group-hover/cell:flex flex-col bg-white text-slate-800 p-3 rounded-2xl shadow-xl border border-slate-200 z-50 w-56 text-[10px] pointer-events-none transition-all duration-200 ease-out">
+                                        <div className="font-extrabold text-[11px] text-[#0080FF] border-b border-slate-100 pb-1.5 mb-1.5">
                                           {isRtl ? act.nameAr : act.nameEn}
                                         </div>
                                         <div className="space-y-1">
                                           <div className="flex justify-between">
-                                            <span className="text-slate-400">{isRtl ? 'التاريخ المخطط:' : 'Planned Date:'}</span>
-                                            <span className="font-bold text-white">{d.toLocaleDateString(lang === 'ar' ? 'ar-SA' : 'en-US', { day: 'numeric', month: 'short' })}</span>
+                                            <span className="text-slate-500">{isRtl ? 'التاريخ المخطط:' : 'Planned Date:'}</span>
+                                            <span className="font-bold text-slate-800">{d.toLocaleDateString(lang === 'ar' ? 'ar-SA' : 'en-US', { day: 'numeric', month: 'short' })}</span>
                                           </div>
                                           {isPlannedOnDay && (
                                             <div className="flex justify-between items-center">
-                                              <span className="text-slate-400">{isRtl ? 'الإنتاجية اليومية:' : 'Daily Target:'}</span>
-                                              <strong className="text-white font-mono bg-blue-500/30 px-1.5 py-0.5 rounded border border-blue-500/20">{dailyPlannedQty} {act.unit}</strong>
+                                              <span className="text-slate-500">{isRtl ? 'الإنتاجية اليومية:' : 'Daily Target:'}</span>
+                                              <strong className="text-[#0080FF] font-mono bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">{dailyPlannedQty} {act.unit}</strong>
                                             </div>
                                           )}
                                           <div className="flex justify-between">
-                                            <span className="text-slate-400">{isRtl ? 'متبقي للنشاط:' : 'Activity days left:'}</span>
-                                            <span className="font-bold text-amber-300">{remainingDaysAct}d</span>
+                                            <span className="text-slate-500">{isRtl ? 'متبقي للنشاط:' : 'Activity days left:'}</span>
+                                            <span className="font-bold text-amber-600">{remainingDaysAct}d</span>
                                           </div>
                                         </div>
                                       </div>
@@ -710,9 +801,9 @@ export default function GanttChart({
         {/* Legend / Footer with explicit instructions */}
         <div className="bg-slate-50 border-t border-slate-200 p-4 flex flex-col gap-3">
           <div className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
-            {isRtl ? 'دليل الرموز ومؤشرات توزيع التخطيط والإنتاجية اليومية' : 'Daily Planning & Legend'}
+            {isRtl ? 'دليل الرموز ومؤشرات المسار الحرج والتداخلات الزمنية والتبعية للمشروع' : 'Visual Legend, Dependencies & Scheduling Overlaps Tracker'}
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3.5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-3.5">
             
             <div className="flex items-center gap-2.5 bg-rose-50 border border-rose-200/60 p-2.5 rounded-xl shadow-2xs">
               <div className="w-4 h-4 bg-rose-500 rounded border border-rose-600 flex-shrink-0 animate-pulse"></div>
@@ -746,11 +837,27 @@ export default function GanttChart({
               </div>
             </div>
 
+            <div className="flex items-center gap-2.5 bg-violet-50 border border-violet-200 p-2.5 rounded-xl shadow-2xs">
+              <div className="w-4 h-4 bg-violet-500 rounded border border-violet-600 flex-shrink-0"></div>
+              <div>
+                <span className="block text-[8.5px] font-black text-violet-800 uppercase leading-none">{isRtl ? 'النشاط المسبق' : 'Predecessor'}</span>
+                <span className="text-[7.5px] text-violet-600/80 font-bold leading-none">{isRtl ? 'تعتمد عليه المهمة المحددة' : 'Hovered task depends on'}</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5 bg-teal-50 border border-teal-200 p-2.5 rounded-xl shadow-2xs">
+              <div className="w-4 h-4 bg-teal-500 rounded border border-teal-600 flex-shrink-0"></div>
+              <div>
+                <span className="block text-[8.5px] font-black text-teal-800 uppercase leading-none">{isRtl ? 'النشاط التابع' : 'Dependent'}</span>
+                <span className="text-[7.5px] text-teal-600/80 font-bold leading-none">{isRtl ? 'يعتمد على المهمة المحددة' : 'Depends on hovered task'}</span>
+              </div>
+            </div>
+
             <div className="flex items-center gap-2.5 bg-white border border-slate-200 p-2.5 rounded-xl shadow-2xs">
               <span className="font-mono text-xs font-black text-slate-800 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">150</span>
               <div>
-                <span className="block text-[8.5px] font-black text-slate-700 uppercase leading-none">{isRtl ? 'الرقم داخل الخلية' : 'Value inside cell'}</span>
-                <span className="text-[7.5px] text-slate-500 font-bold leading-none">{isRtl ? 'مستهدف الإنتاج اليومي' : 'Daily targeted qty'}</span>
+                <span className="block text-[8.5px] font-black text-slate-700 uppercase leading-none">{isRtl ? 'رقم الخلية' : 'Cell value'}</span>
+                <span className="text-[7.5px] text-slate-500 font-bold leading-none">{isRtl ? 'الإنتاج المستهدف للنشاط' : 'Target production qty'}</span>
               </div>
             </div>
 

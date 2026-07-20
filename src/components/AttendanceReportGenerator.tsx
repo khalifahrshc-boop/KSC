@@ -135,10 +135,10 @@ const AttendanceReportGenerator: React.FC<AttendanceReportPDFProps> = ({
       }}
       id="attendance-report-pdf-content"
     >
-      {/* 1. CORPORATE HEADER (Dark Blue Background) */}
-      <div className="bg-[#040957] text-white rounded-2xl p-6 mb-6 flex justify-between items-center shadow-lg border-b-4 border-[#02053a]">
+      {/* 1. CORPORATE HEADER (Light Slate Premium Background) */}
+      <div className="bg-slate-50 text-slate-800 rounded-2xl p-6 mb-6 flex justify-between items-center border border-slate-200/80 shadow-xs border-t-4 border-t-[#0080FF]">
         <div className="flex items-center gap-6">
-          <div className="bg-white p-2 rounded-xl shadow-inner shrink-0">
+          <div className="bg-white p-2.5 rounded-xl border border-slate-100 shadow-xs shrink-0">
             {settings.companyLogoUrl ? (
               <img 
                 src={settings.companyLogoUrl} 
@@ -147,37 +147,37 @@ const AttendanceReportGenerator: React.FC<AttendanceReportPDFProps> = ({
                 referrerPolicy="no-referrer"
               />
             ) : (
-              <div className="h-20 w-20 bg-slate-100 flex items-center justify-center text-[#040957] text-3xl font-black rounded-lg">
+              <div className="h-20 w-20 bg-blue-50 flex items-center justify-center text-[#0080FF] text-3xl font-black rounded-lg">
                 {settings.companyNameEn.charAt(0)}
               </div>
             )}
           </div>
           <div>
-            <h1 className="text-xl font-black uppercase tracking-tight leading-none mb-1">
+            <h1 className="text-xl font-black uppercase tracking-tight leading-none mb-1 text-slate-900">
               {isRtl ? settings.companyNameAr : settings.companyNameEn}
             </h1>
-            <p className="text-[10px] font-bold opacity-90 uppercase tracking-widest text-amber-400">
+            <p className="text-[10px] font-black uppercase tracking-widest text-[#0080FF]">
               {isRtl ? 'تقرير حضور وانصراف الموظفين الرسمي' : 'OFFICIAL EMPLOYEE ATTENDANCE REGISTER'}
             </p>
-            <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[8px] font-bold opacity-85 text-slate-200">
-              <span>{isRtl ? 'س.ت:' : 'CR:'} {settings.commercialRegistration}</span>
-              <span>{isRtl ? 'الرقم الضريبي:' : 'VAT:'} {settings.taxNumber}</span>
-              <span>{isRtl ? 'الهاتف:' : 'Tel:'} {settings.companyPhone}</span>
-              <span>{isRtl ? 'البريد:' : 'Email:'} {settings.companyEmail}</span>
+            <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[8px] font-bold text-slate-500">
+              <span>{isRtl ? 'س.ت:' : 'CR:'} <strong className="text-slate-700">{settings.commercialRegistration}</strong></span>
+              <span>{isRtl ? 'الرقم الضريبي:' : 'VAT:'} <strong className="text-slate-700">{settings.taxNumber}</strong></span>
+              <span>{isRtl ? 'الهاتف:' : 'Tel:'} <strong className="text-slate-700">{settings.companyPhone}</strong></span>
+              <span>{isRtl ? 'البريد:' : 'Email:'} <strong className="text-slate-700">{settings.companyEmail}</strong></span>
               {settings.companyWebsite && (
-                <span>{isRtl ? 'الموقع:' : 'Web:'} {settings.companyWebsite}</span>
+                <span>{isRtl ? 'الموقع:' : 'Web:'} <strong className="text-slate-700">{settings.companyWebsite}</strong></span>
               )}
             </div>
-            <div className="text-[8px] font-bold opacity-85 text-slate-200 mt-1">
-              <span>{isRtl ? 'العنوان:' : 'Address:'} {isRtl ? settings.officialAddressAr : settings.officialAddressEn}</span>
+            <div className="text-[8px] font-bold text-slate-500 mt-1">
+              <span>{isRtl ? 'العنوان:' : 'Address:'} <strong className="text-slate-600">{isRtl ? settings.officialAddressAr : settings.officialAddressEn}</strong></span>
             </div>
           </div>
         </div>
         
-        <div className="text-right border-l border-white/20 pl-6 rtl:border-l-0 rtl:border-r rtl:pl-0 rtl:pr-6 shrink-0">
-          <div className="text-[10px] font-black uppercase mb-1 tracking-widest">{isRtl ? 'رقم التقرير' : 'Report Reference'}</div>
-          <div className="text-lg font-mono font-black">{reportNumber}</div>
-          <div className="text-[8px] font-bold opacity-60 mt-1 uppercase tracking-widest">
+        <div className="text-right border-l border-slate-200 pl-6 rtl:border-l-0 rtl:border-r rtl:pl-0 rtl:pr-6 shrink-0">
+          <div className="text-[10px] font-black uppercase mb-1 tracking-widest text-slate-400">{isRtl ? 'رقم التقرير' : 'Report Reference'}</div>
+          <div className="text-lg font-mono font-black text-[#0080FF]">{reportNumber}</div>
+          <div className="text-[8px] font-bold text-slate-400 mt-1 uppercase tracking-widest">
             {isRtl ? 'تاريخ الطباعة:' : 'Printed:'} {new Date().toLocaleDateString(isRtl ? 'ar-SA' : 'en-GB')}
           </div>
         </div>
@@ -187,7 +187,7 @@ const AttendanceReportGenerator: React.FC<AttendanceReportPDFProps> = ({
       <div className="grid grid-cols-4 gap-4 mb-6 bg-slate-50 border border-slate-200 rounded-2xl p-4 shadow-sm">
         <div className="space-y-1">
           <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest block">{isRtl ? 'المشروع' : 'Project'}</span>
-          <span className="text-[10px] font-black text-[#040957] block truncate">{isRtl ? project.nameAr : project.nameEn}</span>
+          <span className="text-[10px] font-black text-[#0080FF] block truncate">{isRtl ? project.nameAr : project.nameEn}</span>
         </div>
         <div className="space-y-1">
           <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest block">{isRtl ? 'الموقع والرمز' : 'Location & Code'}</span>
@@ -209,7 +209,7 @@ const AttendanceReportGenerator: React.FC<AttendanceReportPDFProps> = ({
       <div className="overflow-x-auto mb-8 border border-slate-200 rounded-xl shadow-sm">
         <table className="w-full border-collapse text-[7px] table-fixed">
           <thead>
-            <tr className="bg-[#040957] text-white">
+            <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
               <th className="w-[2%] p-1 font-black border-r border-white/10 break-words">#</th>
               <th className="w-[16%] p-1 font-black border-r border-white/10 break-words">{isRtl ? 'الاسم' : 'Name'}</th>
               <th className="w-[5%] p-1 font-black border-r border-white/10 break-words">{isRtl ? 'الكود' : 'ID'}</th>
@@ -274,9 +274,9 @@ const AttendanceReportGenerator: React.FC<AttendanceReportPDFProps> = ({
       {/* Summary Section */}
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-4">
-          <div className="h-6 w-1 bg-[#040957] rounded-full"></div>
-          <h4 className="text-[10px] font-black text-[#040957] uppercase tracking-[0.2em] flex items-center gap-2">
-            <CalendarDays className="w-3.5 h-3.5" />
+          <div className="h-6 w-1 bg-[#0080FF] rounded-full"></div>
+          <h4 className="text-[10px] font-black text-slate-700 uppercase tracking-[0.2em] flex items-center gap-2">
+            <CalendarDays className="w-3.5 h-3.5 text-[#0080FF]" />
             {isRtl ? 'ملخص إحصائيات الحضور اليومي' : 'DAILY ATTENDANCE ANALYTICS SUMMARY'}
           </h4>
         </div>
@@ -288,10 +288,10 @@ const AttendanceReportGenerator: React.FC<AttendanceReportPDFProps> = ({
             { label: isRtl ? 'متأخر' : 'Late', val: stats.late, color: 'bg-orange-50 text-orange-700 border-orange-200', icon: <Clock className="w-2.5 h-2.5" /> },
             { label: isRtl ? 'إجازة' : 'Leave', val: stats.leave, color: 'bg-blue-50 text-blue-700 border-blue-200', icon: <AlertCircle className="w-2.5 h-2.5" /> },
             { label: isRtl ? 'عطلة' : 'Holiday', val: stats.holiday, color: 'bg-slate-50 text-slate-400 border-slate-200', icon: <CalendarDays className="w-2.5 h-2.5" /> },
-            { label: isRtl ? 'ساعات' : 'Hours', val: `${stats.totalHours}h`, color: 'bg-[#040957] text-white border-[#02053a]', icon: <Building2 className="w-2.5 h-2.5" /> },
+            { label: isRtl ? 'ساعات' : 'Hours', val: `${stats.totalHours}h`, color: 'bg-blue-50 text-[#0080FF] border-blue-100', icon: <Building2 className="w-2.5 h-2.5 text-[#0080FF]" /> },
             { label: isRtl ? 'إضافي' : 'OT', val: `${stats.totalOvertime}h`, color: 'bg-amber-50 text-amber-700 border-amber-200', icon: <Clock className="w-2.5 h-2.5" /> },
           ].map((s, i) => (
-            <div key={i} className={`${s.color} p-2 rounded-xl border flex flex-col items-center justify-center text-center shadow-sm`}>
+            <div key={i} className={`${s.color} p-2 rounded-xl border flex flex-col items-center justify-center text-center shadow-xs`}>
               <div className="flex items-center gap-1 mb-1 opacity-60">
                 {s.icon}
                 <span className="text-[5px] font-black uppercase leading-none">{s.label}</span>
@@ -309,15 +309,15 @@ const AttendanceReportGenerator: React.FC<AttendanceReportPDFProps> = ({
           { title: isRtl ? 'راجع بواسطة' : 'Reviewed By', role: isRtl ? 'مهندس المشروع' : 'Project Engineer', person: '___________________' },
           { title: isRtl ? 'اعتمد بواسطة' : 'Approved By', role: isRtl ? 'مدير المشروع' : 'Project Manager', person: '___________________' },
         ].map((sig, i) => (
-          <div key={i} className="border border-slate-200 rounded-2xl p-5 bg-slate-50/50 shadow-sm relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-1 bg-[#040957]"></div>
-            <h5 className="text-[9px] font-black text-[#040957] border-b border-slate-200 pb-3 mb-4 text-center uppercase tracking-[0.2em]">
+          <div key={i} className="border border-slate-200 rounded-2xl p-5 bg-slate-50/30 shadow-xs relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-[#0080FF]"></div>
+            <h5 className="text-[9px] font-black text-[#0080FF] border-b border-slate-200 pb-3 mb-4 text-center uppercase tracking-[0.2em]">
               {sig.title}
             </h5>
             <div className="space-y-4 text-[8px] font-bold">
               <div className="flex justify-between border-b border-slate-200/50 pb-1.5">
                 <span className="text-slate-400 uppercase text-[6px] tracking-tighter">{isRtl ? 'الاسم:' : 'Name:'}</span>
-                <span className="text-[#040957] truncate max-w-[120px]">{sig.person}</span>
+                <span className="text-slate-700 truncate max-w-[120px]">{sig.person}</span>
               </div>
               <div className="flex justify-between border-b border-slate-200/50 pb-1.5">
                 <span className="text-slate-400 uppercase text-[6px] tracking-tighter">{isRtl ? 'المنصب:' : 'Position:'}</span>
@@ -337,12 +337,12 @@ const AttendanceReportGenerator: React.FC<AttendanceReportPDFProps> = ({
       </div>
 
       {/* 6. FOOTER SECTION */}
-      <div className="bg-[#040957] text-white py-4 px-8 rounded-2xl flex justify-between items-center text-[8px] font-bold uppercase tracking-[0.3em] mt-auto shadow-lg border-t-4 border-[#02053a]">
+      <div className="bg-slate-50 text-slate-500 border border-slate-200 py-4 px-8 rounded-2xl flex justify-between items-center text-[8px] font-bold uppercase tracking-[0.2em] mt-auto shadow-xs">
         <div className="flex items-center gap-2">
-          <Clock className="w-3 h-3 opacity-50" />
+          <Clock className="w-3 h-3 text-[#0080FF] opacity-70" />
           {isRtl ? 'تاريخ الطباعة:' : 'Printed Date & Time:'} {new Date().toLocaleString(isRtl ? 'ar-SA' : 'en-GB')}
         </div>
-        <div className="text-xs font-[900]">
+        <div className="text-xs font-[900] text-slate-800">
           {isRtl ? settings.companyNameAr : settings.companyNameEn}
         </div>
         <div className="flex items-center gap-2">

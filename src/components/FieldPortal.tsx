@@ -1718,7 +1718,7 @@ export default function FieldPortal({
                         <button
                           type="button"
                           onClick={clearCanvas}
-                          className="absolute bottom-2 right-2 bg-slate-900/65 text-white hover:bg-slate-900 px-2.5 py-1 rounded text-[10px] font-bold"
+                          className="absolute bottom-2 right-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-250 px-2.5 py-1 rounded text-[10px] font-bold shadow-xs"
                         >
                           {isRtl ? 'مسح' : 'Clear'}
                         </button>

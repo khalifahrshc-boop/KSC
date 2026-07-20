@@ -397,9 +397,9 @@ export default function ProjectList({
       <div id="project-list-printable-content" className="space-y-4">
         {/* Notifications Toast is NOT part of printable content */}
       {notification && (
-        <div className={`fixed bottom-5 ${isRtl ? 'left-5' : 'right-5'} z-50 bg-[#040957] text-white py-3 px-6 rounded-xl shadow-2xl flex items-center gap-3 animate-bounce border border-blue-400`}>
+        <div className={`fixed bottom-5 ${isRtl ? 'left-5' : 'right-5'} z-50 bg-white text-slate-800 py-3 px-6 rounded-xl shadow-xl flex items-center gap-3 animate-bounce border border-slate-200`}>
           <div className="w-2.5 h-2.5 rounded-full bg-[#0080FF] inline-block animate-ping"></div>
-          <span className="text-xs font-bold font-sans">{notification}</span>
+          <span className="text-xs font-bold font-sans text-slate-700">{notification}</span>
         </div>
       )}
 
@@ -423,7 +423,7 @@ export default function ProjectList({
         ) : (
           <button 
             onClick={handleOpenAdd}
-            className="bg-[#0080FF] text-white hover:bg-[#040957] font-sans py-2 px-4 rounded-xl font-bold text-xs flex items-center gap-2 transition shadow-md"
+            className="bg-[#0080FF] text-white hover:bg-[#0080FF]/90 font-sans py-2 px-4 rounded-xl font-bold text-xs flex items-center gap-2 transition shadow-md"
           >
             <Plus className="w-4 h-4" />
             <span>{t.createProject}</span>
@@ -464,14 +464,14 @@ export default function ProjectList({
           <div className="flex bg-white border border-gray-200 rounded-xl p-1 mr-2">
             <button 
               onClick={() => setViewMode('table')}
-              className={`p-1.5 rounded-lg transition-all ${viewMode === 'table' ? 'bg-[#040957] text-white shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+              className={`p-1.5 rounded-lg transition-all ${viewMode === 'table' ? 'bg-[#0080FF] text-white shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
               title={isRtl ? 'عرض الجدول' : 'Table View'}
             >
               <LayoutGrid className="w-4 h-4" />
             </button>
             <button 
               onClick={() => setViewMode('gantt')}
-              className={`p-1.5 rounded-lg transition-all ${viewMode === 'gantt' ? 'bg-[#040957] text-white shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+              className={`p-1.5 rounded-lg transition-all ${viewMode === 'gantt' ? 'bg-[#0080FF] text-white shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
               title={isRtl ? 'مخطط غانت' : 'Gantt Chart'}
             >
               <GanttChartSquare className="w-4 h-4" />

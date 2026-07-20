@@ -839,14 +839,14 @@ export default function KPIDashboard({
         <div className={`modern-report-container print-block ${isReportMode ? 'block bg-gray-50 p-4 md:p-8 rounded-3xl border border-gray-200 shadow-sm' : 'hidden'} print:block print:p-8 bg-white text-black font-sans min-h-screen`}>
           {/* CONTROL STATION BAR WITH THE DROPDOWN MENU SYSTEM (Hidden in Print) */}
           {isReportMode && (
-            <div className="mb-8 print:hidden bg-slate-900 text-white p-5 rounded-2xl shadow-xl border border-slate-800">
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-white/10 pb-4">
+            <div className="mb-8 print:hidden bg-white text-slate-800 p-5 rounded-2xl shadow-sm border border-slate-200">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-150 pb-4">
                 <div className="flex items-center gap-3">
-                  <div className="bg-blue-600/20 p-2 rounded-xl border border-blue-500/30">
-                    <FileText className="w-6 h-6 text-blue-400" />
+                  <div className="bg-blue-50 p-2.5 rounded-xl border border-blue-100">
+                    <FileText className="w-6 h-6 text-[#0080FF]" />
                   </div>
                   <div>
-                    <h3 className="font-black text-sm tracking-tight">{isRtl ? 'لوحة تحكم وتخصيص التقرير التنفيذي' : 'Executive Report Customization Station'}</h3>
+                    <h3 className="font-extrabold text-[#040957] text-sm tracking-tight">{isRtl ? 'لوحة تحكم وتخصيص التقرير التنفيذي' : 'Executive Report Customization Station'}</h3>
                     <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{isRtl ? 'قم بتعديل وتصفية المكونات آلياً قبل التصدير' : 'Configure layout, filters, & themes in real-time'}</p>
                   </div>
                 </div>
@@ -854,7 +854,7 @@ export default function KPIDashboard({
                 <div className="flex gap-2 w-full md:w-auto justify-end">
                   <button 
                     onClick={() => setIsReportMode(false)}
-                    className="bg-white/10 hover:bg-white/20 active:scale-95 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all border border-white/5"
+                    className="bg-slate-50 hover:bg-slate-100 active:scale-95 text-slate-700 px-4 py-2 rounded-xl text-xs font-bold transition-all border border-slate-200 shadow-xs"
                   >
                     {isRtl ? 'العودة للوحة البيانات' : 'Back to Dashboard'}
                   </button>
@@ -906,11 +906,11 @@ export default function KPIDashboard({
                   <button 
                     type="button"
                     onClick={() => setActiveDropdown(prev => prev === 'project' ? null : 'project')}
-                    className="bg-slate-800 hover:bg-slate-700 text-white px-3.5 py-2 rounded-xl font-bold flex items-center gap-1.5 transition-all border border-slate-700 active:scale-95"
+                    className="bg-slate-50 hover:bg-slate-100 text-slate-700 px-3.5 py-2 rounded-xl font-bold flex items-center gap-1.5 transition-all border border-slate-200 active:scale-95"
                   >
-                    <SlidersHorizontal className="w-3.5 h-3.5 text-blue-400" />
+                    <SlidersHorizontal className="w-3.5 h-3.5 text-blue-600" />
                     <span>{isRtl ? 'المشروع:' : 'Project:'} </span>
-                    <span className="text-blue-400 font-extrabold truncate max-w-[120px]">
+                    <span className="text-blue-600 font-extrabold truncate max-w-[120px]">
                       {selectedProjectId === 'all' 
                         ? (isRtl ? 'كافة المشاريع' : 'All Projects') 
                         : (isRtl ? activeProject?.nameAr : activeProject?.nameEn)}
@@ -947,11 +947,11 @@ export default function KPIDashboard({
                   <button 
                     type="button"
                     onClick={() => setActiveDropdown(prev => prev === 'sections' ? null : 'sections')}
-                    className="bg-slate-800 hover:bg-slate-700 text-white px-3.5 py-2 rounded-xl font-bold flex items-center gap-1.5 transition-all border border-slate-700 active:scale-95"
+                    className="bg-slate-50 hover:bg-slate-100 text-slate-700 px-3.5 py-2 rounded-xl font-bold flex items-center gap-1.5 transition-all border border-slate-200 active:scale-95"
                   >
-                    <Layers className="w-3.5 h-3.5 text-purple-400" />
+                    <Layers className="w-3.5 h-3.5 text-purple-600" />
                     <span>{isRtl ? 'الأقسام المعروضة' : 'Report Sections'}</span>
-                    <span className="bg-purple-600 text-white font-extrabold text-[9px] px-1.5 py-0.5 rounded-full ml-1">
+                    <span className="bg-purple-100 text-purple-800 font-extrabold text-[9px] px-1.5 py-0.5 rounded-full ml-1">
                       {Object.values(reportSections).filter(Boolean).length}
                     </span>
                   </button>
@@ -992,11 +992,11 @@ export default function KPIDashboard({
                   <button 
                     type="button"
                     onClick={() => setActiveDropdown(prev => prev === 'theme' ? null : 'theme')}
-                    className="bg-slate-800 hover:bg-slate-700 text-white px-3.5 py-2 rounded-xl font-bold flex items-center gap-1.5 transition-all border border-slate-700 active:scale-95"
+                    className="bg-slate-50 hover:bg-slate-100 text-slate-700 px-3.5 py-2 rounded-xl font-bold flex items-center gap-1.5 transition-all border border-slate-200 active:scale-95"
                   >
-                    <Zap className="w-3.5 h-3.5 text-amber-400" />
+                    <Zap className="w-3.5 h-3.5 text-amber-600" />
                     <span>{isRtl ? 'تنسيق الهوية:' : 'Branding Theme:'}</span>
-                    <span className="uppercase font-black text-amber-400 ml-1">
+                    <span className="uppercase font-black text-amber-600 ml-1">
                       {reportTheme === 'navy' ? (isRtl ? 'كحلي' : 'Navy') : reportTheme === 'emerald' ? (isRtl ? 'أخضر' : 'Emerald') : reportTheme === 'slate' ? (isRtl ? 'رمادي' : 'Slate') : (isRtl ? 'ذهبي' : 'Gold')}
                     </span>
                   </button>
@@ -1028,11 +1028,11 @@ export default function KPIDashboard({
                   <button 
                     type="button"
                     onClick={() => setActiveDropdown(prev => prev === 'validation' ? null : 'validation')}
-                    className="bg-slate-800 hover:bg-slate-700 text-white px-3.5 py-2 rounded-xl font-bold flex items-center gap-1.5 transition-all border border-slate-700 active:scale-95"
+                    className="bg-slate-50 hover:bg-slate-100 text-slate-700 px-3.5 py-2 rounded-xl font-bold flex items-center gap-1.5 transition-all border border-slate-200 active:scale-95"
                   >
-                    <FileCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    <FileCheck className="w-3.5 h-3.5 text-emerald-600" />
                     <span>{isRtl ? 'الختم والتوقيع:' : 'Stamps & Signatures:'}</span>
-                    <span className="font-black text-emerald-400 ml-1">
+                    <span className="font-black text-emerald-600 ml-1">
                       {validationMode === 'all' ? (isRtl ? 'الكل' : 'All') : validationMode === 'sig' ? (isRtl ? 'تواقيع فقط' : 'Signatures Only') : (isRtl ? 'بدون' : 'Draft')}
                     </span>
                   </button>
@@ -1062,11 +1062,11 @@ export default function KPIDashboard({
                   <button 
                     type="button"
                     onClick={() => setActiveDropdown(prev => prev === 'lang' ? null : 'lang')}
-                    className="bg-slate-800 hover:bg-slate-700 text-white px-3.5 py-2 rounded-xl font-bold flex items-center gap-1.5 transition-all border border-slate-700 active:scale-95"
+                    className="bg-slate-50 hover:bg-slate-100 text-slate-700 px-3.5 py-2 rounded-xl font-bold flex items-center gap-1.5 transition-all border border-slate-200 active:scale-95"
                   >
-                    <ExternalLink className="w-3.5 h-3.5 text-teal-400" />
+                    <ExternalLink className="w-3.5 h-3.5 text-teal-600" />
                     <span>{isRtl ? 'لغة التقرير:' : 'Language:'}</span>
-                    <span className="uppercase font-black text-teal-400 ml-1">
+                    <span className="uppercase font-black text-teal-600 ml-1">
                       {reportLang === 'ar' ? (isRtl ? 'عربي' : 'Arabic') : reportLang === 'en' ? (isRtl ? 'إنجليزي' : 'English') : (isRtl ? 'ثنائي اللغة' : 'Dual (AR/EN)')}
                     </span>
                   </button>
@@ -2779,7 +2779,7 @@ export default function KPIDashboard({
               </button>
               <button
                 onClick={() => setSelectedSavedReport(null)}
-                className="px-5 py-2 rounded-xl text-xs font-black bg-[#040957] hover:bg-[#0080FF] text-white transition shadow-sm"
+                className="px-5 py-2 rounded-xl text-xs font-black bg-[#0080FF] hover:bg-blue-600 text-white transition shadow-sm"
               >
                 {isRtl ? 'إغلاق المعاينة' : 'Close Details'}
               </button>
