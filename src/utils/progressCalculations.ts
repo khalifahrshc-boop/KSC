@@ -53,16 +53,21 @@ export function getProjectProgress(
   return Math.round(totalWiProgress / projWorkItems.length);
 }
 
+export function getSystemToday(): Date {
+  const realNow = new Date();
+  if (realNow.getFullYear() === 2026) {
+    return realNow;
+  }
+  return new Date('2026-07-19');
+}
+
 /**
  * Calculates the planned progress percentage of a single Project based on its schedule timeline.
  */
 export function getProjectPlannedProgress(project: Project): number {
   const start = new Date(project.startDate).getTime();
   const end = new Date(project.endDate).getTime();
-  // Align 'now' with the actual current date, but clamp to 2026-12-25 to prevent future years drift
-  const realNow = new Date().getTime();
-  const anchorTime = new Date('2026-06-25').getTime();
-  const now = realNow > anchorTime ? Math.min(realNow, new Date('2026-12-25').getTime()) : anchorTime;
+  const now = getSystemToday().getTime();
   
   if (now <= start) return 0;
   if (now >= end) return 100;
@@ -114,9 +119,7 @@ export function getActivityStatus(
     const start = new Date(startStr).getTime();
     const end = new Date(endStr).getTime();
 
-    const realNow = new Date().getTime();
-    const anchorTime = new Date('2026-06-25').getTime();
-    const nowTime = realNow > anchorTime ? Math.min(realNow, new Date('2026-12-25').getTime()) : anchorTime;
+    const nowTime = getSystemToday().getTime();
 
     if (nowTime > start) {
       const total = end - start;
@@ -228,5 +231,51 @@ export function getProjectPlannedProgressAtDate(project: Project, targetDate: Da
   const total = end - start;
   const elapsed = now - start;
   return Math.min(100, Math.round((elapsed / total) * 100));
+}
+
+/**
+ * Backfills activities with schedule properties (plannedDailyProduction, expectedDurationDays, expectedFinishDate)
+ * based on assigned workers and work items dependencies.
+ */
+export function backfillActivities(
+  activities: Activity[],
+  workers: any[],
+  workItems: any[],
+  projects: any[]
+): Activity[] {
+  const result = activities.map(act => ({ ...act }));
+  
+  for (let iter = 0; iter < 5; iter++) {
+    let changed = false;
+    for (const act of result) {
+      if (!act.expectedFinishDate || !act.plannedDailyProduction || !act.expectedDurationDays) {
+        const activeWorkers = workers.filter(w => act.workerIds.includes(w.id));
+        const sumProductivity = activeWorkers.reduce((acc, curr) => acc + (curr.dailyProductivity || 0), 0) || 5;
+        const expectedDurationDays = Math.ceil(act.totalQuantity / sumProductivity);
+        
+        const wi = workItems.find(w => w.id === act.workItemId);
+        const proj = projects.find(p => p.id === wi?.projectId);
+        
+        let startStr = proj ? proj.startDate : '2026-01-10';
+        if (act.dependsOnActivityId) {
+          const dep = result.find(a => a.id === act.dependsOnActivityId);
+          if (dep && dep.expectedFinishDate) {
+            startStr = dep.expectedFinishDate;
+          }
+        }
+        
+        const expectedFinish = new Date(startStr);
+        expectedFinish.setDate(expectedFinish.getDate() + expectedDurationDays);
+        const expectedFinishDateStr = expectedFinish.toISOString().split('T')[0];
+        
+        if (!act.plannedDailyProduction) act.plannedDailyProduction = sumProductivity;
+        if (!act.expectedDurationDays) act.expectedDurationDays = expectedDurationDays;
+        if (!act.expectedFinishDate) act.expectedFinishDate = expectedFinishDateStr;
+        changed = true;
+      }
+    }
+    if (!changed) break;
+  }
+  return result;
 }
 

@@ -71,7 +71,8 @@ import {
   getProjectPlannedProgressAtDate,
   getWorkItemProgress,
   getActivityProgress,
-  getProjectStatusDetails
+  getProjectStatusDetails,
+  getSystemToday
 } from '../utils/progressCalculations';
 
 interface DashboardProps {
@@ -159,8 +160,7 @@ export default function Dashboard({
   const progressVariance = roundedActualProgress - totalPlannedProgressAverage;
 
   // Real Daily Production Calculation
-  const realNow = new Date();
-  const sysNow = realNow.getFullYear() === 2026 ? realNow : new Date('2026-06-25');
+  const sysNow = getSystemToday();
   
   const totalDailyTarget = activities.reduce((acc, act) => {
     // Find the work item and project for this activity

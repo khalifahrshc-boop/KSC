@@ -55,6 +55,9 @@ export interface Activity {
   equipmentAllocations?: { id: string; quantity: number }[];
   dependsOnActivityId?: string;
   isCritical?: boolean;
+  workZone?: string;   // New pinpoint work zone field (e.g. Zone A)
+  role?: string;       // New pinpoint role / purpose field (e.g. Concrete placement)
+  location?: string;   // New pinpoint layout location field (e.g. Sector 4, Ground Floor)
   // Smart planning fields calculated on run
   plannedDailyProduction?: number;
   expectedDurationDays?: number;
@@ -70,6 +73,7 @@ export interface WarehouseMaterial {
   quantity: number;
   reservedStock: number;
   minThreshold: number;
+  projectId?: string;  // Project-specific warehouse association. If undefined/empty, is general/central
 }
 
 export interface EquipmentItem {

@@ -2212,8 +2212,10 @@ export default function FieldPortal({
                             className="w-full border border-gray-200 rounded-xl p-2 text-[11px] font-bold bg-white"
                           >
                             <option value="">{isRtl ? 'اختر المادة...' : 'Select Material...'}</option>
-                            {materials.map(m => (
-                              <option key={m.id} value={m.id}>{isRtl ? m.nameAr : m.nameEn} ({m.unit})</option>
+                            {materials
+                              .filter(m => m.projectId === selectedProjectId)
+                              .map(m => (
+                                <option key={m.id} value={m.id}>{isRtl ? m.nameAr : m.nameEn} ({m.unit})</option>
                             ))}
                           </select>
                           <div className="flex gap-2">
@@ -2288,23 +2290,25 @@ export default function FieldPortal({
                             className="w-full border border-gray-200 rounded-xl p-2 text-[11px] font-bold bg-white"
                           >
                             <option value="">{isRtl ? 'اختر المادة للموقع...' : 'Select Material...'}</option>
-                            {materials.map(m => {
-                              const delivered = materialDeliveries
-                                .filter(d => d.activityId === prodActId && d.materialId === m.id)
-                                .reduce((sum, d) => sum + d.quantityDelivered, 0);
-                              const consumed = prodUpdates
-                                .filter(upd => upd.activityId === prodActId)
-                                .flatMap(upd => upd.materialConsumptions || [])
-                                .filter(c => c.materialId === m.id)
-                                .reduce((sum, c) => sum + c.quantityUsed, 0);
-                              
-                              const onSite = delivered - consumed;
-                              if (onSite <= 0) return null;
-                              return (
-                                <option key={m.id} value={m.id}>
-                                  {isRtl ? m.nameAr : m.nameEn} ({isRtl ? 'المتوفر:' : 'Avail:'} {onSite} {m.unit})
-                                </option>
-                              );
+                            {materials
+                              .filter(m => m.projectId === selectedProjectId)
+                              .map(m => {
+                                const delivered = materialDeliveries
+                                  .filter(d => d.activityId === prodActId && d.materialId === m.id)
+                                  .reduce((sum, d) => sum + d.quantityDelivered, 0);
+                                const consumed = prodUpdates
+                                  .filter(upd => upd.activityId === prodActId)
+                                  .flatMap(upd => upd.materialConsumptions || [])
+                                  .filter(c => c.materialId === m.id)
+                                  .reduce((sum, c) => sum + c.quantityUsed, 0);
+                                
+                                const onSite = delivered - consumed;
+                                if (onSite <= 0) return null;
+                                return (
+                                  <option key={m.id} value={m.id}>
+                                    {isRtl ? m.nameAr : m.nameEn} ({isRtl ? 'المتوفر:' : 'Avail:'} {onSite} {m.unit})
+                                  </option>
+                                );
                             })}
                           </select>
                           <div className="flex gap-2">

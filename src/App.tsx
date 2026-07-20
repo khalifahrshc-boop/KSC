@@ -46,6 +46,7 @@ import {
 } from './types';
 import { translations } from './utils/translation';
 import { dbApi } from './lib/api';
+import { backfillActivities } from './utils/progressCalculations';
 import Dashboard from './components/Dashboard';
 import KPIDashboard from './components/KPIDashboard';
 import ProjectList from './components/ProjectList';
@@ -275,7 +276,8 @@ export default function App() {
         setUsers(dbUsers);
         setProjects(dbProjects);
         setWorkItems(dbWorkItems);
-        setActivities(dbActivities);
+        const backfilled = backfillActivities(dbActivities, dbWorkers, dbWorkItems, dbProjects);
+        setActivities(backfilled);
         setMaterials(dbMaterials);
         setEquipment(dbEquipment);
         setWorkers(dbWorkers);
@@ -575,7 +577,7 @@ export default function App() {
   const handleAddActivity = async (act: Activity) => {
     if (!act.id) act.id = `act-${Date.now()}`;
     const saved = await dbApi.save('activities', act);
-    setActivities(prev => [...prev, saved]);
+    setActivities(prev => backfillActivities([...prev, saved], workers, workItems, projects));
     
     // Auto deduct inventory stocks
     if (act.materialAllocations) {
@@ -622,7 +624,7 @@ export default function App() {
     if (!existing) return;
     const upd = { ...existing, ...updated };
     await dbApi.save('activities', upd);
-    setActivities(prev => prev.map(act => act.id === id ? upd : act));
+    setActivities(prev => backfillActivities(prev.map(act => act.id === id ? upd : act), workers, workItems, projects));
   };
 
   // Warehouse Material Stocks
@@ -1614,6 +1616,7 @@ export default function App() {
               lang={lang}
               t={textDict}
               materials={materials}
+              projects={projects}
               equipment={equipment}
               workers={workers}
               userRole={currentUser.role}

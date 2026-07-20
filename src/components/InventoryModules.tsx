@@ -8,7 +8,8 @@ import {
   WarehouseMaterial, 
   EquipmentItem, 
   Worker, 
-  UserRole 
+  UserRole,
+  Project
 } from '../types';
 import { 
   Package, 
@@ -33,6 +34,7 @@ interface InventoryModulesProps {
   lang: 'ar' | 'en';
   t: any;
   materials: WarehouseMaterial[];
+  projects: Project[];
   equipment: EquipmentItem[];
   workers: Worker[];
   userRole: UserRole;
@@ -53,6 +55,7 @@ export default function InventoryModules({
   lang,
   t,
   materials,
+  projects = [],
   equipment,
   workers,
   userRole,
@@ -74,6 +77,7 @@ export default function InventoryModules({
   // Sub Module layout State
   const [activeTab, setActiveTab] = useState<'materials' | 'equipment' | 'workers'>('materials');
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>('all');
 
   // Modals visibility toggles
   const [isAddMatOpen, setIsAddMatOpen] = useState(false);
@@ -106,6 +110,7 @@ export default function InventoryModules({
   const [matUnit, setMatUnit] = useState('m³');
   const [matQty, setMatQty] = useState(200);
   const [matMin, setMatMin] = useState(50);
+  const [matProjectId, setMatProjectId] = useState('');
 
   // Equipment Form
   const [eqNameAr, setEqNameAr] = useState('');
@@ -146,7 +151,8 @@ export default function InventoryModules({
         code: matCode,
         unit: matUnit,
         quantity: Number(matQty),
-        minThreshold: Number(matMin)
+        minThreshold: Number(matMin),
+        projectId: matProjectId || ''
       });
       setEditingMaterialId(null);
       triggerToast(isRtl ? 'تم تحديث بيانات المادة بنجاح' : 'Material updated successfully');
@@ -159,10 +165,11 @@ export default function InventoryModules({
         unit: matUnit,
         quantity: Number(matQty),
         reservedStock: 0,
-        minThreshold: Number(matMin)
+        minThreshold: Number(matMin),
+        projectId: matProjectId || ''
       };
       onAddMaterial(newM);
-      triggerToast(isRtl ? 'تم إدخال المادة للمستودع المركزي' : 'Material catalogued into Central database');
+      triggerToast(isRtl ? 'تم إدخال المادة للمستودع المحدد بنجاح' : 'Material catalogued into specified warehouse successfully');
     }
 
     setIsAddMatOpen(false);
@@ -249,6 +256,7 @@ export default function InventoryModules({
     setMatUnit(m.unit);
     setMatQty(m.quantity);
     setMatMin(m.minThreshold);
+    setMatProjectId(m.projectId || '');
     setIsAddMatOpen(true);
   };
 
@@ -286,6 +294,7 @@ export default function InventoryModules({
     setMatUnit('m³');
     setMatQty(200);
     setMatMin(50);
+    setMatProjectId(selectedWarehouseId === 'all' || selectedWarehouseId === 'central' ? '' : selectedWarehouseId);
     setIsAddMatOpen(true);
   };
 
@@ -418,6 +427,35 @@ export default function InventoryModules({
       {/* Main Table Panel Box */}
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 space-y-4">
         
+        {/* Warehouse Selector (Project Specific vs Central) */}
+        {activeTab === 'materials' && (
+          <div className="bg-slate-50 border border-slate-100 p-4 rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-scaleIn">
+            <div className="text-right md:text-right">
+              <h4 className="font-extrabold text-[#040957] text-xs">
+                {isRtl ? 'إدارة مستودعات المشاريع المنفصلة' : 'Project-Specific Warehouse Logistics'}
+              </h4>
+              <p className="text-[10px] text-slate-500 font-bold mt-0.5">
+                {isRtl ? 'حدد مستودع المشروع لعرض مواده المخصصة، أو قيد مواداً جديدة للمشروع مباشرة.' : 'Select a project warehouse to view its allocated materials or log materials for it.'}
+              </p>
+            </div>
+            <div className="w-full md:w-72">
+              <select
+                value={selectedWarehouseId}
+                onChange={(e) => setSelectedWarehouseId(e.target.value)}
+                className="w-full border border-gray-200 rounded-xl p-2.5 text-xs bg-white text-gray-700 font-bold focus:ring-2 focus:ring-[#0080FF] outline-none cursor-pointer"
+              >
+                <option value="all">📦 {isRtl ? 'جميع المستودعات (عام)' : 'All Warehouses (Global)'}</option>
+                <option value="central">🏛️ {isRtl ? 'المستودع المركزي العام' : 'Central General Warehouse'}</option>
+                {projects.map(p => (
+                  <option key={p.id} value={p.id}>
+                    🚧 {isRtl ? `مستودع مشروع: ${p.nameAr}` : `Warehouse: ${p.nameEn}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
         {/* Table top header filters */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div className="relative flex-1 max-w-sm">
@@ -491,6 +529,20 @@ export default function InventoryModules({
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50 text-gray-400 text-[10px] font-black uppercase border-b border-gray-100">
+                  <th className="p-3 w-10">
+                    <input 
+                      type="checkbox" 
+                      className="rounded border-gray-300 text-[#0080FF] focus:ring-[#0080FF]"
+                      checked={materials.length > 0 && materials.every(m => selectedMaterialIds.has(m.id))}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedMaterialIds(new Set(materials.map(m => m.id)));
+                        } else {
+                          setSelectedMaterialIds(new Set());
+                        }
+                      }}
+                    />
+                  </th>
                   <th className="p-3">{t.code}</th>
                   <th className="p-3">{t.materialName}</th>
                   <th className="p-3 text-right">{t.availableStock}</th>
@@ -502,9 +554,17 @@ export default function InventoryModules({
               </thead>
               <tbody className="divide-y divide-gray-100 text-xs text-gray-700 font-medium">
                 {materials
-                  .filter(m => (m.nameAr+m.nameEn+m.code).toLowerCase().includes(searchTerm.toLowerCase()))
+                  .filter(m => {
+                    const searchMatch = (m.nameAr+m.nameEn+m.code).toLowerCase().includes(searchTerm.toLowerCase());
+                    if (!searchMatch) return false;
+                    
+                    if (selectedWarehouseId === 'all') return true;
+                    if (selectedWarehouseId === 'central') return !m.projectId || m.projectId === 'central' || m.projectId === '';
+                    return m.projectId === selectedWarehouseId;
+                  })
                   .map(m => {
                     const isLow = m.quantity < m.minThreshold;
+                    const associatedProject = projects.find(p => p.id === m.projectId);
                     return (
                       <tr key={m.id} className="hover:bg-gray-50/50 transition">
                         <td className="p-3">
@@ -519,6 +579,17 @@ export default function InventoryModules({
                         <td className="p-3">
                           <div className="font-bold text-[#040957] font-sans">
                             {isRtl ? m.nameAr : m.nameEn}
+                          </div>
+                          <div className="text-[9px] font-bold mt-0.5">
+                            {associatedProject ? (
+                              <span className="text-[#0080FF] bg-blue-50 px-1.5 py-0.5 rounded">
+                                🚧 {isRtl ? `مستودع: ${associatedProject.nameAr}` : `Warehouse: ${associatedProject.nameEn}`}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
+                                🏛️ {isRtl ? 'المستودع المركزي العام' : 'Central Warehouse'}
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td className="p-3 text-right font-bold text-gray-800 font-mono">
@@ -848,6 +919,23 @@ export default function InventoryModules({
                   <label className="block text-xs font-bold text-gray-700">{isRtl ? 'الاسم بالإنجليزي' : 'Name (En)'} *</label>
                   <input type="text" value={matNameEn} onChange={(e)=>setMatNameEn(e.target.value)} required placeholder="SABIC Rebars" className="w-full border border-gray-200 rounded-xl p-2.5 text-xs" />
                 </div>
+              </div>
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-gray-700">
+                  {isRtl ? 'مستودع تخصيص المادة' : 'Warehouse Association'}
+                </label>
+                <select
+                  value={matProjectId}
+                  onChange={(e) => setMatProjectId(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl p-2.5 text-xs bg-white text-gray-700 font-bold outline-none"
+                >
+                  <option value="">🏛️ {isRtl ? 'المستودع المركزي العام' : 'Central Warehouse (General)'}</option>
+                  {projects.map(p => (
+                    <option key={p.id} value={p.id}>
+                      🚧 {isRtl ? `مستودع مشروع: ${p.nameAr}` : `Warehouse: ${p.nameEn}`}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className="grid grid-cols-3 gap-2">
                 <div>

@@ -22,34 +22,14 @@ import {
 } from '../utils/progressCalculations';
 import { runWithOklchSanitizer } from '../utils/pdfSanitizer';
 import { 
-  Plus, 
-  Trash2, 
-  Layers, 
-  Workflow, 
-  Calculator, 
-  Sparkles, 
-  Clock, 
-  ChevronDown, 
-  ChevronUp, 
-  HelpCircle, 
-  UserCheck, 
-  Package, 
-  Wrench, 
-  Calendar, 
-  TrendingUp, 
-  Check, 
-  X,
-  PlusCircle,
-  Play,
-  AlertTriangle,
-  Edit,
-  Eye,
-  Printer,
-  Download,
-  UploadCloud,
-  FileSpreadsheet
+  Plus, Trash2, Layers, Workflow, Calculator, Sparkles, Clock, ChevronDown, ChevronUp, 
+  HelpCircle, UserCheck, Package, Wrench, Calendar, TrendingUp, Check, X, Play, 
+  AlertTriangle, Edit, Eye, Printer, Download, FileSpreadsheet, Search, CheckSquare,
+  CheckCircle2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import ActivityWizardModal from './ActivityWizardModal';
+import ActivityDetailsModal from './ActivityDetailsModal';
 
 interface WorkItemsListProps {
   lang: 'ar' | 'en';
@@ -97,137 +77,6 @@ export default function WorkItemsList({
 
   const [isPrintingActivity, setIsPrintingActivity] = useState<string | null>(null);
 
-  const handlePrintActivityDetailsPDF = async (act: Activity) => {
-    try {
-      setIsPrintingActivity(act.id);
-      const html2pdf = (await import('html2pdf.js')).default;
-      const stats = calculateSmartPlanningValues(act);
-      const proj = projects.find(p => p.id === (workItems.find(wi => wi.id === act.workItemId)?.projectId));
-      const projectName = proj ? (isRtl ? proj.nameAr : proj.nameEn) : '---';
-
-      const content = `
-        <div style="font-family: 'Cairo', 'Inter', sans-serif; padding: 30px; direction: ${isRtl ? 'rtl' : 'ltr'}; color: #1e293b; background-color: white;">
-          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #040957; padding-bottom: 15px; margin-bottom: 20px;">
-            <div>
-              <h1 style="margin: 0; font-size: 18px; color: #040957;">${isRtl ? settings.companyNameAr : settings.companyNameEn}</h1>
-              <p style="margin: 5px 0 0 0; font-size: 10px; color: #64748b;">${isRtl ? 'تقرير تفاصيل النشاط والجدولة الزمنية' : 'Activity Detail & Schedule Analysis Report'}</p>
-            </div>
-            <div style="text-align: ${isRtl ? 'left' : 'right'};">
-              <div style="font-size: 10px; font-weight: bold; color: #040957;">Activity ID: ${act.id}</div>
-              <div style="font-size: 9px; color: #94a3b8;">${new Date().toLocaleString(isRtl ? 'ar-SA' : 'en-GB')}</div>
-            </div>
-          </div>
-
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px;">
-            <div style="background-color: #f8fafc; padding: 12px; border-radius: 10px; border: 1px solid #e2e8f0;">
-              <div style="font-size: 8px; color: #64748b; font-weight: bold; text-transform: uppercase; margin-bottom: 4px;">${isRtl ? 'المشروع' : 'Project'}</div>
-              <div style="font-size: 11px; font-weight: bold; color: #1e293b;">${projectName}</div>
-            </div>
-            <div style="background-color: #f8fafc; padding: 12px; border-radius: 10px; border: 1px solid #e2e8f0;">
-              <div style="font-size: 8px; color: #64748b; font-weight: bold; text-transform: uppercase; margin-bottom: 4px;">${isRtl ? 'حالة النشاط' : 'Activity Health'}</div>
-              <div style="font-size: 11px; font-weight: bold; color: ${stats.status === 'Delayed' ? '#dc2626' : '#166534'};">${stats.status.toUpperCase()}</div>
-            </div>
-          </div>
-
-          <div style="margin-bottom: 30px;">
-            <h2 style="font-size: 14px; color: #040957; margin-bottom: 10px; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">${isRtl ? 'معلومات النشاط الأساسية' : 'Core Activity Information'}</h2>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-              <div>
-                <strong style="font-size: 10px; color: #64748b;">${isRtl ? 'الاسم' : 'Name'}:</strong>
-                <div style="font-size: 11px; font-weight: bold;">${isRtl ? act.nameAr : act.nameEn}</div>
-              </div>
-              <div>
-                <strong style="font-size: 10px; color: #64748b;">${isRtl ? 'الكمية المستهدفة' : 'Target Quantity'}:</strong>
-                <div style="font-size: 11px; font-weight: bold;">${act.totalQuantity} ${act.unit}</div>
-              </div>
-            </div>
-            <div style="margin-top: 15px;">
-              <strong style="font-size: 10px; color: #64748b;">${isRtl ? 'الوصف التنفيذي' : 'Execution Description'}:</strong>
-              <div style="font-size: 10px; line-height: 1.6; color: #334155; background-color: #f1f5f9; padding: 10px; border-radius: 8px; margin-top: 5px;">
-                ${isRtl ? (act.descriptionAr || '---') : (act.descriptionEn || '---')}
-              </div>
-            </div>
-          </div>
-
-          <div style="margin-bottom: 30px;">
-            <h2 style="font-size: 14px; color: #040957; margin-bottom: 10px; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">📊 ${isRtl ? 'تحليلات الجدولة والإنتاجية' : 'Schedule & Production Analytics'}</h2>
-            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
-              <div style="border: 1px solid #e2e8f0; padding: 10px; border-radius: 8px; text-align: center;">
-                <div style="font-size: 8px; color: #64748b;">${isRtl ? 'التقدم المحقق' : 'Achieved Progress'}</div>
-                <div style="font-size: 12px; font-weight: 900; color: #0284c7;">${getActivityProgress(act, progressUpdates)}%</div>
-              </div>
-              <div style="border: 1px solid #e2e8f0; padding: 10px; border-radius: 8px; text-align: center;">
-                <div style="font-size: 8px; color: #64748b;">${isRtl ? 'المدة المتوقعة' : 'Expected Duration'}</div>
-                <div style="font-size: 12px; font-weight: 900;">${stats.expectedDurationDays} ${isRtl ? 'أيام' : 'Days'}</div>
-              </div>
-              <div style="border: 1px solid #e2e8f0; padding: 10px; border-radius: 8px; text-align: center;">
-                <div style="font-size: 8px; color: #64748b;">${isRtl ? 'الانتهاء المتوقع' : 'Expected Finish'}</div>
-                <div style="font-size: 11px; font-weight: 900; color: #b45309;">${stats.expectedFinishDateStr}</div>
-              </div>
-            </div>
-          </div>
-
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-            <div>
-              <h3 style="font-size: 12px; color: #040957; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px; margin-bottom: 10px;">👥 ${isRtl ? 'العمالة المخصصة' : 'Allocated Workforce'}</h3>
-              <ul style="list-style: none; padding: 0; margin: 0; font-size: 10px;">
-                ${act.workerIds.map(id => {
-                  const w = workers.find(work => work.id === id);
-                  return `<li style="padding: 5px 0; border-bottom: 1px dashed #f1f5f9;"><strong>${w?.fullName}</strong> - ${isRtl ? w?.professionAr : w?.professionEn}</li>`;
-                }).join('')}
-                ${act.workerIds.length === 0 ? `<li style="color: #94a3b8; font-style: italic;">No workers assigned</li>` : ''}
-              </ul>
-            </div>
-            <div>
-              <h3 style="font-size: 12px; color: #040957; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px; margin-bottom: 10px;">🏗️ ${isRtl ? 'الموارد والمعدات' : 'Resources & Equipment'}</h3>
-              <div style="font-size: 10px;">
-                <div style="margin-bottom: 10px;">
-                  <strong style="font-size: 9px; color: #64748b;">${isRtl ? 'المواد:' : 'Materials:'}</strong>
-                  <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 3px;">
-                    ${act.materialAllocations?.map(a => {
-                      const m = materials.find(mat => mat.id === a.id);
-                      return `<span style="background-color: #f0fdf4; color: #166534; padding: 2px 6px; border-radius: 4px; font-size: 9px;">${isRtl ? m?.nameAr : m?.nameEn}: ${a.quantity} ${m?.unit}</span>`;
-                    }).join('') || 'None'}
-                  </div>
-                </div>
-                <div>
-                  <strong style="font-size: 9px; color: #64748b;">${isRtl ? 'المعدات:' : 'Equipment:'}</strong>
-                  <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 3px;">
-                    ${act.equipmentAllocations?.map(a => {
-                      const e = equipment.find(eq => eq.id === a.id);
-                      return `<span style="background-color: #fffbeb; color: #92400e; padding: 2px 6px; border-radius: 4px; font-size: 9px;">${isRtl ? e?.nameAr : e?.nameEn}: ${a.quantity}</span>`;
-                    }).join('') || 'None'}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div style="margin-top: 50px; border-top: 1px solid #e2e8f0; padding-top: 20px; text-align: center; font-size: 9px; color: #94a3b8;">
-            ${isRtl ? 'تم إصدار هذا المستند آلياً من نظام إدارة الإنتاج الميداني' : 'This document is automatically generated by the Field Production Management System'}
-          </div>
-        </div>
-      `;
-
-      const opt = {
-        margin: 10,
-        filename: `Activity_Report_${act.id}.pdf`,
-        image: { type: 'jpeg' as const, quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true },
-        jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
-      };
-
-      await runWithOklchSanitizer(async () => {
-        await html2pdf().set(opt).from(content).save();
-      });
-
-    } catch (error) {
-      console.error('Activity PDF Error:', error);
-    } finally {
-      setIsPrintingActivity(null);
-    }
-  };
-
   // Selected state
   const [selectedProjectId, setSelectedProjectId] = useState<string>(projects[0]?.id || '');
   const [expandedWorkItemIds, setExpandedWorkItemIds] = useState<string[]>([]);
@@ -244,20 +93,13 @@ export default function WorkItemsList({
   const [wiType, setWiType] = useState<'Primary' | 'Secondary'>('Primary');
   const [wiResp, setWiResp] = useState('');
 
-  // Activity Form Values
-  const [actNameAr, setActNameAr] = useState('');
-  const [actNameEn, setActNameEn] = useState('');
-  const [actQty, setActQty] = useState(100);
-  const [actUnit, setActUnit] = useState('m');
-  const [actDescAr, setActDescAr] = useState('');
-  const [actDescEn, setActDescEn] = useState('');
-  const [selectedMaterialIds, setSelectedMaterialIds] = useState<string[]>([]);
-  const [selectedEquipmentIds, setSelectedEquipmentIds] = useState<string[]>([]);
-  const [materialAllocations, setMaterialAllocations] = useState<{id: string, quantity: number}[]>([]);
-  const [equipmentAllocations, setEquipmentAllocations] = useState<{id: string, quantity: number}[]>([]);
-  const [selectedWorkerIds, setSelectedWorkerIds] = useState<string[]>([]);
-  const [dependsOnId, setDependsOnId] = useState<string>('');
-  const [actIsCritical, setActIsCritical] = useState<boolean>(false);
+  // Search & Filters Row States (Image 2 style)
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterCritical, setFilterCritical] = useState(false);
+  const [filterDelayed, setFilterDelayed] = useState(false);
+  const [filterOnTrack, setFilterOnTrack] = useState(false);
+  const [filterPrimaryOnly, setFilterPrimaryOnly] = useState(false);
+  const [showExcelImport, setShowExcelImport] = useState(false);
 
   // Active planning inspection
   const [inspectedActivityId, setInspectedActivityId] = useState<string | null>(null);
@@ -287,6 +129,7 @@ export default function WorkItemsList({
 
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
+  // Excel Procedures
   const handleDownloadExcelTemplate = () => {
     const templateData = [
       {
@@ -299,37 +142,9 @@ export default function WorkItemsList({
         "Description (Arabic) / الوصف (عربي)": "حفر الموقع للمناسيب المطلوبة حسب المخططات المعتمدة",
         "Description (English) / الوصف (إنجليزي)": "Site excavation to required levels according to approved drawings",
         "Total Quantity / الكمية الكلية": 1500,
-        "Unit / الوحدة": "m3",
+        "Unit / الوحدة": "m³",
         "Is Critical? (Yes/No) / هل هو نشاط حرج؟ (نعم/لا)": "Yes",
         "Planned Daily Production / الإنتاجية اليومية المستهدفة": 150
-      },
-      {
-        "Work Item Code / كود بند العمل": "WI-01",
-        "Work Item Name (Arabic) / اسم بند العمل (عربي)": "أعمال الحفر والردم",
-        "Work Item Name (English) / اسم بند العمل (إنجليزي)": "Excavation Works",
-        "Work Item Type (Primary/Secondary) / نوع بند العمل (رئيسي/ثانوي)": "Primary",
-        "Activity Name (Arabic) / اسم النشاط (عربي)": "ردم طبقات الأساس",
-        "Activity Name (English) / اسم النشاط (إنجليزي)": "Backfilling Foundation Layers",
-        "Description (Arabic) / الوصف (عربي)": "الردم على طبقات مع الدمك والرش بالماء لنسبة دك 95٪",
-        "Description (English) / الوصف (إنجليزي)": "Backfilling in layers with compaction and water spraying to 95% compaction",
-        "Total Quantity / الكمية الكلية": 800,
-        "Unit / الوحدة": "m3",
-        "Is Critical? (Yes/No) / هل هو نشاط حرج؟ (نعم/لا)": "No",
-        "Planned Daily Production / الإنتاجية اليومية المستهدفة": 100
-      },
-      {
-        "Work Item Code / كود بند العمل": "WI-02",
-        "Work Item Name (Arabic) / اسم بند العمل (عربي)": "أعمال الخرسانة المسلحة",
-        "Work Item Name (English) / اسم بند العمل (إنجليزي)": "Reinforced Concrete Works",
-        "Work Item Type (Primary/Secondary) / نوع بند العمل (رئيسي/ثانوي)": "Primary",
-        "Activity Name (Arabic) / اسم النشاط (عربي)": "صب خرسانة القواعد",
-        "Activity Name (English) / اسم النشاط (إنجليزي)": "Pouring Footing Concrete",
-        "Description (Arabic) / الوصف (عربي)": "صب خرسانة مقاومة للكبريتات محتوى 350 كجم/م3 بالقواعد والرقاب",
-        "Description (English) / الوصف (إنجليزي)": "Pouring sulfate-resistant concrete 350kg/m3 in footings and necks",
-        "Total Quantity / الكمية الكلية": 450,
-        "Unit / الوحدة": "m3",
-        "Is Critical? (Yes/No) / هل هو نشاط حرج؟ (نعم/لا)": "Yes",
-        "Planned Daily Production / الإنتاجية اليومية المستهدفة": 45
       }
     ];
 
@@ -338,18 +153,9 @@ export default function WorkItemsList({
     XLSX.utils.book_append_sheet(wb, ws, "ActivitiesTemplate");
     
     ws['!cols'] = [
-      { wch: 15 }, // Code
-      { wch: 25 }, // WI Ar
-      { wch: 25 }, // WI En
-      { wch: 20 }, // WI Type
-      { wch: 25 }, // Act Ar
-      { wch: 25 }, // Act En
-      { wch: 30 }, // Desc Ar
-      { wch: 30 }, // Desc En
-      { wch: 15 }, // Qty
-      { wch: 10 }, // Unit
-      { wch: 15 }, // Is Critical
-      { wch: 25 }  // Daily Prod
+      { wch: 15 }, { wch: 25 }, { wch: 25 }, { wch: 20 },
+      { wch: 25 }, { wch: 25 }, { wch: 30 }, { wch: 30 },
+      { wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 25 }
     ];
 
     XLSX.writeFile(wb, "Field_Activities_Import_Template.xlsx");
@@ -360,7 +166,7 @@ export default function WorkItemsList({
     if (!file) return;
 
     if (!selectedProjectId) {
-      alert(isRtl ? 'يرجى اختيار المشروع أولاً قبل رفع الأنشطة' : 'Please select a project first before uploading activities.');
+      alert(isRtl ? 'يرجى اختيار المشروع أولاً قبل رفع الأنشطة' : 'Please select a project first.');
       return;
     }
 
@@ -369,31 +175,23 @@ export default function WorkItemsList({
       try {
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
+        const ws = wb.Sheets[wb.SheetNames[0]];
         const data = XLSX.utils.sheet_to_json<any>(ws);
 
         if (data.length === 0) {
-          alert(isRtl ? 'ملف الإكسل المرفوع فارغ' : 'The uploaded Excel file contains no data.');
+          alert(isRtl ? 'ملف الإكسل فارغ' : 'The file is empty.');
           return;
         }
 
         let addedWorkItems = 0;
         let addedActivities = 0;
-
-        // Code-to-ID mapping to prevent duplicates during the same import batch
         const workItemCodeMap = new Map<string, string>();
         
-        // Populate with existing work items in this project to prevent duplicates
         projectWorkItems.forEach(wi => {
-          if (wi.itemNumber) {
-            workItemCodeMap.set(wi.itemNumber.trim().toUpperCase(), wi.id);
-          }
+          if (wi.itemNumber) workItemCodeMap.set(wi.itemNumber.trim().toUpperCase(), wi.id);
         });
 
-        // We will process row by row
         data.forEach((row: any, index: number) => {
-          // Find values using keys that can match partial names
           const findVal = (possibleKeys: string[]): string => {
             const foundKey = Object.keys(row).find(k => 
               possibleKeys.some(pk => k.toLowerCase().includes(pk.toLowerCase()))
@@ -402,27 +200,19 @@ export default function WorkItemsList({
           };
 
           const wiCode = findVal(['work item code', 'كود بند', 'كود البند', 'رمز بند']);
-          const wiNameAr = findVal(['work item name (arabic)', 'اسم بند العمل (عربي)', 'اسم البند (عربي)']);
-          const wiNameEn = findVal(['work item name (english)', 'اسم بند العمل (إنجليزي)', 'اسم البند (إنجليزي)', 'work item name']);
+          const wiNameArVal = findVal(['work item name (arabic)', 'اسم بند العمل (عربي)', 'اسم البند (عربي)']);
+          const wiNameEnVal = findVal(['work item name (english)', 'اسم بند العمل (إنجليزي)', 'اسم البند (إنجليزي)', 'work item name']);
           const wiTypeStr = findVal(['work item type', 'نوع بند', 'نوع البند', 'type']);
-          
-          const actNameAr = findVal(['activity name (arabic)', 'اسم النشاط (عربي)', 'النشاط (عربي)']);
-          const actNameEn = findVal(['activity name (english)', 'اسم النشاط (إنجليزي)', 'النشاط (إنجليزي)', 'activity name']);
+          const actNameArVal = findVal(['activity name (arabic)', 'اسم النشاط (عربي)', 'النشاط (عربي)']);
+          const actNameEnVal = findVal(['activity name (english)', 'اسم النشاط (إنجليزي)', 'النشاط (إنجليزي)', 'activity name']);
           const descAr = findVal(['description (arabic)', 'الوصف (عربي)', 'وصف النشاط (عربي)']);
           const descEn = findVal(['description (english)', 'الوصف (إنجليزي)', 'وصف النشاط (إنجليزي)', 'description']);
-          
           const qtyVal = findVal(['total quantity', 'الكمية الكلية', 'الكمية', 'quantity']);
           const qty = qtyVal ? Number(qtyVal) : 0;
-          
-          const unit = findVal(['unit', 'الوحدة', 'وحدة']) || 'units';
-          
+          const unit = findVal(['unit', 'الوحدة', 'وحدة']) || 'm³';
           const isCriticalStr = findVal(['is critical', 'نشاط حرج', 'حرج']).toLowerCase();
           const isCritical = isCriticalStr.includes('yes') || isCriticalStr.includes('true') || isCriticalStr.includes('نعم') || isCriticalStr.includes('صح');
-          
-          const dailyProdVal = findVal(['planned daily', 'الإنتاجية اليومية', 'الإنتاجية', 'daily production']);
-          const plannedDailyProd = dailyProdVal ? Number(dailyProdVal) : undefined;
 
-          // Validate we have at least a work item code
           if (!wiCode) return;
 
           let workItemId = workItemCodeMap.get(wiCode.toUpperCase());
@@ -431,8 +221,8 @@ export default function WorkItemsList({
             const newWi: WorkItem = {
               id: workItemId,
               projectId: selectedProjectId,
-              nameAr: wiNameAr || wiNameEn || `${wiCode} - Ar`,
-              nameEn: wiNameEn || wiNameAr || `${wiCode} - En`,
+              nameAr: wiNameArVal || wiNameEnVal || `${wiCode} - Ar`,
+              nameEn: wiNameEnVal || wiNameArVal || `${wiCode} - En`,
               itemNumber: wiCode,
               workType: (wiTypeStr.toLowerCase().includes('secondary') || wiTypeStr.includes('ثانوي')) ? 'Secondary' : 'Primary',
               responsiblePerson: ''
@@ -442,22 +232,20 @@ export default function WorkItemsList({
             addedWorkItems++;
           }
 
-          if (actNameAr || actNameEn) {
-            const actId = `act-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+          if (actNameArVal || actNameEnVal) {
             const newAct: Activity = {
-              id: actId,
-              workItemId: workItemId,
-              nameAr: actNameAr || actNameEn || `نشاط ${index + 1}`,
-              nameEn: actNameEn || actNameAr || `Activity ${index + 1}`,
-              descriptionAr: descAr || '',
-              descriptionEn: descEn || '',
+              id: `act-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+              workItemId,
+              nameAr: actNameArVal || actNameEnVal || `نشاط ${index + 1}`,
+              nameEn: actNameEnVal || actNameArVal || `Activity ${index + 1}`,
+              descriptionAr: descAr,
+              descriptionEn: descEn,
               totalQuantity: qty || 1,
-              unit: unit,
+              unit,
               materialIds: [],
               equipmentIds: [],
               workerIds: [],
-              isCritical: isCritical,
-              plannedDailyProduction: plannedDailyProd || undefined
+              isCritical
             };
             onAddActivity(newAct);
             addedActivities++;
@@ -465,16 +253,14 @@ export default function WorkItemsList({
         });
 
         alert(isRtl
-          ? `تم استيراد وتحليل الملف بنجاح! تم إضافة ${addedWorkItems} بنود عمل رئيسية و ${addedActivities} أنشطة فرعية بنجاح.`
-          : `Excel file successfully imported and analyzed! Added ${addedWorkItems} main work item categories and ${addedActivities} sub-activities.`
+          ? `تم الاستيراد بنجاح! تم إضافة ${addedWorkItems} بنود و ${addedActivities} أنشطة.`
+          : `Import completed! Added ${addedWorkItems} work items and ${addedActivities} activities.`
         );
 
-        // Reset file input value
         if (e.target) e.target.value = '';
-
       } catch (err) {
-        console.error("Excel import error", err);
-        alert(isRtl ? 'حدث خطأ أثناء قراءة وتحليل ملف الإكسل. تأكد من صحة الملف والبيانات.' : 'An error occurred while reading and analyzing the Excel file. Verify file formatting.');
+        console.error(err);
+        alert(isRtl ? 'فشل تحليل ملف إكسل' : 'Excel parse error');
       }
     };
     reader.readAsBinaryString(file);
@@ -485,27 +271,34 @@ export default function WorkItemsList({
     return activities.filter(act => act.workItemId === wiId);
   };
 
-  // --- Smart Planning Calculation Formula ---
+  // Predictive calculations (Mathematical Schedule Engine)
   const calculateSmartPlanningValues = (act: Activity) => {
-    // 1. Daily Production = Sum of daily productivity of all linked workers
     const activeWorkers = workers.filter(w => act.workerIds.includes(w.id));
-    const sumProductivity = activeWorkers.reduce((acc, curr) => acc + (curr.dailyProductivity || 0), 0) || 5; // Fallback 5 units/day if none selected
+    const sumProductivity = activeWorkers.reduce((acc, curr) => acc + (curr.dailyProductivity || 0), 0) || 5; 
 
-    // 2. Expected Duration = Total Quantity / sum productivity
-    const expectedDurationDays = Math.ceil(act.totalQuantity / sumProductivity);
-
-    // 3. Expected Finish Date: project start date + expected duration of activity
-    const projStartDate = currentProject ? new Date(currentProject.startDate) : new Date();
-    const expectedFinish = new Date(projStartDate);
-    expectedFinish.setDate(expectedFinish.getDate() + expectedDurationDays);
-    const expectedFinishDateStr = expectedFinish.toISOString().split('T')[0];
-
-    // 4. Remaining work is computed based on actual progress submissions in the database
     const actualProgress = getActivityProgress(act, progressUpdates);
-    const actualCompleted = Math.min(act.totalQuantity, Math.round((act.totalQuantity * actualProgress) / 100));
-    const remaining = Math.max(0, act.totalQuantity - actualCompleted);
+    const isCompleted = actualProgress >= 100;
 
-    // 5. Schedule status allocation using operational integration logic
+    const expectedDurationDays = isCompleted ? 0 : Math.ceil(act.totalQuantity / sumProductivity);
+    
+    // Deduce exact start date based on dependencies
+    let startStr = currentProject ? currentProject.startDate : '';
+    if (act.dependsOnActivityId) {
+      const dep = activities.find(a => a.id === act.dependsOnActivityId);
+      if (dep && dep.expectedFinishDate) {
+        startStr = dep.expectedFinishDate;
+      }
+    }
+    const expectedFinishDateStr = act.expectedFinishDate || (() => {
+      const start = startStr ? new Date(startStr) : new Date();
+      const expectedFinish = new Date(start);
+      expectedFinish.setDate(expectedFinish.getDate() + (expectedDurationDays || Math.ceil(act.totalQuantity / sumProductivity)));
+      return expectedFinish.toISOString().split('T')[0];
+    })();
+
+    const actualCompleted = Math.min(act.totalQuantity, Math.round((act.totalQuantity * actualProgress) / 100));
+    const remaining = isCompleted ? 0 : Math.max(0, act.totalQuantity - actualCompleted);
+
     const { status, reason } = getActivityStatus(act, progressUpdates, materials);
 
     return {
@@ -519,74 +312,200 @@ export default function WorkItemsList({
     };
   };
 
-  // Save new Work Item
+  // Dynamic filter lists
+  const filteredActivities = useMemo(() => {
+    return activities.filter(act => {
+      // Filter by current project first
+      const parentWi = workItems.find(wi => wi.id === act.workItemId);
+      if (!parentWi || parentWi.projectId !== selectedProjectId) return false;
+
+      // Text search
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        const matchAct = act.nameAr.toLowerCase().includes(query) || act.nameEn.toLowerCase().includes(query);
+        const matchDesc = (act.descriptionAr || '').toLowerCase().includes(query) || (act.descriptionEn || '').toLowerCase().includes(query);
+        const matchCode = parentWi.itemNumber.toLowerCase().includes(query);
+        if (!matchAct && !matchDesc && !matchCode) return false;
+      }
+
+      // Critical Filter
+      if (filterCritical && !act.isCritical) return false;
+
+      // Smart predicting stats filters
+      const stats = calculateSmartPlanningValues(act);
+      if (filterDelayed && stats.status !== 'Delayed') return false;
+      if (filterOnTrack && stats.status !== 'On Track' && stats.status !== 'Ahead') return false;
+
+      return true;
+    });
+  }, [activities, workItems, selectedProjectId, searchQuery, filterCritical, filterDelayed, filterOnTrack]);
+
+  const filteredWorkItems = useMemo(() => {
+    return projectWorkItems.filter(wi => {
+      // Work type filter
+      if (filterPrimaryOnly && wi.workType !== 'Primary') return false;
+
+      // Check query match or matching activities inside
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        const matchWi = wi.itemNumber.toLowerCase().includes(query) || 
+                        wi.nameAr.toLowerCase().includes(query) || 
+                        wi.nameEn.toLowerCase().includes(query) ||
+                        wi.responsiblePerson.toLowerCase().includes(query);
+        
+        const hasMatchingAct = filteredActivities.some(act => act.workItemId === wi.id);
+        if (!matchWi && !hasMatchingAct) return false;
+      }
+
+      // Operational filters require nested activity compliance
+      if (filterCritical || filterDelayed || filterOnTrack) {
+        const hasMatchingAct = filteredActivities.some(act => act.workItemId === wi.id);
+        if (!hasMatchingAct) return false;
+      }
+
+      return true;
+    });
+  }, [projectWorkItems, filterPrimaryOnly, searchQuery, filterCritical, filterDelayed, filterOnTrack, filteredActivities]);
+
+  // Handle PDF details printing with native sanitizer
+  const handlePrintActivityDetailsPDF = async (act: Activity) => {
+    if (!act) return;
+    setIsPrintingActivity(act.id);
+    try {
+      const { default: html2pdf } = await import('html2pdf.js');
+      const stats = calculateSmartPlanningValues(act);
+      
+      const content = document.createElement('div');
+      content.style.padding = '20px';
+      content.style.fontFamily = 'sans-serif';
+      content.dir = isRtl ? 'rtl' : 'ltr';
+      content.innerHTML = `
+        <div style="border-bottom: 2px solid #040957; padding-bottom: 15px; margin-bottom: 20px;">
+          <h2 style="color: #040957; margin: 0 0 5px 0;">${isRtl ? 'تقرير نشاط تسليم ميداني' : 'Field Activity Inspection Report'}</h2>
+          <p style="color: #666; margin: 0; font-size: 12px;">${isRtl ? 'بوابة التخطيط والمتابعة الاستراتيجية للمستودع' : 'Strategic Inventory Planning Gateway'}</p>
+        </div>
+        <div style="margin-bottom: 20px;">
+          <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+            <tr>
+              <td style="padding: 6px; font-weight: bold; width: 30%;">${isRtl ? 'اسم النشاط (عربي):' : 'Name (Ar):'}</td>
+              <td style="padding: 6px;">${act.nameAr}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px; font-weight: bold;">${isRtl ? 'اسم النشاط (إنجليزي):' : 'Name (En):'}</td>
+              <td style="padding: 6px;">${act.nameEn}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px; font-weight: bold;">${isRtl ? 'الكمية الكلية المستهدفة:' : 'Volume Quantity:'}</td>
+              <td style="padding: 6px; font-weight: bold; color: #040957;">${act.totalQuantity} ${act.unit}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px; font-weight: bold;">${isRtl ? 'حالة المسار:' : 'Path Class:'}</td>
+              <td style="padding: 6px;">${act.isCritical ? (isRtl ? '⚠️ مسار حرج وعاجل' : '⚠️ Critical Path') : (isRtl ? 'اعتيادي قياسي' : 'Routine')}</td>
+            </tr>
+          </table>
+        </div>
+        
+        <div style="margin-bottom: 20px; background: #f8fafc; border: 1px solid #e2e8f0; padding: 12px; border-radius: 8px;">
+          <h4 style="color: #040957; margin: 0 0 8px 0; font-size: 13px;">${isRtl ? 'النتائج المتوقعة من محرك التنبؤ الذكي' : 'Predictive Calculations Output'}</h4>
+          <table style="width: 100%; font-size: 12px;">
+            <tr>
+              <td>${isRtl ? 'الإنتاجية اليومية للمجموعة:' : 'Daily Capacity:'}</td>
+              <td style="font-weight: bold; text-align: left;">${stats.sumProductivity} ${act.unit}/day</td>
+            </tr>
+            <tr>
+              <td>${isRtl ? 'المدة الزمنية المقدرة:' : 'Duration Forecast:'}</td>
+              <td style="font-weight: bold; text-align: left;">${stats.expectedDurationDays} ${isRtl ? 'أيام' : 'Days'}</td>
+            </tr>
+            <tr>
+              <td>${isRtl ? 'تاريخ التسليم المتوقع:' : 'Expected Finish Date:'}</td>
+              <td style="font-weight: bold; color: #e11d48; text-align: left;">${stats.expectedFinishDateStr}</td>
+            </tr>
+          </table>
+        </div>
+      `;
+
+      const opt = {
+        margin: 10,
+        filename: `Inspection_Report_${act.id}.pdf`,
+        image: { type: 'jpeg' as const, quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
+      };
+
+      await runWithOklchSanitizer(async () => {
+        await html2pdf().set(opt).from(content).save();
+      });
+
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsPrintingActivity(null);
+    }
+  };
+
+  // Add/Edit Work Item Logic
   const handleSaveWorkItem = (e: React.FormEvent) => {
     e.preventDefault();
     if (isReadOnly) return;
-    if (!wiNameAr || !wiNameEn) {
-      alert(isRtl ? 'الرجاء ملء الاسم بالكامل' : 'Please provide work item names');
+    if (!wiNumber || !wiNameAr || !wiNameEn) {
+      alert(isRtl ? 'الرجاء إدخال الحقول المطلوبة لبند العمل' : 'Please complete the required fields');
       return;
     }
 
-    const newItem: WorkItem = {
-      id: `wi-${Date.now()}`,
-      projectId: selectedProjectId,
-      itemNumber: wiNumber || `WI-SEC-00${workItems.length + 1}`,
-      nameAr: wiNameAr,
-      nameEn: wiNameEn,
-      workType: wiType,
-      responsiblePerson: wiResp || 'Site Engineer Group'
-    };
+    const editTarget = workItems.find(wi => wi.itemNumber === wiNumber && wi.projectId === selectedProjectId);
+    if (editTarget) {
+      // Editing
+      onDeleteWorkItem(editTarget.id);
+      onAddWorkItem({
+        id: editTarget.id,
+        projectId: selectedProjectId,
+        nameAr: wiNameAr,
+        nameEn: wiNameEn,
+        itemNumber: wiNumber,
+        workType: wiType,
+        responsiblePerson: wiResp
+      });
+    } else {
+      // Adding New
+      onAddWorkItem({
+        id: `wi-${Date.now()}`,
+        projectId: selectedProjectId,
+        nameAr: wiNameAr,
+        nameEn: wiNameEn,
+        itemNumber: wiNumber,
+        workType: wiType,
+        responsiblePerson: wiResp
+      });
+    }
 
-    onAddWorkItem(newItem);
     setIsAddWiOpen(false);
-    // Reset
     setWiNameAr('');
     setWiNameEn('');
     setWiNumber('');
-    setWiType('Primary');
     setWiResp('');
   };
 
-  // Save new Activity
   const handleOpenAddActivity = (wiId: string) => {
-    if (isReadOnly) return;
-    setEditingActivityId(null);
     setSelectedWiIdForActivity(wiId);
-    setActNameAr('');
-    setActNameEn('');
-    setActQty(120);
-    setActUnit('m³');
-    setActDescAr('');
-    setActDescEn('');
-    setSelectedMaterialIds([]);
-    setSelectedEquipmentIds([]);
-    setMaterialAllocations([]);
-    setEquipmentAllocations([]);
-    setSelectedWorkerIds([]);
-    setDependsOnId('');
-    setActIsCritical(false);
+    setEditingActivityId(null);
     setIsAddActOpen(true);
   };
 
   const handleOpenEditActivity = (act: Activity) => {
-    if (isReadOnly) return;
-    setEditingActivityId(act.id);
     setSelectedWiIdForActivity(act.workItemId);
-    setActNameAr(act.nameAr);
-    setActNameEn(act.nameEn);
-    setActQty(act.totalQuantity);
-    setActUnit(act.unit);
-    setActDescAr(act.descriptionAr || '');
-    setActDescEn(act.descriptionEn || '');
-    setSelectedMaterialIds(act.materialIds || []);
-    setSelectedEquipmentIds(act.equipmentIds || []);
-    setMaterialAllocations(act.materialAllocations || []);
-    setEquipmentAllocations(act.equipmentAllocations || []);
-    setSelectedWorkerIds(act.workerIds || []);
-    setDependsOnId(act.dependsOnActivityId || '');
-    setActIsCritical(act.isCritical || false);
+    setEditingActivityId(act.id);
     setIsAddActOpen(true);
+  };
+
+  const handleSaveActivityFromWizard = (finalizedData: any) => {
+    if (isReadOnly) return;
+    if (editingActivityId) {
+      onUpdateActivity(editingActivityId, finalizedData);
+    } else {
+      onAddActivity(finalizedData);
+    }
+    setIsAddActOpen(false);
+    setEditingActivityId(null);
   };
 
   const handleOpenDetails = (act: Activity) => {
@@ -594,968 +513,831 @@ export default function WorkItemsList({
     setIsDetailsOpen(true);
   };
 
-  const handleSaveActivity = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isReadOnly) return;
-    if (!actNameAr || !actNameEn) {
-      alert(isRtl ? 'الرجاء إدخال تفاصيل النشاط' : 'Please complete activity fields');
-      return;
-    }
-
-    if (editingActivityId) {
-      onUpdateActivity(editingActivityId, {
-        nameAr: actNameAr,
-        nameEn: actNameEn,
-        totalQuantity: Number(actQty),
-        unit: actUnit,
-        descriptionAr: actDescAr,
-        descriptionEn: actDescEn,
-        materialIds: selectedMaterialIds,
-        equipmentIds: selectedEquipmentIds,
-        materialAllocations: materialAllocations,
-        equipmentAllocations: equipmentAllocations,
-        workerIds: selectedWorkerIds,
-        dependsOnActivityId: dependsOnId || undefined,
-        isCritical: actIsCritical
-      });
-    } else {
-      const newAct: Activity = {
-        id: `act-${Date.now()}`,
-        workItemId: selectedWiIdForActivity,
-        nameAr: actNameAr,
-        nameEn: actNameEn,
-        totalQuantity: Number(actQty),
-        unit: actUnit,
-        descriptionAr: actDescAr,
-        descriptionEn: actDescEn,
-        materialIds: selectedMaterialIds,
-        equipmentIds: selectedEquipmentIds,
-        materialAllocations: materialAllocations,
-        equipmentAllocations: equipmentAllocations,
-        workerIds: selectedWorkerIds,
-        dependsOnActivityId: dependsOnId || undefined,
-        isCritical: actIsCritical
-      };
-      onAddActivity(newAct);
-    }
-
-    setIsAddActOpen(false);
-    setEditingActivityId(null);
-  };
-
   return (
     <div className="space-y-6">
       
-      {/* Upper Project Tab selector */}
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-        <label className="block text-xs font-extrabold text-[#040957] uppercase tracking-wider mb-2">
-          {isRtl ? 'اختر المشروع لعرض المخطط والجدولة' : 'Select Target Project for Schedule Computations'}
-        </label>
-        <div className="flex flex-wrap gap-2">
-          {projects.map(p => (
+      {/* SASS TOP NAV BAR & PROJECT TAB SELECTOR (Image 2 Style Header) */}
+      <div className="bg-[#0B1B3D] text-white px-6 py-4 rounded-2xl flex flex-col md:flex-row justify-between items-center gap-4 shadow-lg">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-[#0080FF] rounded-xl text-white font-extrabold text-xs tracking-widest font-mono">
+            FPMS
+          </div>
+          <div className="hidden sm:block h-6 w-[1px] bg-white/20"></div>
+          <div className="text-xs font-semibold text-slate-300">
+            {isRtl ? 'بوابة المتابعة والتخطيط الذكي للمشروع' : 'Strategic Schedule & Plan Dashboard'}
+          </div>
+        </div>
+
+        {/* Project Selector tabs */}
+        <div className="flex flex-wrap items-center gap-2">
+          {projects.map(p => {
+            const isActive = p.id === selectedProjectId;
+            return (
+              <button
+                key={p.id}
+                onClick={() => {
+                  setSelectedProjectId(p.id);
+                  setExpandedWorkItemIds([]);
+                  setInspectedActivityId(null);
+                }}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all relative flex items-center gap-1.5 ${
+                  isActive 
+                    ? 'bg-[#0080FF] text-white shadow-md' 
+                    : 'bg-white/10 text-slate-200 hover:bg-white/20'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>{isRtl ? p.nameAr : p.nameEn}</span>
+                {isActive && (
+                  <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full"></span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex items-center gap-2">
+          {!isReadOnly && (
             <button
-              key={p.id}
               onClick={() => {
-                setSelectedProjectId(p.id);
-                setExpandedWorkItemIds([]);
-                setInspectedActivityId(null);
+                setWiNumber(`WI-${Date.now().toString().slice(-3)}`);
+                setWiNameAr('');
+                setWiNameEn('');
+                setWiResp('');
+                setWiType('Primary');
+                setIsAddWiOpen(true);
               }}
-              className={`py-2 px-4 rounded-xl text-xs font-bold transition flex items-center gap-2 ${p.id === selectedProjectId ? 'bg-[#040957] text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-4 rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow-sm"
             >
-              <Layers className="w-3.5 h-3.5" />
-              <span>{isRtl ? p.nameAr : p.nameEn}</span>
+              <Plus className="w-4 h-4" />
+              <span>{isRtl ? 'إضافة بند عمل' : 'New Work Item'}</span>
             </button>
-          ))}
+          )}
+          {!isReadOnly && (
+            <button
+              onClick={() => setShowExcelImport(!showExcelImport)}
+              className={`py-2 px-3 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                showExcelImport ? 'bg-white text-[#0B1B3D]' : 'bg-white/10 text-white hover:bg-white/20'
+              }`}
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>{isRtl ? 'استيراد Excel' : 'Excel File'}</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Excel Templates & Import Section */}
-      {!isReadOnly && (
-        <div className="bg-emerald-50/20 border border-emerald-100 p-5 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs">
-          <div className="flex items-start gap-3">
-            <div className="p-2.5 bg-emerald-600 text-white rounded-xl shadow-sm">
-              <FileSpreadsheet className="w-5 h-5" />
-            </div>
-            <div className="space-y-1">
-              <h4 className="text-xs font-extrabold text-[#040957] uppercase tracking-wider">
-                {isRtl ? 'إدارة استيراد خطط الأنشطة وبنود العمل بالكامل عبر إكسل' : 'Comprehensive Excel Activities Import & Template Management'}
+      {/* Excel template / upload drawer */}
+      {showExcelImport && !isReadOnly && (
+        <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl space-y-3 animate-scaleIn">
+          <div className="flex flex-wrap justify-between items-center gap-2">
+            <div>
+              <h4 className="font-extrabold text-[#040957] text-xs">
+                {isRtl ? 'استيراد الأنشطة والجدولة الذكية من إكسل' : 'Bulk Excel File Importer'}
               </h4>
-              <p className="text-[10px] text-gray-500 font-bold leading-relaxed max-w-xl">
-                {isRtl 
-                  ? 'وفر الوقت بجدولة مشروعك في ثوانٍ. حمل النموذج القياسي، املأ البيانات (الأقسام الرئيسية والأنشطة وحالتها الحرجة)، ثم ارفعه آلياً ليقوم النظام بتحليل وإضافة كل شيء في خطوة واحدة.' 
-                  : 'Saves hours of manual input. Download our standard spreadsheet template with pre-configured headers, fill in your plan (groups, sub-activities & critical statuses), and upload it to auto-parse everything.'}
+              <p className="text-[10px] text-slate-500 font-bold">
+                {isRtl ? 'يمكنك تعبئة وإدراج العشرات من الأنشطة وبنود العمل الميدانية بنقرة واحدة.' : 'Quickly populate field deliverables and activities into the schedule.'}
               </p>
             </div>
-          </div>
-
-          <div className="flex items-center gap-3 flex-shrink-0">
-            {/* Hidden Input File */}
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              onChange={handleExcelUpload} 
-              accept=".xlsx, .xls" 
-              className="hidden" 
-            />
-
-            {/* Template Download Button */}
-            <button
-              type="button"
-              onClick={handleDownloadExcelTemplate}
-              className="bg-white hover:bg-gray-50 text-emerald-800 border border-emerald-200 py-2 px-4 rounded-xl text-xs font-black transition flex items-center gap-2 shadow-xs"
-            >
-              <Download className="w-4 h-4 text-emerald-600" />
-              <span>{isRtl ? 'تحميل نموذج Excel الفارغ' : 'Download Excel Template'}</span>
-            </button>
-
-            {/* Template Upload Button */}
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-4 rounded-xl text-xs font-black transition flex items-center gap-2 shadow-sm"
-            >
-              <UploadCloud className="w-4 h-4" />
-              <span>{isRtl ? 'رفع واستيراد ملف Excel المعبأ' : 'Upload Completed Excel File'}</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleDownloadExcelTemplate}
+                className="bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center gap-1"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>{isRtl ? 'تحميل نموذج Excel المعتمد' : 'Download Template'}</span>
+              </button>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="bg-[#040957] text-white hover:bg-[#0080FF] py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center gap-1"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span>{isRtl ? 'رفع ملف Excel معبأ' : 'Upload Data Sheet'}</span>
+              </button>
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleExcelUpload} 
+                accept=".xlsx, .xls" 
+                className="hidden" 
+              />
+            </div>
           </div>
         </div>
       )}
 
-      {/* Main Grid: Work Items list & Smart Planning Sidebar Calculator */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Work items tree structure (2 Columns / Left) */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="bg-white p-5 rounded-2xl border border-gray-200 space-y-4">
-            <div className="flex justify-between items-center pb-2 border-b border-gray-100">
-              <div>
-                <h3 className="font-extrabold text-base text-[#040957] font-sans">
-                  {t.workItemsTitle}
-                </h3>
-                <p className="text-xs text-gray-400">
-                  {isRtl ? `يتضمن المشروع الحالي ${projectWorkItems.length} أقسام تجميعية رئيسية` : `The selected project holds ${projectWorkItems.length} core physical categories`}
-                </p>
-              </div>
-
-              {!isReadOnly && (
-                <button
-                  onClick={() => {
-                    setWiNumber(`WI-SEC-${projects.length}${workItems.length + 1}`);
-                    setIsAddWiOpen(true);
-                  }}
-                  className="bg-[#0080FF] hover:bg-[#040957] text-white py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center gap-1.5"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>{t.addWorkItem}</span>
-                </button>
-              )}
-            </div>
-
-            {/* Tree Items collapsible list */}
-            {projectWorkItems.length === 0 ? (
-              <div className="text-center py-10 text-gray-400 text-xs font-semibold">
-                {isRtl ? 'لا توجد بنود عمل مسجلة للمشروع المختار، يرجى إنشاء بند جديد.' : 'No structural work items registered on this project. Click Add above.'}
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {projectWorkItems.map(wi => {
-                  const isExpanded = expandedWorkItemIds.includes(wi.id);
-                  const nestedActs = getActivitiesForWi(wi.id);
-
-                  return (
-                    <div key={wi.id} className="border border-gray-100 rounded-xl overflow-hidden hover:shadow-sm transition bg-white">
-                      
-                      {/* Collapsible item header */}
-                      <div className="bg-gray-50/50 p-4 flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <button 
-                            onClick={() => toggleExpandWi(wi.id)}
-                            className="bg-white border border-gray-150 p-1 rounded-lg text-gray-500 hover:text-[#0080FF]"
-                          >
-                            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                          </button>
-                          <div>
-                            <span className="font-mono text-[9px] bg-[#040957]/10 text-[#040957] px-2 py-0.5 rounded-full font-bold">
-                              {wi.itemNumber}
-                            </span>
-                            <h4 className="font-bold text-[#040957] text-sm font-sans mt-0.5">
-                              {isRtl ? wi.nameAr : wi.nameEn}
-                            </h4>
-                            <div className="text-[10px] text-gray-400 mt-0.5 font-medium">
-                              {isRtl ? 'المشرف المسؤول' : 'Lead Engineer'}: <span className="text-gray-600 font-semibold">{wi.responsiblePerson}</span>
-                              <span className="mx-2">|</span>
-                              {isRtl ? 'نوع العمل' : 'Type'}: <span className="text-[#0080FF] font-semibold">{wi.workType === 'Primary' ? t.primary : t.secondary}</span>
-                              <span className="mx-2">|</span>
-                              {isRtl ? 'الإنجاز الفعلي' : 'Actual Progress'}: <span className="text-emerald-600 font-bold font-mono">{getWorkItemProgress(wi, activities, progressUpdates)}%</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <button 
-                            onClick={() => handleOpenAddActivity(wi.id)}
-                            disabled={isReadOnly}
-                            className={`bg-blue-50 hover:bg-blue-100 text-[#0080FF] p-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition ${isReadOnly ? 'opacity-30 cursor-not-allowed' : ''}`}
-                            title={t.addActivity}
-                          >
-                            <PlusCircle className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => {
-                              openConfirm(
-                                t.confirmDelete,
-                                isRtl ? 'هل أنت متأكد من حذف هذا البند وكافة الأنشطة بداخله؟' : 'Are you sure you want to delete this work item and all its activities?',
-                                () => onDeleteWorkItem(wi.id)
-                              );
-                            }}
-                            disabled={isReadOnly}
-                            className={`text-gray-300 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition ${isReadOnly ? 'opacity-30 cursor-not-allowed' : ''}`}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Nested Activities List */}
-                      {isExpanded && (
-                        <div className="p-4 bg-white border-t border-gray-100 space-y-2">
-                          <div className="text-[10px] font-black uppercase text-gray-400 tracking-widest pb-1 flex items-center gap-1">
-                            <Workflow className="w-3 h-3 text-[#0080FF]" />
-                            <span>{t.activitiesTitle} ({nestedActs.length})</span>
-                          </div>
-
-                          {nestedActs.length === 0 ? (
-                            <p className="text-xs text-gray-400 py-3 italic">
-                              {isRtl ? 'لا توجد أنشطة تسليم مدرجة تحت البند المختار، انقر زر الإضافة الموفر.' : 'No active activities enrolled under this work category. Click Add above.'}
-                            </p>
-                          ) : (
-                            <div className="space-y-2">
-                              {nestedActs.map(act => {
-                                const plans = calculateSmartPlanningValues(act);
-                                const isInspected = inspectedActivityId === act.id;
-
-                                return (
-                                  <div 
-                                    key={act.id}
-                                    className={`p-3 rounded-lg border flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 transition-all ${isInspected ? 'border-indigo-400 bg-indigo-50/15 ring-1 ring-indigo-300' : 'border-gray-100 hover:border-gray-200'}`}
-                                  >
-                                    <div className="space-y-1">
-                                      <h5 className="font-bold text-[#040957] text-xs flex items-center gap-1.5 flex-wrap">
-                                        {isRtl ? act.nameAr : act.nameEn}
-                                        {act.isCritical && (
-                                          <span className="bg-rose-50 text-rose-700 text-[8px] font-black px-1.5 py-0.5 rounded-full border border-rose-200 animate-pulse">
-                                            {isRtl ? 'حرج' : 'CRITICAL'}
-                                          </span>
-                                        )}
-                                      </h5>
-                                      <p className="text-[10px] text-gray-400 line-clamp-1 max-w-sm">
-                                        {isRtl ? act.descriptionAr : act.descriptionEn}
-                                      </p>
-                                      
-                                      {/* Micro resources details indicators */}
-                                      <div className="flex gap-2 text-[9px] text-gray-500 font-semibold items-center">
-                                        <span className="flex items-center gap-0.5 bg-gray-100 px-1.5 py-0.5 rounded text-[8px]">
-                                          <UserCheck className="w-2.5 h-2.5 text-gray-600" />
-                                          {act.workerIds.length} {isRtl ? 'عمال' : 'Labor'}
-                                        </span>
-                                        <span className="flex items-center gap-0.5 bg-gray-100 px-1.5 py-0.5 rounded text-[8px]">
-                                          <Package className="w-2.5 h-2.5 text-gray-600" />
-                                          {act.materialIds.length} {isRtl ? 'أصناف مواد' : 'Mat'}
-                                        </span>
-                                        <span className="flex items-center gap-0.5 bg-gray-100 px-1.5 py-0.5 rounded text-[8px]">
-                                          <Wrench className="w-2.5 h-2.5 text-gray-600" />
-                                          {act.equipmentIds.length} {isRtl ? 'معدات' : 'Mach'}
-                                        </span>
-                                      </div>
-                                    </div>
-
-                                      <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
-                                        <div className="text-right flex-1 sm:flex-none">
-                                          <div className="text-[10px] text-gray-400">{isRtl ? 'الحجم الكلي' : 'Total Scope'}</div>
-                                          <div className="font-bold text-gray-700 font-mono text-xs">{act.totalQuantity} {act.unit}</div>
-                                        </div>
-
-                                        <div className="flex items-center gap-1">
-                                          <button 
-                                            onClick={() => handleOpenDetails(act)}
-                                            className="bg-gray-100 hover:bg-gray-200 text-gray-600 p-1.5 rounded text-[10px] font-bold transition"
-                                            title={isRtl ? 'تفاصيل' : 'Details'}
-                                          >
-                                            <Eye className="w-3.5 h-3.5" />
-                                          </button>
-
-                                          <button 
-                                            onClick={() => handlePrintActivityDetailsPDF(act)}
-                                            disabled={isPrintingActivity === act.id}
-                                            className="bg-slate-100 hover:bg-slate-200 text-slate-600 p-1.5 rounded text-[10px] font-bold transition disabled:opacity-50"
-                                            title={isRtl ? 'طباعة التفاصيل' : 'Print Details'}
-                                          >
-                                            {isPrintingActivity === act.id ? <Clock className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
-                                          </button>
-
-                                          {!isReadOnly && (
-                                            <button 
-                                              onClick={() => handleOpenEditActivity(act)}
-                                              className="bg-amber-50 hover:bg-amber-100 text-amber-600 p-1.5 rounded text-[10px] font-bold transition"
-                                              title={isRtl ? 'تعديل' : 'Edit'}
-                                            >
-                                              <Edit className="w-3.5 h-3.5" />
-                                            </button>
-                                          )}
-
-                                          <button 
-                                            onClick={() => setInspectedActivityId(act.id)}
-                                            className="bg-[#040957] hover:bg-[#0080FF] text-white p-1.5 rounded text-[10px] font-bold flex items-center gap-1 transition"
-                                            title={isRtl ? 'حسابات الجدولة' : 'Inspect Plan'}
-                                          >
-                                            <Calculator className="w-3.5 h-3.5" />
-                                          </button>
-
-                                          <button 
-                                            onClick={() => {
-                                              openConfirm(
-                                                t.confirmDelete,
-                                                isRtl ? 'هل أنت متأكد من حذف هذا النشاط نهائياً؟' : 'Are you sure you want to delete this activity permanently?',
-                                                () => onDeleteActivity(act.id)
-                                              );
-                                            }}
-                                            disabled={isReadOnly}
-                                            className="text-gray-300 hover:text-red-500 p-1.5 transition-colors disabled:opacity-30"
-                                          >
-                                            <Trash2 className="w-4 h-4" />
-                                          </button>
-                                        </div>
-                                      </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+      {/* SEARCH & ESTONIAN STYLE FILTERS ROW (Image 2 style) */}
+      <div className="bg-white p-4 rounded-xl border border-slate-200 flex flex-col md:flex-row items-center justify-between gap-4">
+        {/* Search */}
+        <div className="relative w-full md:w-1/3">
+          <input
+            type="text"
+            placeholder={isRtl ? 'البحث باسم بند العمل، النشاط أو الرمز...' : 'Search by work item, activity name or code...'}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 text-xs outline-none focus:ring-2 focus:ring-[#0080FF] bg-slate-50/50 text-right md:text-right"
+          />
+          <Search className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
         </div>
 
-        {/* Smart Planning Engine panel (1 Column / Right) */}
-        <div className="space-y-4">
-          <div className="bg-gradient-to-b from-[#040957] to-[#010c2e] text-white p-5 rounded-2xl shadow-xl space-y-4">
-            
-            <div className="flex items-center gap-2 pb-2 border-b border-white/10">
-              <Sparkles className="w-5 h-5 text-amber-400 animate-pulse" />
-              <h3 className="font-extrabold text-sm font-sans tracking-wide">
-                {t.smartPlanning}
-              </h3>
+        {/* Pills Checkbox-styled filters (Image 2) */}
+        <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+          <button
+            onClick={() => setFilterCritical(!filterCritical)}
+            className={`px-3 py-2 rounded-xl text-xs font-bold border transition flex items-center gap-2 ${
+              filterCritical 
+                ? 'border-rose-500 bg-rose-50/50 text-rose-700' 
+                : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'
+            }`}
+          >
+            <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center text-[9px] ${
+              filterCritical ? 'bg-rose-600 border-rose-600 text-white' : 'border-slate-300 bg-white'
+            }`}>
+              {filterCritical && <Check className="w-2.5 h-2.5 stroke-[4]" />}
+            </span>
+            <span>{isRtl ? 'المسار الحرج' : 'Critical Path'}</span>
+          </button>
+
+          <button
+            onClick={() => setFilterDelayed(!filterDelayed)}
+            className={`px-3 py-2 rounded-xl text-xs font-bold border transition flex items-center gap-2 ${
+              filterDelayed 
+                ? 'border-red-500 bg-red-50/50 text-red-700' 
+                : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'
+            }`}
+          >
+            <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center text-[9px] ${
+              filterDelayed ? 'bg-red-600 border-red-600 text-white' : 'border-slate-300 bg-white'
+            }`}>
+              {filterDelayed && <Check className="w-2.5 h-2.5 stroke-[4]" />}
+            </span>
+            <span>{isRtl ? 'أنشطة متأخرة' : 'Delayed Alerts'}</span>
+          </button>
+
+          <button
+            onClick={() => setFilterOnTrack(!filterOnTrack)}
+            className={`px-3 py-2 rounded-xl text-xs font-bold border transition flex items-center gap-2 ${
+              filterOnTrack 
+                ? 'border-emerald-500 bg-emerald-50/50 text-emerald-700' 
+                : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'
+            }`}
+          >
+            <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center text-[9px] ${
+              filterOnTrack ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-slate-300 bg-white'
+            }`}>
+              {filterOnTrack && <Check className="w-2.5 h-2.5 stroke-[4]" />}
+            </span>
+            <span>{isRtl ? 'على المسار' : 'On Track'}</span>
+          </button>
+
+          <button
+            onClick={() => setFilterPrimaryOnly(!filterPrimaryOnly)}
+            className={`px-3 py-2 rounded-xl text-xs font-bold border transition flex items-center gap-2 ${
+              filterPrimaryOnly 
+                ? 'border-blue-500 bg-blue-50/50 text-blue-700' 
+                : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'
+            }`}
+          >
+            <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center text-[9px] ${
+              filterPrimaryOnly ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300 bg-white'
+            }`}>
+              {filterPrimaryOnly && <Check className="w-2.5 h-2.5 stroke-[4]" />}
+            </span>
+            <span>{isRtl ? 'أصناف رئيسية' : 'Primary Only'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* MAIN TWO COLUMN LAYOUT (Image 2 style) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        {/* Left/Center side: The Cases List Table (2/3 width) */}
+        <div className="lg:col-span-2 space-y-3">
+          
+          {/* Column Header for cases table */}
+          <div className="hidden md:grid grid-cols-6 gap-4 px-4 py-3 bg-slate-100 border-b border-slate-200 rounded-xl text-[10px] font-black uppercase text-slate-500 tracking-wider">
+            <div>{isRtl ? 'بند العمل والرمز' : 'Work Item Code'}</div>
+            <div>{isRtl ? 'المشرف المسؤول' : 'Lead Engineer'}</div>
+            <div>{isRtl ? 'التقدم والمنجز' : 'Progress'}</div>
+            <div>{isRtl ? 'الموارد المخصصة' : 'Resources'}</div>
+            <div>{isRtl ? 'حالة الجدول الزمني' : 'Schedule Status'}</div>
+            <div className="text-left">{isRtl ? 'التحكم' : 'Actions'}</div>
+          </div>
+
+          {filteredWorkItems.length === 0 ? (
+            <div className="bg-white border border-slate-200 p-8 rounded-xl text-center">
+              <AlertTriangle className="w-8 h-8 text-slate-400 mx-auto mb-2 animate-bounce" />
+              <p className="text-xs text-slate-400 font-bold">
+                {isRtl ? 'لا توجد بنود عمل مطابقة للبحث أو الفلترة المطبقة.' : 'No executive work items conform to the applied filter parameters.'}
+              </p>
             </div>
+          ) : (
+            filteredWorkItems.map(wi => {
+              const isExpanded = expandedWorkItemIds.includes(wi.id);
+              const nestedActs = filteredActivities.filter(act => act.workItemId === wi.id);
 
-            {inspectedActivityId ? (
-              (() => {
-                const act = activities.find(a => a.id === inspectedActivityId);
-                if (!act) return <p className="text-xs text-blue-200">Invalid active node selected.</p>;
-                
-                const stats = calculateSmartPlanningValues(act);
-                
-                let signalColor = 'bg-emerald-500';
-                let signalText = t.ahead;
-                let textSignalStyles = 'text-emerald-400';
-                if (stats.status === 'Delayed') {
-                  signalColor = 'bg-red-500';
-                  signalText = t.delayed;
-                  textSignalStyles = 'text-red-400';
-                } else if (stats.status === 'On Track') {
-                  signalColor = 'bg-blue-400';
-                  signalText = t.onTrack;
-                  textSignalStyles = 'text-blue-300';
-                }
+              // Compute labor and material counts for work item row
+              let wiWorkersCount = 0;
+              let wiMaterialsCount = 0;
+              nestedActs.forEach(act => {
+                wiWorkersCount += act.workerIds.length;
+                wiMaterialsCount += act.materialIds.length;
+              });
 
-                return (
-                  <div className="space-y-4 animate-scaleIn">
-                    {/* Activity name */}
-                    <div>
-                      <span className="text-[9px] uppercase tracking-widest text-[#0080FF] font-black block">Active Activity</span>
-                      <h4 className="font-bold text-sm tracking-tight line-clamp-1">
-                        {isRtl ? act.nameAr : act.nameEn}
-                      </h4>
-                    </div>
-
-                    {/* Math parameters outputs card */}
-                    <div className="grid grid-cols-2 gap-3 bg-white/5 p-3 rounded-xl border border-white/10 text-xs">
+              return (
+                <div key={wi.id} className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs hover:border-[#0080FF] transition-all">
+                  <div className="p-4 grid grid-cols-1 md:grid-cols-6 gap-4 items-center">
+                    
+                    {/* ID & Code */}
+                    <div className="flex items-center gap-3">
+                      <button 
+                        onClick={() => toggleExpandWi(wi.id)}
+                        className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors"
+                      >
+                        {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      </button>
                       <div>
-                        <span className="block text-[8px] text-gray-400 uppercase font-semibold">{isRtl ? 'الإنتاج اليومي التراكمي' : 'Daily Sum Productivity'}</span>
-                        <span className="font-extrabold text-[#0080FF] font-mono text-sm">{stats.sumProductivity} {act.unit}/day</span>
-                      </div>
-                      <div>
-                        <span className="block text-[8px] text-gray-400 uppercase font-semibold">{t.expectedDuration}</span>
-                        <span className="font-extrabold text-white font-mono text-sm">{stats.expectedDurationDays} {isRtl ? 'أيام' : 'Days'}</span>
-                      </div>
-                    </div>
-
-                    {/* Schedule Finish Status */}
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="text-gray-300">{t.scheduleHealth}:</span>
-                        <span className={`font-black uppercase flex items-center gap-1.5 ${textSignalStyles}`}>
-                          <span className={`w-2 h-2 rounded-full ${signalColor} inline-block animate-ping`}></span>
-                          {signalText}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-mono text-[9px] bg-[#0080FF]/10 text-[#0080FF] px-2 py-0.5 rounded-full font-black uppercase">
+                            {wi.itemNumber}
+                          </span>
+                          <span className={`text-[8px] px-1.5 py-0.5 rounded-full font-bold ${
+                            wi.workType === 'Primary' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'
+                          }`}>
+                            {wi.workType === 'Primary' ? (isRtl ? 'رئيسي' : 'Primary') : (isRtl ? 'ثانوي' : 'Secondary')}
+                          </span>
+                        </div>
+                        <h4 className="font-extrabold text-[#040957] text-xs mt-1 line-clamp-1">
+                          {isRtl ? wi.nameAr : wi.nameEn}
+                        </h4>
+                        <span className="text-[10px] text-[#0080FF] font-bold">
+                          {nestedActs.length} {isRtl ? 'أنشطة تسليم' : 'sub-activities'}
                         </span>
                       </div>
-                      {stats.reason && (
-                        <div className="text-[10px] bg-red-500/20 text-red-300 p-2 rounded-lg border border-red-500/30 font-bold flex items-center gap-1.5">
-                          <AlertTriangle className="w-3.5 h-3.5" />
-                          <span>{isRtl ? 'سبب التأخير: ' : 'Delay Reason: '} {stats.reason}</span>
+                    </div>
+
+                    {/* Supervisor */}
+                    <div className="text-xs">
+                      <div className="font-bold text-slate-800">{wi.responsiblePerson || '---'}</div>
+                      <div className="text-[10px] text-slate-400 font-semibold">{isRtl ? 'مهندس الموقع' : 'Site Lead'}</div>
+                    </div>
+
+                    {/* Progress */}
+                    <div>
+                      {(() => {
+                        const progress = getWorkItemProgress(wi, activities, progressUpdates);
+                        return (
+                          <div className="space-y-1">
+                            <div className="flex justify-between items-center text-[10px]">
+                              <span className="font-mono font-extrabold text-slate-700">{progress}%</span>
+                              <span className="text-[9px] text-slate-400 font-bold">{isRtl ? 'منجز فعلي' : 'completed'}</span>
+                            </div>
+                            <div className="w-full bg-slate-100 rounded-full h-1.5">
+                              <div className="h-1.5 rounded-full bg-emerald-500" style={{ width: `${progress}%` }}></div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Resources */}
+                    <div className="flex flex-wrap gap-1.5">
+                      <span className="inline-flex items-center gap-0.5 bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded text-[9px] font-bold border border-blue-100">
+                        <UserCheck className="w-3 h-3 text-blue-500" />
+                        {wiWorkersCount} {isRtl ? 'عمال' : 'Labor'}
+                      </span>
+                      <span className="inline-flex items-center gap-0.5 bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded text-[9px] font-bold border border-emerald-100">
+                        <Package className="w-3 h-3 text-emerald-500" />
+                        {wiMaterialsCount} {isRtl ? 'مواد' : 'Mat'}
+                      </span>
+                    </div>
+
+                    {/* Prediction status */}
+                    <div>
+                      {(() => {
+                        let hasDelayed = false;
+                        let hasOnTrack = false;
+                        nestedActs.forEach(act => {
+                          const stats = calculateSmartPlanningValues(act);
+                          if (stats.status === 'Delayed') hasDelayed = true;
+                          else if (stats.status === 'On Track' || stats.status === 'Ahead') hasOnTrack = true;
+                        });
+
+                        let pillColor = 'bg-slate-100 text-slate-600 border-slate-200';
+                        let statusText = isRtl ? 'لا أنشطة' : 'No activity';
+                        if (nestedActs.length > 0) {
+                          if (hasDelayed) {
+                            pillColor = 'bg-red-50 text-red-700 border-red-200';
+                            statusText = isRtl ? 'تنبيه تأخير ⚠️' : 'Delay Alert ⚠️';
+                          } else if (hasOnTrack) {
+                            pillColor = 'bg-blue-50 text-blue-700 border-blue-200';
+                            statusText = isRtl ? 'على المسار' : 'On Track';
+                          } else {
+                            pillColor = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                            statusText = isRtl ? 'مستقر' : 'Stable';
+                          }
+                        }
+
+                        return (
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${pillColor}`}>
+                            {statusText}
+                          </span>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-1.5 justify-end">
+                      {!isReadOnly && (
+                        <button 
+                          onClick={() => handleOpenAddActivity(wi.id)}
+                          className="p-1.5 bg-[#0080FF]/10 text-[#0080FF] hover:bg-[#0080FF] hover:text-white rounded-lg transition-all"
+                          title={t.addActivity}
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {!isReadOnly && (
+                        <button 
+                          onClick={() => {
+                            setWiNumber(wi.itemNumber);
+                            setWiNameAr(wi.nameAr);
+                            setWiNameEn(wi.nameEn);
+                            setWiType(wi.workType);
+                            setWiResp(wi.responsiblePerson);
+                            setSelectedProjectId(wi.projectId);
+                            setIsAddWiOpen(true);
+                          }}
+                          className="p-1.5 bg-amber-50 text-amber-600 hover:bg-amber-500 hover:text-white rounded-lg transition-all"
+                          title={isRtl ? 'تعديل' : 'Edit'}
+                        >
+                          <Edit className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {!isReadOnly && (
+                        <button 
+                          onClick={() => {
+                            openConfirm(
+                              t.confirmDelete,
+                              isRtl ? 'هل أنت متأكد من حذف بند العمل والأنشطة المرتبطة به؟' : 'Are you sure you want to delete this Work Item and all its nested activities?',
+                              () => onDeleteWorkItem(wi.id),
+                              true
+                            );
+                          }}
+                          className="p-1.5 bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white rounded-lg transition-all"
+                          title={isRtl ? 'حذف' : 'Delete'}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                  </div>
+
+                  {/* Expanded activities sub-grid */}
+                  {isExpanded && (
+                    <div className="px-6 pb-4 pt-2 bg-slate-50 border-t border-slate-100 space-y-2.5">
+                      <div className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
+                        <Workflow className="w-3.5 h-3.5 text-[#0080FF]" />
+                        <span>{t.activitiesTitle} ({nestedActs.length})</span>
+                      </div>
+
+                      {nestedActs.length === 0 ? (
+                        <p className="text-[11px] text-slate-400 py-3 italic">
+                          {isRtl ? 'لا توجد أنشطة تسليم مدرجة تحت هذا البند، انقر زر الإضافة الموفر.' : 'No deliverables registered under this category yet.'}
+                        </p>
+                      ) : (
+                        <div className="grid grid-cols-1 gap-2">
+                          {nestedActs.map(act => {
+                            const plans = calculateSmartPlanningValues(act);
+                            const isInspected = inspectedActivityId === act.id;
+
+                            return (
+                              <div 
+                                key={act.id}
+                                className={`p-3 bg-white rounded-xl border flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-all hover:shadow-xs ${
+                                  isInspected ? 'border-[#0080FF] ring-2 ring-[#0080FF]/10' : 'border-slate-100'
+                                }`}
+                              >
+                                <div className="space-y-1 flex-1 max-w-sm text-right md:text-right">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <h5 className="font-extrabold text-[#040957] text-xs">
+                                      {isRtl ? act.nameAr : act.nameEn}
+                                    </h5>
+                                    {act.isCritical && (
+                                      <span className="bg-rose-500/10 text-rose-700 text-[8px] font-black px-1.5 py-0.5 rounded-full border border-rose-300 animate-pulse">
+                                        {isRtl ? 'حرج' : 'CRITICAL'}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[10px] text-slate-400 font-semibold line-clamp-2 leading-relaxed">
+                                    {isRtl ? act.descriptionAr : act.descriptionEn}
+                                  </p>
+                                  <div className="flex flex-wrap gap-x-2.5 gap-y-1 text-[9px] text-slate-400 font-bold mt-1">
+                                    <span>👥 {act.workerIds.length} {isRtl ? 'عمال' : 'workers'}</span>
+                                    <span>📦 {act.materialIds.length} {isRtl ? 'مواد' : 'items'}</span>
+                                    {act.workZone && (
+                                      <span className="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-md">
+                                        📍 {isRtl ? 'المنطقة:' : 'Zone:'} {act.workZone}
+                                      </span>
+                                    )}
+                                    {act.role && (
+                                      <span className="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-md">
+                                        💼 {isRtl ? 'الدور:' : 'Role:'} {act.role}
+                                      </span>
+                                    )}
+                                    {act.location && (
+                                      <span className="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-md max-w-[150px] truncate" title={act.location}>
+                                        🧭 {isRtl ? 'الموقع:' : 'Loc:'} {act.location}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="min-w-[80px]">
+                                  <div className="text-[9px] text-slate-400 font-bold">{isRtl ? 'الكمية الإجمالية' : 'Total Scope'}</div>
+                                  <div className="font-mono font-extrabold text-xs text-slate-800">{act.totalQuantity} {act.unit}</div>
+                                </div>
+
+                                <div className="min-w-[110px]">
+                                  <div className="text-[9px] text-slate-400 font-bold">{isRtl ? 'الانتهاء المتوقع' : 'Predicted Finish'}</div>
+                                  <div className="font-mono text-[11px] font-extrabold text-amber-600 flex items-center gap-1">
+                                    <Calendar className="w-3 h-3 text-amber-500" />
+                                    {plans.expectedFinishDateStr}
+                                  </div>
+                                </div>
+
+                                <div className="min-w-[90px]">
+                                  {(() => {
+                                    const actProgress = getActivityProgress(act, progressUpdates);
+                                    const isCompleted = actProgress >= 100;
+                                    
+                                    // Calculate ahead of schedule
+                                    let isAheadOfSchedule = false;
+                                    let savedDaysVal = 0;
+                                    let completionDate = new Date();
+                                    let actEnd = new Date();
+                                    if (isCompleted) {
+                                      const updates = progressUpdates.filter(upd => upd.activityId === act.id);
+                                      const lastUpdate = updates.length > 0
+                                        ? [...updates].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())[updates.length - 1]
+                                        : null;
+                                      completionDate = lastUpdate ? new Date(lastUpdate.timestamp) : new Date();
+                                      
+                                      let startStr = currentProject ? currentProject.startDate : '';
+                                      if (act.dependsOnActivityId) {
+                                        const dep = activities.find(a => a.id === act.dependsOnActivityId);
+                                        if (dep && dep.expectedFinishDate) {
+                                          startStr = dep.expectedFinishDate;
+                                        }
+                                      }
+                                      const endStr = act.expectedFinishDate || (currentProject ? currentProject.endDate : '');
+                                      if (endStr) {
+                                        actEnd = new Date(endStr);
+                                        if (completionDate < actEnd) {
+                                          isAheadOfSchedule = true;
+                                          const diffMs = actEnd.getTime() - completionDate.getTime();
+                                          savedDaysVal = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+                                        }
+                                      }
+                                    }
+
+                                    if (isCompleted) {
+                                      return (
+                                        <div className="flex flex-col gap-1">
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black border bg-emerald-100 text-emerald-800 border-emerald-300">
+                                            {isRtl ? 'مكتمل' : 'Completed'}
+                                          </span>
+                                          {isAheadOfSchedule && (
+                                            <span className="inline-flex items-center gap-0.5 text-[8px] text-emerald-600 font-bold bg-emerald-50 px-1 py-0.5 rounded-md border border-emerald-200 animate-pulse">
+                                              <CheckCircle2 className="w-2.5 h-2.5" />
+                                              {savedDaysVal > 0 
+                                                ? (isRtl ? `توفير ${savedDaysVal} يومّ` : `Saved ${savedDaysVal}d`)
+                                                : (isRtl ? `توفير ساعات` : `Saved hrs`)}
+                                            </span>
+                                          )}
+                                        </div>
+                                      );
+                                    }
+
+                                    let tagColor = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                                    let tagText = isRtl ? 'على المسار' : 'On Track';
+                                    if (plans.status === 'Delayed') {
+                                      tagColor = 'bg-red-50 text-red-700 border-red-200';
+                                      tagText = isRtl ? 'متأخر' : 'Delayed';
+                                    } else if (plans.status === 'Ahead') {
+                                      tagColor = 'bg-blue-50 text-blue-700 border-blue-200';
+                                      tagText = isRtl ? 'متقدم' : 'Ahead';
+                                    }
+                                    return (
+                                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black border ${tagColor}`}>
+                                        {tagText}
+                                      </span>
+                                    );
+                                  })()}
+                                </div>
+
+                                <div className="flex items-center gap-1.5 justify-end w-full md:w-auto">
+                                  <button
+                                    onClick={() => handleOpenDetails(act)}
+                                    className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-all"
+                                    title={isRtl ? 'تفاصيل' : 'Details'}
+                                  >
+                                    <Eye className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => handlePrintActivityDetailsPDF(act)}
+                                    disabled={isPrintingActivity === act.id}
+                                    className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-all"
+                                  >
+                                    {isPrintingActivity === act.id ? <Clock className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
+                                  </button>
+                                  {!isReadOnly && (
+                                    <button
+                                      onClick={() => handleOpenEditActivity(act)}
+                                      className="p-1.5 bg-amber-50 text-amber-600 hover:bg-amber-100 rounded-lg transition-all"
+                                    >
+                                      <Edit className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => setInspectedActivityId(act.id)}
+                                    className="p-1.5 bg-[#040957] text-white hover:bg-[#0080FF] rounded-lg transition-all flex items-center gap-1 text-[10px] font-black"
+                                  >
+                                    <Calculator className="w-3.5 h-3.5" />
+                                  </button>
+                                  {!isReadOnly && (
+                                    <button
+                                      onClick={() => {
+                                        openConfirm(
+                                          t.confirmDelete,
+                                          isRtl ? 'حذف هذا النشاط نهائياً؟' : 'Delete this activity permanently?',
+                                          () => onDeleteActivity(act.id),
+                                          true
+                                        );
+                                      }}
+                                      className="p-1.5 text-slate-300 hover:text-red-600 rounded-lg transition-colors"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
-                      <div className="bg-white/5 p-3 rounded-xl border border-white/10 flex justify-between items-center text-xs">
-                        <span className="text-gray-400 flex items-center gap-1">
-                          <Clock className="w-3.5 h-3.5" />
-                          {isRtl ? 'تاريخ الاستلام التقديري' : 'Expected Finish'}
-                        </span>
-                        <span className="font-bold text-yellow-300 font-mono text-xs">{stats.expectedFinishDateStr}</span>
-                      </div>
                     </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
 
-                    {/* Progress representation */}
-                    {(() => {
-                      const progressPercent = getActivityProgress(act, progressUpdates);
-                      return (
-                        <div className="space-y-2 pt-2 border-t border-white/5">
-                          <div className="flex justify-between text-xs">
-                            <span className="text-gray-300">{t.plannedVsActual}</span>
-                            <span className="font-bold text-white font-mono">{progressPercent}%</span>
-                          </div>
-                          <div className="w-full bg-white/10 rounded-full h-1.5">
-                            <div className="h-1.5 rounded-full bg-[#0080FF]" style={{ width: `${progressPercent}%` }}></div>
-                          </div>
-                          <div className="flex justify-between text-[10px] text-gray-400 font-medium">
-                            <span>{isRtl ? `منجز: ${stats.actualCompleted}` : `Accomplished: ${stats.actualCompleted} ${act.unit}`}</span>
-                            <span>{isRtl ? `متبقي: ${stats.remaining}` : `Remaining balance: ${stats.remaining} ${act.unit}`}</span>
-                          </div>
-                        </div>
-                      );
-                    })()}
+        {/* Right side: Predictor Sidebar (Image 1 style deep navy card widget) */}
+        <div className="bg-[#0B1B3D] text-white p-5 rounded-2xl shadow-xl space-y-5 h-fit">
+          <div className="border-b border-white/10 pb-3">
+            <span className="text-[9px] uppercase tracking-widest text-[#0080FF] font-black block">
+              {isRtl ? 'محرك التخطيط والجدولة الذكي المؤتمت' : 'PREDICTIVE SCHEDULING CLOUD'}
+            </span>
+            <h3 className="font-extrabold text-sm mt-1 text-white">
+              {isRtl ? 'لوحة التنبؤات والتحليلات الميدانية' : 'Automated Predictions & Insights'}
+            </h3>
+          </div>
 
-                    <div className="text-[10px] text-blue-200/50 leading-relaxed italic bg-white/5 p-2.5 rounded-lg">
-                      🛡️ {isRtl 
-                        ? '* يتم تحديث هذه المتغيرات تلقائياً عند تغيير عدد العمال أو صب ومسح الحقول في الموقع.' 
-                        : '* Standard deviation calculations are computed dynamically on each database worker allocation.'}
+          {inspectedActivityId ? (
+            (() => {
+              const selectedAct = activities.find(a => a.id === inspectedActivityId);
+              if (!selectedAct) return null;
+              const stats = calculateSmartPlanningValues(selectedAct);
+
+              return (
+                <div className="space-y-4 animate-scaleIn">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h4 className="font-extrabold text-xs text-white">{isRtl ? selectedAct.nameAr : selectedAct.nameEn}</h4>
+                      <span className="text-[10px] text-slate-400 block font-mono font-bold">ID: {selectedAct.id.slice(0, 10)}</span>
+                    </div>
+                    <button 
+                      onClick={() => setInspectedActivityId(null)}
+                      className="text-slate-400 hover:text-white bg-white/5 p-1 rounded transition"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-2 text-xs">
+                    <div className="flex justify-between p-2.5 bg-white/5 rounded-xl border border-white/5">
+                      <span className="text-slate-300 font-bold">{isRtl ? 'الإنتاجية اليومية للمجموعة:' : 'Group Capacity:'}</span>
+                      <span className="font-mono text-emerald-400 font-black">{stats.sumProductivity} {selectedAct.unit}/day</span>
+                    </div>
+                    <div className="flex justify-between p-2.5 bg-white/5 rounded-xl border border-white/5">
+                      <span className="text-slate-300 font-bold">{isRtl ? 'المدة الزمنية المقدرة:' : 'Duration Forecast:'}</span>
+                      <span className="font-mono text-white font-black">{stats.expectedDurationDays} {isRtl ? 'أيام' : 'days'}</span>
+                    </div>
+                    <div className="flex justify-between p-2.5 bg-white/5 rounded-xl border border-white/5">
+                      <span className="text-slate-300 font-bold">{isRtl ? 'الانتهاء المتوقع:' : 'Expected Finish Date:'}</span>
+                      <span className="font-mono text-amber-400 font-black">{stats.expectedFinishDateStr}</span>
+                    </div>
+                    <div className="flex justify-between p-2.5 bg-white/5 rounded-xl border border-white/5">
+                      <span className="text-slate-300 font-bold">{isRtl ? 'المنجز الفعلي حتى الآن:' : 'Completed Volume:'}</span>
+                      <span className="font-mono text-white font-black">{stats.actualCompleted} {selectedAct.unit}</span>
+                    </div>
+                    <div className="flex justify-between p-2.5 bg-white/5 rounded-xl border border-white/5">
+                      <span className="text-slate-300 font-bold">{isRtl ? 'الكمية المتبقية للتسليم:' : 'Remaining Backlog:'}</span>
+                      <span className="font-mono text-rose-400 font-black">{stats.remaining} {selectedAct.unit}</span>
                     </div>
                   </div>
-                );
-              })()
-            ) : (
-              <div className="text-center py-12 text-blue-200/60 text-xs space-y-3">
-                <Calculator className="w-10 h-10 text-white/20 mx-auto" />
-                <p>{isRtl ? 'يرجى تحديد "حسابات الجدولة" لأي نشاط لمسح الإنتاجية والمدة المتوقعة فوراً.' : 'Select "Inspect Plan" on any sub-activity tool to trigger mathematical schedules.'}</p>
+
+                  <div className="p-3 bg-white/5 rounded-xl border border-white/10 space-y-1">
+                    <span className="text-[10px] text-slate-400 font-bold block uppercase">{isRtl ? 'تحليل الحالة التشغيلية والجدولة' : 'Schedule Diagnostics'}</span>
+                    <p className="text-[10px] text-slate-200 font-extrabold leading-relaxed">
+                      {isRtl ? stats.reason : stats.reason}
+                    </p>
+                  </div>
+                </div>
+              );
+            })()
+          ) : (
+            <div className="space-y-4">
+              <div className="p-3.5 bg-white/5 rounded-xl border border-white/10 space-y-2">
+                <span className="text-[10px] text-[#0080FF] font-black uppercase tracking-wider block">{isRtl ? 'مؤشرات أداء المشروع الحالي' : 'CURRENT PROJECT METRICS'}</span>
+                
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <span className="text-slate-400 text-[10px] block font-semibold">{isRtl ? 'إجمالي البنود' : 'Total Items'}</span>
+                    <span className="font-mono text-white font-black text-sm">{projectWorkItems.length}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 text-[10px] block font-semibold">{isRtl ? 'إجمالي الأنشطة' : 'Total Activities'}</span>
+                    <span className="font-mono text-white font-black text-sm">
+                      {activities.filter(a => projectWorkItems.some(wi => wi.id === a.workItemId)).length}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 text-[10px] block font-semibold">{isRtl ? 'المسار الحرج ⚠️' : 'Critical Items'}</span>
+                    <span className="font-mono text-rose-400 font-black text-sm">
+                      {activities.filter(a => a.isCritical && projectWorkItems.some(wi => wi.id === a.workItemId)).length}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 text-[10px] block font-semibold">{isRtl ? 'تاريخ البدء' : 'Start Date'}</span>
+                    <span className="font-mono text-amber-400 font-black text-xs">
+                      {currentProject?.startDate || '---'}
+                    </span>
+                  </div>
+                </div>
               </div>
-            )}
-          </div>
+
+              <div className="bg-[#0080FF]/10 border border-[#0080FF]/25 p-4 rounded-xl text-center space-y-2">
+                <Calculator className="w-7 h-7 text-[#0080FF] mx-auto animate-pulse" />
+                <p className="text-xs font-black text-white">{isRtl ? 'محرك التنبؤ وجدولة المهام الذكي' : 'Predictive Analysis Live'}</p>
+                <p className="text-[10px] text-slate-300 leading-relaxed font-bold">
+                  {isRtl 
+                    ? 'اختر أي نشاط فرعي من القائمة وانقر زر "حسابات الجدولة" لمشاهدة التوقعات المباشرة وتقدير تاريخ الانتهاء وتحليل المخاطر فوراً.' 
+                    : 'Select any deliverable and click Inspect Plan icon to inspect real-time durations, daily capacities, and backlog diagnostics.'}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
       </div>
 
-      {/* MODAL: ADD WORK ITEM */}
-      {isAddWiOpen && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full border border-gray-100 animate-scaleIn">
-            <div className="bg-[#040957] text-white p-4 rounded-t-2xl flex justify-between items-center">
-              <h3 className="font-bold text-xs uppercase tracking-wide">{t.addWorkItem}</h3>
-              <button onClick={() => setIsAddWiOpen(false)} className="text-white bg-white/10 hover:bg-white/20 p-1 rounded transition">
+      {/* --- ADD/EDIT WORK ITEM MODAL (Estonian Border theme styled) --- */}
+      {isAddWiOpen && !isReadOnly && (
+        <div className="fixed inset-0 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <form onSubmit={handleSaveWorkItem} className="bg-white rounded-2xl border border-slate-100 shadow-2xl max-w-md w-full overflow-hidden animate-scaleIn">
+            <div className="bg-[#040957] text-white p-4 flex justify-between items-center">
+              <h3 className="font-extrabold text-xs uppercase tracking-wide">
+                {isRtl ? 'إعداد وتسجيل بند عمل تنفيذي' : 'Register Executive Work Item'}
+              </h3>
+              <button 
+                type="button" 
+                onClick={() => setIsAddWiOpen(false)}
+                className="text-white hover:text-slate-200 bg-white/10 p-1 rounded-lg"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <form onSubmit={handleSaveWorkItem} className="p-5 space-y-4">
+
+            <div className="p-6 space-y-4 text-right md:text-right">
               <div className="space-y-1">
-                <label className="block text-xs font-bold text-gray-700">{t.itemNumber} *</label>
+                <label className="block text-xs font-bold text-slate-700">{isRtl ? 'رمز بند العمل (كود)' : 'Work Item Code'}</label>
                 <input 
                   type="text" 
                   value={wiNumber} 
                   required
+                  placeholder="WI-01"
                   onChange={(e) => setWiNumber(e.target.value)}
-                  className="w-full border border-gray-200 rounded-xl p-2.5 text-xs outline-none focus:ring-2 focus:ring-[#0080FF] bg-gray-50 font-bold"
+                  className="w-full border border-slate-200 rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-[#0080FF] font-bold bg-slate-50/50"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="block text-xs font-bold text-gray-700">{t.itemNameAr} *</label>
-                  <input 
-                    type="text" 
-                    value={wiNameAr} 
-                    required
-                    placeholder="أعمال صب الأساس"
-                    onChange={(e) => setWiNameAr(e.target.value)}
-                    className="w-full border border-gray-200 rounded-xl p-2.5 text-xs outline-none focus:ring-2 focus:ring-[#0080FF]"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="block text-xs font-bold text-gray-700">{t.itemNameEn} *</label>
-                  <input 
-                    type="text" 
-                    value={wiNameEn} 
-                    required
-                    placeholder="Foundation pours"
-                    onChange={(e) => setWiNameEn(e.target.value)}
-                    className="w-full border border-gray-200 rounded-xl p-2.5 text-xs outline-none focus:ring-2 focus:ring-[#0080FF]"
-                  />
-                </div>
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-slate-700">{isRtl ? 'الاسم باللغة العربية' : 'Name (Arabic)'}</label>
+                <input 
+                  type="text" 
+                  value={wiNameAr} 
+                  required
+                  placeholder="أعمال الهياكل الخرسانية"
+                  onChange={(e) => setWiNameAr(e.target.value)}
+                  className="w-full border border-slate-200 rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-[#0080FF] font-semibold bg-slate-50/50"
+                />
               </div>
 
               <div className="space-y-1">
-                <label className="block text-xs font-bold text-gray-700">{t.workType}</label>
-                <select 
+                <label className="block text-xs font-bold text-slate-700">{isRtl ? 'الاسم باللغة الإنجليزية' : 'Name (English)'}</label>
+                <input 
+                  type="text" 
+                  value={wiNameEn} 
+                  required
+                  placeholder="Concrete Structure Works"
+                  onChange={(e) => setWiNameEn(e.target.value)}
+                  className="w-full border border-slate-200 rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-[#0080FF] font-semibold bg-slate-50/50"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-slate-700">{isRtl ? 'نوع بند العمل' : 'Work Category Type'}</label>
+                <select
                   value={wiType}
-                  onChange={(e) => setWiType(e.target.value as any)}
-                  className="w-full border border-gray-200 rounded-xl p-2.5 text-xs outline-none focus:ring-2 focus:ring-[#0080FF] font-semibold text-gray-700 bg-white"
+                  onChange={(e) => setWiType(e.target.value as 'Primary' | 'Secondary')}
+                  className="w-full border border-slate-200 rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-[#0080FF] bg-slate-50/50 font-semibold"
                 >
-                  <option value="Primary">{t.primary}</option>
-                  <option value="Secondary">{t.secondary}</option>
+                  <option value="Primary">{isRtl ? 'رئيسي / أساسي' : 'Primary / Groundwork'}</option>
+                  <option value="Secondary">{isRtl ? 'ثانوي / تشطيبات' : 'Secondary / Finishes'}</option>
                 </select>
               </div>
 
               <div className="space-y-1">
-                <label className="block text-xs font-bold text-gray-700">{t.responsiblePerson} *</label>
+                <label className="block text-xs font-bold text-slate-700">{isRtl ? 'المهندس المشرف المسؤول' : 'Lead Field Supervisor'}</label>
                 <input 
                   type="text" 
                   value={wiResp} 
-                  required
-                  placeholder="Eng. Ahmed Salim"
+                  placeholder="م. محمد القحطاني"
                   onChange={(e) => setWiResp(e.target.value)}
-                  className="w-full border border-gray-200 rounded-xl p-2.5 text-xs outline-none focus:ring-2 focus:ring-[#0080FF]"
+                  className="w-full border border-slate-200 rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-[#0080FF] font-semibold bg-slate-50/50"
                 />
               </div>
+            </div>
 
-              <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setIsAddWiOpen(false)} className="bg-gray-100 hover:bg-gray-200 py-2 px-3 rounded-lg text-xs font-bold text-gray-600 transition">{t.cancel}</button>
-                <button type="submit" className="bg-[#040957] hover:bg-[#0080FF] text-white py-2 px-4 rounded-lg text-xs font-bold transition shadow-sm">{t.save}</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: ADD/EDIT ACTIVITY */}
-      {isAddActOpen && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full border border-gray-100 animate-scaleIn max-h-[90vh] overflow-y-auto">
-            <div className="bg-[#040957] text-white p-4 rounded-t-2xl flex justify-between items-center">
-              <h3 className="font-bold text-xs uppercase tracking-wide">
-                {editingActivityId ? (isRtl ? 'تعديل نشاط' : 'Edit Activity') : t.addActivity}
-              </h3>
-              <button onClick={() => setIsAddActOpen(false)} className="text-white bg-white/10 hover:bg-white/20 p-1 rounded transition">
-                <X className="w-4 h-4" />
+            <div className="bg-slate-50 px-6 py-4 flex justify-end gap-2 border-t border-slate-100">
+              <button 
+                type="button" 
+                onClick={() => setIsAddWiOpen(false)}
+                className="bg-slate-200 hover:bg-slate-300 text-slate-700 py-2 px-5 rounded-xl text-xs font-extrabold transition"
+              >
+                {isRtl ? 'إلغاء' : 'Cancel'}
+              </button>
+              <button 
+                type="submit"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-6 rounded-xl text-xs font-black transition shadow-md"
+              >
+                {isRtl ? 'حفظ وتأكيد' : 'Confirm & Save'}
               </button>
             </div>
-            <form onSubmit={handleSaveActivity} className="p-6 space-y-4">
-              
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="block text-xs font-bold text-gray-700">{t.activityNameAr} *</label>
-                  <input 
-                    type="text" 
-                    value={actNameAr} 
-                    required
-                    placeholder="صب حديد سابك"
-                    onChange={(e) => setActNameAr(e.target.value)}
-                    className="w-full border border-gray-200 rounded-xl p-2.5 text-xs outline-none focus:ring-2 focus:ring-[#0080FF]"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="block text-xs font-bold text-gray-700">{t.activityNameEn} *</label>
-                  <input 
-                    type="text" 
-                    value={actNameEn} 
-                    required
-                    placeholder="SABIC steel pouring"
-                    onChange={(e) => setActNameEn(e.target.value)}
-                    className="w-full border border-gray-200 rounded-xl p-2.5 text-xs outline-none focus:ring-2 focus:ring-[#0080FF]"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="block text-xs font-bold text-gray-700">{t.totalQuantity} *</label>
-                  <input 
-                    type="number" 
-                    value={actQty} 
-                    required
-                    onChange={(e) => setActQty(Number(e.target.value))}
-                    className="w-full border border-gray-200 rounded-xl p-2.5 text-xs outline-none focus:ring-2 focus:ring-[#0080FF]"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="block text-xs font-bold text-gray-700">{t.unit} (e.g. m³, ton) *</label>
-                  <input 
-                    type="text" 
-                    value={actUnit} 
-                    required
-                    onChange={(e) => setActUnit(e.target.value)}
-                    className="w-full border border-gray-200 rounded-xl p-2.5 text-xs outline-none focus:ring-2 focus:ring-[#0080FF]"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="block text-xs font-bold text-gray-700">{t.descriptionAr}</label>
-                <textarea 
-                  value={actDescAr}
-                  onChange={(e) => setActDescAr(e.target.value)}
-                  className="w-full border border-gray-200 rounded-xl p-2.5 text-xs outline-none focus:ring-2 focus:ring-[#0080FF] h-16"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="block text-xs font-bold text-gray-700">{t.descriptionEn}</label>
-                <textarea 
-                  value={actDescEn}
-                  onChange={(e) => setActDescEn(e.target.value)}
-                  className="w-full border border-gray-200 rounded-xl p-2.5 text-xs outline-none focus:ring-2 focus:ring-[#0080FF] h-16"
-                />
-              </div>
-
-              {/* Resource Links checkbox grids */}
-              <div className="space-y-3 pt-2 border-t border-gray-100">
-                <h4 className="font-bold text-[#040957] text-xs uppercase tracking-wide">{isRtl ? 'تخصيص الموارد في قاعدة البيانات للمحرك' : 'Allocate Registry Resources for Engine'}</h4>
-                
-                {/* Workers selection */}
-                <div className="space-y-1">
-                  <label className="block text-[11px] font-bold text-gray-500">{t.selectWorkers}</label>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-24 overflow-y-auto border border-gray-100 p-2 rounded-xl bg-gray-50">
-                    {workers.map(w => {
-                      const active = selectedWorkerIds.includes(w.id);
-                      // Check if worker is assigned elsewhere in active activities
-                      const isOccupied = activities.some(a => a.id !== editingActivityId && a.workerIds.includes(w.id));
-                      const canBeSelected = !isOccupied || w.allowMultiActivity || active;
-                      
-                      return (
-                        <label key={w.id} className={`flex items-center gap-1.5 text-[10px] cursor-pointer p-1 rounded transition ${isOccupied ? 'bg-amber-50 text-amber-700 opacity-80' : ''}`}>
-                          <input 
-                            type="checkbox" 
-                            checked={active}
-                            disabled={!canBeSelected}
-                            onChange={() => {
-                              setSelectedWorkerIds(active ? selectedWorkerIds.filter(id => id !== w.id) : [...selectedWorkerIds, w.id]);
-                            }}
-                          />
-                          <span className="truncate flex items-center gap-1 flex-1">
-                            {w.fullName} 
-                            {isOccupied && <span className={`text-[8px] px-1 rounded-full ${w.allowMultiActivity ? 'bg-blue-200 text-blue-700' : 'bg-amber-200'}`}>
-                              {w.allowMultiActivity ? (isRtl ? 'مشترك' : 'Shared') : (isRtl ? 'مشغول' : 'Busy')}
-                            </span>}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              onUpdateWorker && onUpdateWorker(w.id, { allowMultiActivity: !w.allowMultiActivity });
-                            }}
-                            className={`p-1 rounded-md transition-all ${w.allowMultiActivity ? 'text-blue-600 bg-blue-100 shadow-sm scale-110' : 'text-gray-400 bg-gray-100 hover:bg-gray-200'}`}
-                            title={w.allowMultiActivity ? (isRtl ? 'تعطيل المهام المتعددة' : 'Disable Multi-tasking') : (isRtl ? 'تفعيل المهام المتعددة' : 'Enable Multi-tasking')}
-                          >
-                            <Sparkles className="w-2.5 h-2.5" />
-                          </button>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Materials selection */}
-                <div className="space-y-1">
-                  <label className="block text-[11px] font-bold text-gray-500">{t.selectMaterials}</label>
-                  <div className="grid grid-cols-2 gap-2 max-h-24 overflow-y-auto border border-gray-100 p-2 rounded-xl bg-gray-50">
-                    {materials.map(m => {
-                      const active = selectedMaterialIds.includes(m.id);
-                      const alloc = materialAllocations.find(a => a.id === m.id);
-                      return (
-                        <div key={m.id} className="flex flex-col gap-1">
-                          <label className="flex items-center gap-1.5 text-[10px] cursor-pointer">
-                            <input 
-                              type="checkbox" 
-                              checked={active}
-                              onChange={() => {
-                                if (active) {
-                                  setSelectedMaterialIds(selectedMaterialIds.filter(id => id !== m.id));
-                                  setMaterialAllocations(materialAllocations.filter(a => a.id !== m.id));
-                                } else {
-                                  setSelectedMaterialIds([...selectedMaterialIds, m.id]);
-                                  setMaterialAllocations([...materialAllocations, { id: m.id, quantity: 1 }]);
-                                }
-                              }}
-                            />
-                            <span className="truncate">{isRtl ? m.nameAr : m.nameEn} ({m.unit}) | {isRtl ? "المتاح:" : "Stock:"} {m.quantity}</span>
-                          </label>
-                          {active && (
-                            <input
-                              type="number"
-                              min="1"
-                              className="border border-gray-200 rounded px-1.5 py-0.5 text-[10px] w-full"
-                              placeholder={isRtl ? 'الكمية المطلوبة' : 'Required Qty'}
-                              value={alloc?.quantity || ''}
-                              onChange={e => {
-                                const val = Number(e.target.value);
-                                setMaterialAllocations(prev => {
-                                  const existing = prev.find(p => p.id === m.id);
-                                  if (existing) {
-                                    return prev.map(p => p.id === m.id ? { ...p, quantity: val } : p);
-                                  }
-                                  return [...prev, { id: m.id, quantity: val }];
-                                });
-                              }}
-                            />
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Equipment selection */}
-                <div className="space-y-1">
-                  <label className="block text-[11px] font-bold text-gray-500">{t.selectEquipment}</label>
-                  <div className="grid grid-cols-2 gap-2 max-h-24 overflow-y-auto border border-gray-100 p-2 rounded-xl bg-gray-50">
-                    {equipment.map(e => {
-                      const active = selectedEquipmentIds.includes(e.id);
-                      const alloc = equipmentAllocations.find(a => a.id === e.id);
-                      return (
-                        <div key={e.id} className="flex flex-col gap-1">
-                          <label className="flex items-center gap-1.5 text-[10px] cursor-pointer">
-                            <input 
-                              type="checkbox" 
-                              checked={active}
-                              onChange={() => {
-                                if (active) {
-                                  setSelectedEquipmentIds(selectedEquipmentIds.filter(id => id !== e.id));
-                                  setEquipmentAllocations(equipmentAllocations.filter(a => a.id !== e.id));
-                                } else {
-                                  setSelectedEquipmentIds([...selectedEquipmentIds, e.id]);
-                                  setEquipmentAllocations([...equipmentAllocations, { id: e.id, quantity: 1 }]);
-                                }
-                              }}
-                            />
-                            <span className="truncate">{isRtl ? e.nameAr : e.nameEn} | {isRtl ? "المتاح:" : "Stock:"} {e.totalQuantity}</span>
-                          </label>
-                          {active && (
-                            <input
-                              type="number"
-                              min="1"
-                              className="border border-gray-200 rounded px-1.5 py-0.5 text-[10px] w-full"
-                              placeholder={isRtl ? 'الكمية المطلوبة' : 'Required Qty'}
-                              value={alloc?.quantity || ''}
-                              onChange={ev => {
-                                const val = Number(ev.target.value);
-                                setEquipmentAllocations(prev => {
-                                  const existing = prev.find(p => p.id === e.id);
-                                  if (existing) {
-                                    return prev.map(p => p.id === e.id ? { ...p, quantity: val } : p);
-                                  }
-                                  return [...prev, { id: e.id, quantity: val }];
-                                });
-                              }}
-                            />
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Dependency Selector */}
-                <div className="space-y-1">
-                  <label className="block text-[11px] font-bold text-gray-500">{isRtl ? 'يعتمد على نشاط (تبعية)' : 'Depends on Activity (Dependency)'}</label>
-                  <select 
-                    value={dependsOnId}
-                    onChange={(e) => setDependsOnId(e.target.value)}
-                    className="w-full border border-gray-200 rounded-xl p-2.5 text-xs outline-none focus:ring-2 focus:ring-[#0080FF] bg-gray-50 font-medium"
-                  >
-                    <option value="">{isRtl ? 'بدون تبعية' : 'No Dependency'}</option>
-                    {activities.filter(a => a.workItemId === selectedWiIdForActivity).map(a => (
-                      <option key={a.id} value={a.id}>{isRtl ? a.nameAr : a.nameEn}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Critical Activity Toggle */}
-                <div className="space-y-1.5 p-3 rounded-xl border border-rose-100 bg-rose-50/30">
-                  <label className="flex items-center gap-2 cursor-pointer select-none">
-                    <input 
-                      type="checkbox"
-                      checked={actIsCritical}
-                      onChange={(e) => setActIsCritical(e.target.checked)}
-                      className="w-4 h-4 text-rose-600 border-rose-300 rounded focus:ring-rose-500 accent-rose-600"
-                    />
-                    <span className="text-xs font-black text-rose-700">
-                      {isRtl ? 'نشاط حرج (Critical Path)' : 'Critical Activity (Critical Path)'}
-                    </span>
-                  </label>
-                  <p className="text-[10px] text-rose-600/80 leading-relaxed font-semibold">
-                    {isRtl 
-                      ? 'الأنشطة الحرجة تؤثر مباشرة على تاريخ انتهاء المشروع. أي تأخير فيها يؤدي إلى تأخير المشروع بالكامل.' 
-                      : 'Critical activities directly affect the project\'s completion date. Any delay here will automatically postpone the overall project delivery.'}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
-                <button type="button" onClick={() => { setIsAddActOpen(false); setEditingActivityId(null); }} className="bg-gray-100 hover:bg-gray-200 py-2.5 px-4 rounded-xl text-xs font-bold text-gray-600 transition">{t.cancel}</button>
-                <button type="submit" className="bg-[#040957] hover:bg-[#0080FF] text-white py-2.5 px-6 rounded-xl text-xs font-bold transition shadow-sm">{editingActivityId ? (isRtl ? 'تحديث' : 'Update') : t.save}</button>
-              </div>
-            </form>
-          </div>
+          </form>
         </div>
       )}
 
-      {/* MODAL: ACTIVITY DETAILS */}
-      {isDetailsOpen && activityForDetails && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full border border-gray-100 animate-scaleIn max-h-[90vh] overflow-y-auto">
-            <div className="bg-[#040957] text-white p-4 rounded-t-2xl flex justify-between items-center">
-              <h3 className="font-bold text-xs uppercase tracking-wide">{isRtl ? 'تفاصيل النشاط' : 'Activity Details'}</h3>
-              <button onClick={() => setIsDetailsOpen(false)} className="text-white bg-white/10 hover:bg-white/20 p-1 rounded transition">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            
-            <div className="p-6 space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400 font-bold uppercase">{isRtl ? 'الاسم (عربي)' : 'Name (Arabic)'}</label>
-                  <p className="font-bold text-sm text-[#040957]">{activityForDetails.nameAr}</p>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400 font-bold uppercase">{isRtl ? 'الاسم (إنجليزي)' : 'Name (English)'}</label>
-                  <p className="font-bold text-sm text-[#040957]">{activityForDetails.nameEn}</p>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400 font-bold uppercase">{isRtl ? 'الكمية الكلية' : 'Total Quantity'}</label>
-                  <p className="font-mono font-bold text-sm">{activityForDetails.totalQuantity} {activityForDetails.unit}</p>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400 font-bold uppercase">{isRtl ? 'التبعية' : 'Dependency'}</label>
-                  <p className="font-bold text-sm">
-                    {activityForDetails.dependsOnActivityId 
-                      ? (activities.find(a => a.id === activityForDetails.dependsOnActivityId)?.nameAr || activityForDetails.dependsOnActivityId)
-                      : (isRtl ? 'لا يوجد' : 'None')}
-                  </p>
-                </div>
-                <div className="space-y-1 md:col-span-2">
-                  <label className="text-[10px] text-gray-400 font-bold uppercase">{isRtl ? 'تصنيف الأهمية للمشروع' : 'Project Criticality Class'}</label>
-                  <div>
-                    {activityForDetails.isCritical ? (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black bg-rose-50 text-rose-700 border border-rose-200 shadow-xs">
-                        <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
-                        {isRtl ? 'نشاط حرج ومفصلي (تأخيره يؤخر تسليم المشروع بالكامل)' : 'Critical Path (Any delays will postpone full project delivery)'}
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                        {isRtl ? 'نشاط قياسي عادي' : 'Standard Routine Activity'}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
+      {/* --- ADD/EDIT ACTIVITY STEPPER WIZARD (Image 1 High-fidelity Modal) --- */}
+      <ActivityWizardModal 
+        isOpen={isAddActOpen}
+        onClose={() => {
+          setIsAddActOpen(false);
+          setEditingActivityId(null);
+        }}
+        onSave={handleSaveActivityFromWizard}
+        activity={editingActivityId ? (activities.find(a => a.id === editingActivityId) || null) : null}
+        workItemId={selectedWiIdForActivity}
+        workers={workers}
+        materials={materials}
+        equipment={equipment}
+        activities={activities}
+        projectStartDate={currentProject?.startDate || ''}
+        companyName={settings.companyNameEn || 'FPMS Group'}
+        lang={lang}
+        t={t}
+        onUpdateWorker={onUpdateWorker}
+      />
 
-              <div className="space-y-1">
-                <label className="text-[10px] text-gray-400 font-bold uppercase">{isRtl ? 'الوصف' : 'Description'}</label>
-                <p className="text-xs text-gray-600 leading-relaxed bg-gray-50 p-3 rounded-xl border border-gray-100">
-                  {isRtl ? (activityForDetails.descriptionAr || 'لا يوجد وصف') : (activityForDetails.descriptionEn || 'No description')}
-                </p>
-              </div>
-
-              <div className="space-y-4 pt-4 border-t border-gray-100">
-                {/* Workers Section */}
-                <div className="space-y-2">
-                  <h4 className="font-bold text-[#040957] text-xs flex items-center gap-2">
-                    <UserCheck className="w-4 h-4 text-[#0080FF]" />
-                    {isRtl ? 'العمال المخصصون' : 'Allocated Workers'}
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {activityForDetails.workerIds.length > 0 ? (
-                      workers.filter(w => activityForDetails.workerIds.includes(w.id)).map(w => (
-                        <div key={w.id} className="flex items-center justify-between p-2 rounded-lg bg-blue-50/50 border border-blue-100">
-                          <span className="text-xs font-bold text-blue-900">{w.fullName}</span>
-                          <span className="text-[10px] text-blue-600 font-mono">{w.professionAr}</span>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-[10px] text-gray-400 italic">{isRtl ? 'لم يتم تخصيص عمال' : 'No workers allocated'}</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Materials Section */}
-                <div className="space-y-2">
-                  <h4 className="font-bold text-[#040957] text-xs flex items-center gap-2">
-                    <Package className="w-4 h-4 text-[#0080FF]" />
-                    {isRtl ? 'المواد المخصصة' : 'Allocated Materials'}
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {activityForDetails.materialAllocations && activityForDetails.materialAllocations.length > 0 ? (
-                      activityForDetails.materialAllocations.map(alloc => {
-                        const m = materials.find(mat => mat.id === alloc.id);
-                        return (
-                          <div key={alloc.id} className="flex items-center justify-between p-2 rounded-lg bg-emerald-50/50 border border-emerald-100">
-                            <span className="text-xs font-bold text-emerald-900">{isRtl ? m?.nameAr : m?.nameEn}</span>
-                            <span className="text-[10px] text-emerald-600 font-mono font-bold">{alloc.quantity} {m?.unit}</span>
-                          </div>
-                        );
-                      })
-                    ) : (
-                      <p className="text-[10px] text-gray-400 italic">{isRtl ? 'لم يتم تخصيص مواد' : 'No materials allocated'}</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Equipment Section */}
-                <div className="space-y-2">
-                  <h4 className="font-bold text-[#040957] text-xs flex items-center gap-2">
-                    <Wrench className="w-4 h-4 text-[#0080FF]" />
-                    {isRtl ? 'المعدات المخصصة' : 'Allocated Equipment'}
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {activityForDetails.equipmentAllocations && activityForDetails.equipmentAllocations.length > 0 ? (
-                      activityForDetails.equipmentAllocations.map(alloc => {
-                        const e = equipment.find(eq => eq.id === alloc.id);
-                        return (
-                          <div key={alloc.id} className="flex items-center justify-between p-2 rounded-lg bg-amber-50/50 border border-amber-100">
-                            <span className="text-xs font-bold text-amber-900">{isRtl ? e?.nameAr : e?.nameEn}</span>
-                            <span className="text-[10px] text-amber-600 font-mono font-bold">{alloc.quantity} {isRtl ? 'وحدة' : 'Units'}</span>
-                          </div>
-                        );
-                      })
-                    ) : (
-                      <p className="text-[10px] text-gray-400 italic">{isRtl ? 'لم يتم تخصيص معدات' : 'No equipment allocated'}</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-end pt-4">
-                <button 
-                  onClick={() => setIsDetailsOpen(false)} 
-                  className="bg-gray-100 text-gray-600 py-2 px-6 rounded-xl text-xs font-bold transition hover:bg-gray-200"
-                >
-                  {isRtl ? 'إغلاق' : 'Close'}
-                </button>
-                <button 
-                  onClick={() => handlePrintActivityDetailsPDF(activityForDetails)} 
-                  disabled={isPrintingActivity === activityForDetails.id}
-                  className="bg-[#040957] text-white py-2 px-6 rounded-xl text-xs font-bold transition shadow-md hover:bg-[#0080FF] flex items-center gap-2"
-                >
-                  {isPrintingActivity === activityForDetails.id ? <Clock className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-4 h-4" />}
-                  {isRtl ? 'طباعة التقرير التفصيلي' : 'Print Detailed Report'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* --- DETAILS DIALOG (High-fidelity Detailed Summary Viewer) --- */}
+      <ActivityDetailsModal 
+        isOpen={isDetailsOpen}
+        onClose={() => setIsDetailsOpen(false)}
+        activity={activityForDetails}
+        workers={workers}
+        materials={materials}
+        equipment={equipment}
+        activities={activities}
+        isPrinting={isPrintingActivity === activityForDetails?.id}
+        onPrint={() => activityForDetails && handlePrintActivityDetailsPDF(activityForDetails)}
+        lang={lang}
+      />
 
     </div>
   );

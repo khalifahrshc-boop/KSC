@@ -17,7 +17,8 @@ import {
   getActivityStatus,
   getProjectStatusDetails,
   getProjectProgress,
-  getProjectPlannedProgress
+  getProjectPlannedProgress,
+  getSystemToday
 } from '../utils/progressCalculations';
 import { 
   Calendar, 
@@ -61,8 +62,8 @@ export default function GanttChart({
   const [searchTerm, setSearchTerm] = useState('');
   const [hoveredActivityId, setHoveredActivityId] = useState<string | null>(null);
   
-  // Fixed Today's reference date matching the system current local time (July 19, 2026)
-  const todayDate = useMemo(() => new Date('2026-07-19'), []);
+  // Fixed Today's reference date matching the system current local time
+  const todayDate = useMemo(() => getSystemToday(), []);
 
   // Compute the total project bounds
   const timelineData = useMemo(() => {
@@ -86,7 +87,7 @@ export default function GanttChart({
     if (!timelineData) return [];
     const list = [];
     let curr = new Date(timelineData.minDate);
-    const maxIterations = 180; // Safety cap
+    const maxIterations = 400; // Safety cap covering full calendar year with padding
     let count = 0;
     while (curr <= timelineData.maxDate && count < maxIterations) {
       list.push(new Date(curr));
@@ -559,7 +560,25 @@ export default function GanttChart({
                           
                           const totalDaysAct = Math.ceil((actEnd.getTime() - actStart.getTime()) / (1000 * 60 * 60 * 24)) || 1;
                           const elapsedDaysAct = Math.max(0, Math.ceil((todayDate.getTime() - actStart.getTime()) / (1000 * 60 * 60 * 24)));
-                          const remainingDaysAct = Math.max(0, Math.ceil((actEnd.getTime() - todayDate.getTime()) / (1000 * 60 * 60 * 24)));
+                          const remainingDaysAct = progress >= 100 ? 0 : Math.max(0, Math.ceil((actEnd.getTime() - todayDate.getTime()) / (1000 * 60 * 60 * 24)));
+
+                          // Check if completed ahead of schedule
+                          const isCompleted = progress >= 100;
+                          let isAheadOfSchedule = false;
+                          let savedDaysVal = 0;
+                          let completionDate = todayDate;
+                          if (isCompleted) {
+                            const updates = progressUpdates.filter(upd => upd.activityId === act.id);
+                            const lastUpdate = updates.length > 0
+                              ? [...updates].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())[updates.length - 1]
+                              : null;
+                            completionDate = lastUpdate ? new Date(lastUpdate.timestamp) : todayDate;
+                            if (completionDate < actEnd) {
+                              isAheadOfSchedule = true;
+                              const diffMs = actEnd.getTime() - completionDate.getTime();
+                              savedDaysVal = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+                            }
+                          }
 
                           // Dynamic calculation of scheduling overlaps with sibling activities in the same work item
                           const siblingActivities = activities.filter(a => a.id !== act.id && a.workItemId === act.workItemId);
@@ -657,6 +676,17 @@ export default function GanttChart({
                                      actStatus === 'Delayed' ? (isRtl ? 'متأخر ⚠️' : 'Delayed') :
                                      (isRtl ? 'في المسار' : 'On Track')}
                                   </span>
+
+                                  {progress >= 100 && isAheadOfSchedule && (
+                                    <span className="text-[7.5px] font-black px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-0.5 animate-pulse">
+                                      <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+                                      <span>
+                                        {savedDaysVal > 0 
+                                          ? (isRtl ? `توفير ${savedDaysVal} يومّ!` : `Saved ${savedDaysVal}d!`)
+                                          : (isRtl ? `توفير ${Math.max(1, Math.floor((actEnd.getTime() - completionDate.getTime()) / (1000 * 60 * 60)))} ساعة!` : `Saved ${Math.max(1, Math.floor((actEnd.getTime() - completionDate.getTime()) / (1000 * 60 * 60)))}h!`)}
+                                      </span>
+                                    </span>
+                                  )}
 
                                   {/* Dynamic Dependency Badge */}
                                   {act.dependsOnActivityId && (() => {
