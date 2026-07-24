@@ -108,6 +108,7 @@ export default function FieldPortal({
   const [supTitle, setSupTitle] = useState('');
   const [signatureText, setSignatureText] = useState('');
   const [isSignCanvasDrawn, setIsSignCanvasDrawn] = useState(false);
+  const [signatureDataUrl, setSignatureDataUrl] = useState('');
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingRef = useRef(false);
 
@@ -425,6 +426,14 @@ export default function FieldPortal({
 
   const stopDraw = () => {
     drawingRef.current = false;
+    if (canvasRef.current) {
+      try {
+        const dataUrl = canvasRef.current.toDataURL('image/png');
+        setSignatureDataUrl(dataUrl);
+      } catch (err) {
+        console.error("Canvas toDataURL failed:", err);
+      }
+    }
   };
 
   const clearCanvas = () => {
@@ -434,6 +443,7 @@ export default function FieldPortal({
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     setIsSignCanvasDrawn(false);
+    setSignatureDataUrl('');
   };
 
   // Add a production update
@@ -826,7 +836,7 @@ export default function FieldPortal({
         nationalId: supNationalId,
         badgeNumber: supBadge,
         jobTitle: supTitle || 'Field Inspector',
-        signatureData: signatureText || 'Signed in Supervisor Portal',
+        signatureData: signatureDataUrl || signatureText || 'Signed in Supervisor Portal',
         timestamp: new Date().toISOString()
       };
 
@@ -927,7 +937,7 @@ export default function FieldPortal({
         badgeNumber: supBadge,
         nationalId: supNationalId,
         jobTitle: supTitle,
-        signatureData: signatureText || 'Authorized Digitally',
+        signatureData: signatureDataUrl || signatureText || 'Authorized Digitally',
         timestamp: new Date().toISOString(),
         status: 'Pending',
         checkIn: checkInRecord,
@@ -1399,8 +1409,10 @@ export default function FieldPortal({
             <div class="sig-area">
               <div class="sig-box">
                 <div class="sig-title">${isRtl ? 'مشرف الموقع المعتمد (المرسِل)' : 'Field Supervisor (Sender)'}</div>
-                <div style="height: 35px; margin: 5px 0; line-height: 35px; font-family: monospace; font-weight: bold; color: #0284c7; font-size: 11px; font-style: italic;">
-                  ${lastSubmission.signatureData}
+                <div style="height: 35px; margin: 5px 0; display: flex; align-items: center; justify-content: center;">
+                  ${lastSubmission.signatureData && lastSubmission.signatureData.startsWith('data:image/') 
+                    ? `<img src="${lastSubmission.signatureData}" style="max-height: 35px; max-width: 150px; object-fit: contain;" referrerPolicy="no-referrer" />` 
+                    : `<span style="font-family: monospace; font-weight: bold; color: #0284c7; font-size: 11px; font-style: italic; line-height: 35px;">${lastSubmission.signatureData || ''}</span>`}
                 </div>
                 <div class="sig-name">${lastSubmission.supervisorName}</div>
               </div>
@@ -1748,6 +1760,14 @@ export default function FieldPortal({
                       if (!supName || !supBadge) {
                         alert(isRtl ? 'يرجى ملء اسم المشرف ورقم شارته للمتابعة' : 'Supervisor name and badge are required');
                         return;
+                      }
+                      if (canvasRef.current && isSignCanvasDrawn) {
+                        try {
+                          const dataUrl = canvasRef.current.toDataURL('image/png');
+                          setSignatureDataUrl(dataUrl);
+                        } catch (err) {
+                          console.error("Canvas toDataURL failed:", err);
+                        }
                       }
                       setCurrentStep(2);
                     }}
@@ -3014,7 +3034,17 @@ export default function FieldPortal({
                     </div>
                     <div>
                       <span className="text-gray-400 text-[10px] uppercase font-bold">{isRtl ? 'توقيع المصادقة:' : 'Authorized Signature:'}</span>
-                      <p className="font-bold text-gray-500 mt-0.5 italic">{signatureText ? '✍️ Text stamp' : (isSignCanvasDrawn ? '🖋️ Drawn Signature' : '⚠️ Unsigned')}</p>
+                      <div className="mt-1">
+                        {signatureDataUrl ? (
+                          <div className="bg-white border border-gray-200 rounded-lg p-1.5 flex items-center justify-center max-w-[150px] h-[36px]">
+                            <img src={signatureDataUrl} alt="Signature" className="max-h-full max-w-full object-contain" referrerPolicy="no-referrer" />
+                          </div>
+                        ) : signatureText ? (
+                          <span className="font-bold text-blue-600 italic bg-blue-50 border border-blue-100 rounded-lg px-2 py-1">✍️ {signatureText}</span>
+                        ) : (
+                          <p className="font-bold text-red-500">⚠️ {isRtl ? 'غير موقع' : 'Unsigned'}</p>
+                        )}
+                      </div>
                     </div>
                   </div>
 
