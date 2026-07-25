@@ -18,7 +18,8 @@ import {
   SafetyRecord,
   DelayRecord,
   IssueReport,
-  AttendanceRecord
+  AttendanceRecord,
+  MorningMeetingPlan
 } from '../types';
 
 export const mockUsers: User[] = [
@@ -43,7 +44,11 @@ export const seedProjects: Project[] = [
     endDate: '2026-12-25',
     projectManager: 'Eng. Khalid Bin Abdulaziz',
     status: 'On Track',
-    budget: 450000000
+    budget: 450000000,
+    morningMeetingPlan: `١. اجتماع السلامة الصباحي (Toolbox Talk) في تمام الساعة ٧:٠٠ ص للتركيز على إجراءات العمل المرتفع وارتداء شارات الأمان وحبال التثبيت.
+٢. متابعة توريد حديد التسليح وحساب الكتل لتسليح قاعدة الأعمدة الرئيسية رقم ٢٤ و٢٥.
+٣. البدء بأعمال حفر الأساس المساند (Excavation) للمسار الجنوبي الشرقي وتأمين المداخل.
+٤. يرجى توجيه المشرفين لمراجعة كشوف حضور العمال بدقة وتصوير تقرير الإنجاز قبل الساعة ٣:٠٠ م.`
   },
   {
     id: 'proj-2',
@@ -739,3 +744,37 @@ export const initialAttendanceRecords: AttendanceRecord[] = [
     timestamp: new Date().toISOString()
   }
 ];
+
+export const seedMorningMeetingPlans: MorningMeetingPlan[] = [
+  {
+    id: 'plan-1',
+    projectId: 'proj-1',
+    titleAr: 'اجتماع السلامة الصباحي ومخاطر الرافعات الكبرى',
+    titleEn: 'Morning Safety Alignment & Major Crane Risks',
+    date: '2026-07-25',
+    content: `١. اجتماع السلامة الصباحي (Toolbox Talk) في تمام الساعة ٧:٠٠ ص للتركيز على إجراءات العمل المرتفع وارتداء شارات الأمان وحبال التثبيت.\n٢. متابعة توريد حديد التسليح وحساب الكتل لتسليح قاعدة الأعمدة الرئيسية رقم ٢٤ و٢٥.\n٣. البدء بأعمال حفر الأساس المساند (Excavation) للمسار الجنوبي الشرقي وتأمين المداخل.\n٤. يرجى توجيه المشرفين لمراجعة كشوف حضور العمال بدقة وتصوير تقرير الإنجاز قبل الساعة ٣:٠٠ م.`,
+    isArchived: false,
+    createdAt: '2026-07-25T07:00:00.000Z'
+  },
+  {
+    id: 'plan-2',
+    projectId: 'proj-1',
+    titleAr: 'تنسيق صب خرسانة الجسور والرافعات الكبرى',
+    titleEn: 'Concrete Pouring Coordination & Girders Lift',
+    date: '2026-07-25',
+    content: `١. التنسيق لصب خرسانة الجسور الحاملة للمسار الرئيسي 4A.\n٢. التأكد من سلامة القوالب الخرسانية والدعامات الهيدروليكية قبل البدء بالضخ.\n٣. التنسيق مع مشرفي الشفت المسائي لضمان سلاسة تبديل الوردية.`,
+    isArchived: false,
+    createdAt: '2026-07-25T09:30:00.000Z'
+  },
+  {
+    id: 'plan-3',
+    projectId: 'proj-1',
+    titleAr: 'خطة العمل الأسبوعية السابقة (مؤرشفة)',
+    titleEn: 'Prior Week Activity Plan (Archived)',
+    date: '2026-07-18',
+    content: `خطة العمل السابقة لأعمال الأساسات وتدقيق التربة في الموقع. تم إنجازها بالكامل ولله الحمد وبنسبة أمان ١٠٠٪.`,
+    isArchived: true,
+    createdAt: '2026-07-18T07:00:00.000Z'
+  }
+];
+

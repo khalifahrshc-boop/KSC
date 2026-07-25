@@ -19,7 +19,8 @@ import {
   initialSafetyRecords,
   initialDelays,
   initialIssues,
-  initialAttendanceRecords
+  initialAttendanceRecords,
+  seedMorningMeetingPlans
 } from './data/seedData';
 import { 
   Project, 
@@ -42,7 +43,8 @@ import {
   SavedKpiReport,
   FieldRequest,
   FieldWorkSubmission,
-  QuickNote
+  QuickNote,
+  MorningMeetingPlan
 } from './types';
 import { translations } from './utils/translation';
 import { dbApi } from './lib/api';
@@ -173,6 +175,7 @@ export default function App() {
   const [savedKpiReports, setSavedKpiReports] = useState<SavedKpiReport[]>([]);
   const [fieldSubmissions, setFieldSubmissions] = useState<FieldWorkSubmission[]>([]);
   const [quickNotes, setQuickNotes] = useState<QuickNote[]>([]);
+  const [morningMeetingPlans, setMorningMeetingPlans] = useState<MorningMeetingPlan[]>([]);
   const [isFieldPortal, setIsFieldPortal] = useState<boolean>(() => {
     return window.location.search.includes('portal=field') || window.location.hash.includes('portal=field');
   });
@@ -225,7 +228,7 @@ export default function App() {
           dbMaterials, dbEquipment, dbWorkers, dbNotifications, 
           dbAuditLogs, dbSettings, dbCheckIns, dbAttendance, dbProgress, 
           dbSafety, dbDelays, dbIssues, dbSavedKpiReports, dbFieldSubmissions,
-          dbQuickNotes
+          dbQuickNotes, dbMorningMeetingPlans
         ] = await Promise.all([
           dbApi.getAll<User>('users'),
           dbApi.getAll<Project>('projects'),
@@ -245,7 +248,8 @@ export default function App() {
           dbApi.getAll<IssueReport>('issueReports'),
           dbApi.getAll<SavedKpiReport>('savedKpiReports').catch(() => []),
           dbApi.getAll<FieldWorkSubmission>('fieldSubmissions').catch(() => []),
-          dbApi.getAll<QuickNote>('quickNotes').catch(() => [])
+          dbApi.getAll<QuickNote>('quickNotes').catch(() => []),
+          dbApi.getAll<MorningMeetingPlan>('morningMeetingPlans').catch(() => [])
         ]);
 
 
@@ -266,7 +270,8 @@ export default function App() {
             dbApi.bulkSave('progressUpdates', initialProgressUpdates),
             dbApi.bulkSave('safetyRecords', initialSafetyRecords),
             dbApi.bulkSave('delayRecords', initialDelays),
-            dbApi.bulkSave('issueReports', initialIssues)
+            dbApi.bulkSave('issueReports', initialIssues),
+            dbApi.bulkSave('morningMeetingPlans', seedMorningMeetingPlans)
           ]);
           // Refresh after seeding
           window.location.reload();
@@ -306,6 +311,13 @@ export default function App() {
         setSavedKpiReports(dbSavedKpiReports || []);
         setFieldSubmissions(dbFieldSubmissions || []);
         setQuickNotes(dbQuickNotes || []);
+        
+        let finalMorningPlans = dbMorningMeetingPlans || [];
+        if (finalMorningPlans.length === 0 && seedMorningMeetingPlans.length > 0) {
+          finalMorningPlans = seedMorningMeetingPlans;
+          await dbApi.bulkSave('morningMeetingPlans', seedMorningMeetingPlans).catch(console.error);
+        }
+        setMorningMeetingPlans(finalMorningPlans);
         
         setCurrentUser(dbUsers[0] || mockUsers[0]);
 
@@ -424,6 +436,37 @@ export default function App() {
       logSystemAction('UPDATE_PROJECT', `Updated project metadata id: ${id}`);
     } catch (e) {
       alert("Error updating project");
+    }
+  };
+
+  const handleAddMorningMeetingPlan = async (plan: Omit<MorningMeetingPlan, 'id'>) => {
+    try {
+      const newId = `plan-${Date.now()}`;
+      const newPlan: MorningMeetingPlan = {
+        ...plan,
+        id: newId,
+        createdAt: new Date().toISOString()
+      };
+      await dbApi.save('morningMeetingPlans', newPlan);
+      setMorningMeetingPlans(prev => [newPlan, ...prev]);
+      logSystemAction('ADD_MORNING_PLAN', `Created morning plan for project: ${plan.projectId} date: ${plan.date}`);
+    } catch (e) {
+      console.error(e);
+      alert("Error saving morning meeting plan");
+    }
+  };
+
+  const handleUpdateMorningMeetingPlan = async (id: string, updated: Partial<MorningMeetingPlan>) => {
+    try {
+      const existing = morningMeetingPlans.find(p => p.id === id);
+      if (!existing) return;
+      const updatedPlan = { ...existing, ...updated };
+      await dbApi.save('morningMeetingPlans', updatedPlan);
+      setMorningMeetingPlans(prev => prev.map(p => p.id === id ? updatedPlan : p));
+      logSystemAction('UPDATE_MORNING_PLAN', `Updated morning plan id: ${id}`);
+    } catch (e) {
+      console.error(e);
+      alert("Error updating morning meeting plan");
     }
   };
 
@@ -1190,6 +1233,7 @@ export default function App() {
             equipment={equipment}
             progressUpdates={progressUpdates}
             fieldRequests={fieldRequests}
+            morningMeetingPlans={morningMeetingPlans}
             onAddPendingSubmission={handleAddPendingSubmission}
             onAddFieldRequest={handleAddFieldRequest}
             onReturnToMain={() => {
@@ -1606,6 +1650,10 @@ export default function App() {
               materials={materials}
               fieldRequests={fieldRequests}
               onUpdateFieldRequest={handleUpdateFieldRequest}
+              onUpdateProject={handleUpdateProject}
+              morningMeetingPlans={morningMeetingPlans}
+              onAddMorningMeetingPlan={handleAddMorningMeetingPlan}
+              onUpdateMorningMeetingPlan={handleUpdateMorningMeetingPlan}
             />
           )}
 

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   Project, 
   WorkItem, 
@@ -18,14 +18,15 @@ import {
 import { 
   getActivityProgress, 
   getWorkItemProgress,
-  getActivityStatus 
+  getActivityStatus,
+  getSystemToday
 } from '../utils/progressCalculations';
 import { runWithOklchSanitizer } from '../utils/pdfSanitizer';
 import { 
   Plus, Trash2, Layers, Workflow, Calculator, Sparkles, Clock, ChevronDown, ChevronUp, 
   HelpCircle, UserCheck, Package, Wrench, Calendar, TrendingUp, Check, X, Play, 
   AlertTriangle, Edit, Eye, Printer, Download, FileSpreadsheet, Search, CheckSquare,
-  CheckCircle2
+  CheckCircle2, List, ArrowRightLeft, Flag, Hourglass, AlertCircle
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import ActivityWizardModal from './ActivityWizardModal';
@@ -50,6 +51,404 @@ interface WorkItemsListProps {
   onUpdateActivity: (id: string, updated: Partial<Activity>) => void;
   onUpdateWorker?: (id: string, updated: Partial<Worker>) => void;
   openConfirm: (title: string, message: string, onConfirm: () => void, isDestructive?: boolean) => void;
+}
+
+interface TimelineGanttViewProps {
+  isRtl: boolean;
+  lang: string;
+  currentProject: Project | undefined;
+  filteredWorkItems: WorkItem[];
+  filteredActivities: Activity[];
+  activities: Activity[];
+  progressUpdates: ProgressUpdate[];
+  materials: WarehouseMaterial[];
+  expandedWorkItemIds: string[];
+  toggleExpandWi: (id: string) => void;
+  inspectedActivityId: string | null;
+  setInspectedActivityId: (id: string | null) => void;
+  hoveredActivityId: string | null;
+  setHoveredActivityId: (id: string | null) => void;
+  scrollContainerRef: React.RefObject<HTMLDivElement | null>;
+  todayDate: Date;
+  timelineData: { minDate: Date; maxDate: Date; totalDays: number } | null;
+  daysList: Date[];
+  monthsGroup: { monthStr: string; count: number; date: Date }[];
+  handleScrollToToday: () => void;
+  calculateSmartPlanningValues: (act: Activity) => any;
+}
+
+function TimelineGanttView({
+  isRtl,
+  lang,
+  currentProject,
+  filteredWorkItems,
+  filteredActivities,
+  activities,
+  progressUpdates,
+  materials,
+  expandedWorkItemIds,
+  toggleExpandWi,
+  inspectedActivityId,
+  setInspectedActivityId,
+  hoveredActivityId,
+  setHoveredActivityId,
+  scrollContainerRef,
+  todayDate,
+  timelineData,
+  daysList,
+  monthsGroup,
+  handleScrollToToday,
+  calculateSmartPlanningValues
+}: TimelineGanttViewProps) {
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+      {/* Header Info */}
+      <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex flex-wrap justify-between items-center gap-3">
+        <div className="flex items-center gap-2">
+          <div className="p-2 bg-blue-50 text-[#0080FF] rounded-lg border border-blue-100">
+            <Workflow className="w-4 h-4 animate-pulse" />
+          </div>
+          <div>
+            <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+              {isRtl ? 'المخطط الزمني للمسار الحرج والأنشطة' : 'Activity Schedule & Critical Path Timeline'}
+            </h3>
+            <p className="text-[10px] text-slate-400 font-semibold">
+              {isRtl ? 'اضغط على أي نشاط لتنشيط لوحة التنبؤات والتحليلات الجانبية.' : 'Click any activity row to load forecasts in the Predictive Sidebar.'}
+            </p>
+          </div>
+        </div>
+        
+        <button
+          onClick={handleScrollToToday}
+          className="bg-[#040957] hover:bg-opacity-90 text-white font-extrabold text-[10px] px-3 py-2 rounded-xl flex items-center gap-1.5 transition-all shadow-xs"
+        >
+          <ArrowRightLeft className="w-3.5 h-3.5 text-blue-300 animate-pulse" />
+          <span>{isRtl ? 'التركيز على اليوم' : 'Focus Today'}</span>
+        </button>
+      </div>
+
+      {/* Scrollable Container */}
+      <div 
+        ref={scrollContainerRef}
+        className="overflow-x-auto custom-scrollbar relative"
+      >
+        <div className="min-w-max flex flex-col">
+          
+          {/* MONTH ROW */}
+          <div className="flex border-b border-slate-200 bg-slate-100 h-11 items-stretch">
+            {/* Sticky Corner Header */}
+            <div className="w-48 md:w-64 shrink-0 sticky left-0 z-30 bg-slate-100 border-r border-slate-200 flex items-center px-4 text-[10px] font-extrabold text-slate-500 uppercase tracking-wider shadow-xs">
+              {isRtl ? 'بند العمل والرمز / الأنشطة الميدانية' : 'Work Item Code / Activities'}
+            </div>
+            
+            {/* Spanning Month Cells */}
+            {monthsGroup.map((m, i) => (
+              <div
+                key={i}
+                className="border-r border-slate-200 flex items-center justify-center text-[10px] font-extrabold text-[#040957] uppercase tracking-wider bg-slate-100 flex-shrink-0"
+                style={{ width: `${m.count * 40}px` }}
+              >
+                <span className="bg-white px-2.5 py-0.5 rounded-lg border border-slate-200 shadow-2xs font-extrabold">
+                  {m.monthStr}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* DAY NUMBER ROW */}
+          <div className="flex border-b border-slate-200 bg-white h-14 items-stretch">
+            {/* Sticky Details Sub-header */}
+            <div className="w-48 md:w-64 shrink-0 sticky left-0 z-30 bg-slate-50 border-r border-slate-200 flex items-center justify-between px-4 text-[9px] font-extrabold text-slate-400 uppercase tracking-wider shadow-xs">
+              <span>{isRtl ? 'الأيام والإنتاجية المستهدفة' : 'Days & Planned Daily Target'}</span>
+              <span className="font-mono text-[9px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md border border-blue-100 font-extrabold">
+                {daysList.length}d
+              </span>
+            </div>
+
+            {/* Days List Grid Numbers */}
+            {daysList.map((d, i) => {
+              const isToday = d.toDateString() === todayDate.toDateString();
+              const isWeekend = d.getDay() === 5 || d.getDay() === 6; // Friday and Saturday
+              const dayNum = d.getDate();
+              const dayLabel = d.toLocaleDateString(lang === 'ar' ? 'ar' : 'en', { weekday: 'narrow' });
+              
+              return (
+                <div
+                  key={i}
+                  className={`border-r border-slate-100 flex flex-col items-center justify-center text-[10px] transition-all relative flex-shrink-0 ${
+                    isToday 
+                      ? 'bg-rose-50 text-rose-700 font-black border-r-rose-200 border-l-rose-200 ring-2 ring-rose-500/35 z-10' 
+                      : isWeekend 
+                      ? 'bg-slate-100/50 text-slate-400' 
+                      : 'text-slate-500 hover:bg-slate-50/80'
+                  }`}
+                  style={{ width: '40px' }}
+                >
+                  <span className="text-[8px] opacity-75 font-bold uppercase">{dayLabel}</span>
+                  <span className="text-xs font-black font-sans mt-0.5">{dayNum}</span>
+                  {isToday && (
+                    <span className="absolute -top-1 bg-rose-500 text-white text-[7px] font-black px-1 rounded-sm uppercase tracking-wider">
+                      {isRtl ? 'اليوم' : 'NOW'}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* BODY ROWS (WORK ITEMS -> ACTIVITIES) */}
+          {filteredWorkItems.map(wi => {
+            const wiActivities = filteredActivities.filter(act => act.workItemId === wi.id);
+            const isExpanded = expandedWorkItemIds.includes(wi.id);
+
+            return (
+              <React.Fragment key={wi.id}>
+                {/* WORK ITEM LEVEL HEADER ROW */}
+                <div className="flex border-b border-slate-200 bg-slate-50/40 items-stretch">
+                  <div className="w-48 md:w-64 shrink-0 sticky left-0 z-20 bg-slate-50/95 border-r border-slate-200 p-3.5 flex items-center justify-between shadow-xs">
+                    <div className="flex items-center gap-1.5 truncate">
+                      <button 
+                        onClick={() => toggleExpandWi(wi.id)}
+                        className="p-1 rounded hover:bg-slate-200 text-slate-500 transition-colors"
+                      >
+                        {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                      </button>
+                      <span className="font-extrabold text-xs text-slate-800 truncate">
+                        {isRtl ? wi.nameAr : wi.nameEn}
+                      </span>
+                    </div>
+                    <span className="font-mono text-[8.5px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded font-black flex-shrink-0 uppercase">
+                      {wi.itemNumber}
+                    </span>
+                  </div>
+
+                  {/* Empty Grid cells for Work Item Row */}
+                  <div className="flex flex-shrink-0">
+                    {daysList.map((d, i) => {
+                      const isToday = d.toDateString() === todayDate.toDateString();
+                      const isWeekend = d.getDay() === 5 || d.getDay() === 6;
+                      return (
+                        <div 
+                          key={i} 
+                          className={`border-r border-slate-100/60 h-12 relative ${
+                            isToday ? 'bg-rose-50/20' : ''
+                          } ${isWeekend ? 'bg-slate-100/20' : ''}`}
+                          style={{ width: '40px' }}
+                        ></div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* ACTIVITIES LEVEL ROWS (Rendered if Work Item is expanded) */}
+                {isExpanded && (
+                  wiActivities.length === 0 ? (
+                    <div className="flex border-b border-slate-100 items-stretch bg-slate-50/10">
+                      <div className="w-48 md:w-64 shrink-0 sticky left-0 z-20 bg-slate-50/20 border-r border-slate-200 p-3 pl-8 text-[10px] text-slate-400 font-bold italic">
+                        {isRtl ? 'لا توجد أنشطة' : 'No activities'}
+                      </div>
+                      <div className="flex flex-shrink-0">
+                        {daysList.map((d, i) => (
+                          <div key={i} className="border-r border-slate-100/30 h-10 bg-slate-50/5" style={{ width: '40px' }}></div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    wiActivities.map(act => {
+                      const progress = getActivityProgress(act, progressUpdates);
+                      const stats = calculateSmartPlanningValues(act);
+                      const actStatus = stats.status;
+
+                      // Deduce dates
+                      const startStr = stats.startStr || (currentProject ? currentProject.startDate : '');
+                      const endStr = stats.expectedFinishDateStr;
+                      
+                      const parseDateLocal = (str: string | Date | undefined): Date => {
+                        if (!str) return new Date();
+                        if (str instanceof Date) {
+                          const d = new Date(str);
+                          d.setHours(0, 0, 0, 0);
+                          return d;
+                        }
+                        const parts = str.split('T')[0].split('-');
+                        if (parts.length === 3) {
+                          return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), 0, 0, 0, 0);
+                        }
+                        const d = new Date(str);
+                        d.setHours(0, 0, 0, 0);
+                        return d;
+                      };
+
+                      const actStart = parseDateLocal(startStr);
+                      const actEnd = parseDateLocal(endStr);
+                      const totalDaysAct = Math.ceil((actEnd.getTime() - actStart.getTime()) / (1000 * 60 * 60 * 24)) || 1;
+                      const remainingDaysAct = progress >= 100 ? 0 : Math.max(0, Math.ceil((actEnd.getTime() - todayDate.getTime()) / (1000 * 60 * 60 * 24)));
+
+                      const isSelected = inspectedActivityId === act.id;
+                      const isHovered = hoveredActivityId === act.id;
+
+                      // Predecessor and successor state detection
+                      const isPredecessorOfHovered = hoveredActivityId ? (() => {
+                        const hoveredAct = activities.find(a => a.id === hoveredActivityId);
+                        return hoveredAct?.dependsOnActivityId === act.id;
+                      })() : false;
+                      const isDependentOfHovered = hoveredActivityId ? act.dependsOnActivityId === hoveredActivityId : false;
+
+                      let rowAccentClass = '';
+                      if (isSelected) {
+                        rowAccentClass = 'bg-[#0080FF]/5 border-l-4 border-l-[#0080FF]';
+                      } else if (isHovered) {
+                        rowAccentClass = 'bg-[#0080FF]/5';
+                      } else if (isPredecessorOfHovered) {
+                        rowAccentClass = 'bg-violet-50/10 border-l-4 border-l-violet-500';
+                      } else if (isDependentOfHovered) {
+                        rowAccentClass = 'bg-emerald-50/5 border-l-4 border-l-emerald-500';
+                      }
+
+                      return (
+                        <div 
+                          key={act.id} 
+                          onClick={() => setInspectedActivityId(act.id)}
+                          className={`flex border-b border-slate-100 hover:bg-slate-50/40 group transition-all duration-150 items-stretch cursor-pointer ${rowAccentClass}`}
+                          onMouseEnter={() => setHoveredActivityId(act.id)}
+                          onMouseLeave={() => setHoveredActivityId(null)}
+                        >
+                          {/* Sticky Info Panel */}
+                          <div className={`w-48 md:w-64 shrink-0 sticky left-0 z-20 border-r border-slate-200 p-3 pl-8 flex flex-col justify-center shadow-xs transition-all ${
+                            isSelected ? 'bg-blue-50/95' :
+                            isHovered ? 'bg-slate-50' :
+                            isPredecessorOfHovered ? 'bg-violet-50/90' :
+                            isDependentOfHovered ? 'bg-emerald-50/90' :
+                            'bg-white'
+                          }`}>
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="font-extrabold text-[11px] text-slate-800 truncate max-w-[140px] md:max-w-[180px]">
+                                {isRtl ? act.nameAr : act.nameEn}
+                              </span>
+                              <span className="font-mono text-[9px] font-black text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
+                                {progress}%
+                              </span>
+                            </div>
+
+                            {/* Countdowns and tags */}
+                            <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                              {act.isCritical && (
+                                <span className="text-[7.5px] font-black text-rose-800 bg-rose-50 border border-rose-200 px-1 py-0.5 rounded uppercase">
+                                  {isRtl ? 'حرج 🚨' : 'Critical'}
+                                </span>
+                              )}
+                              <span className={`text-[7.5px] font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5 ${
+                                remainingDaysAct === 0 ? 'bg-slate-100 text-slate-500' : 'bg-blue-50 text-blue-800'
+                              }`}>
+                                <Hourglass className="w-2.5 h-2.5" />
+                                <span>
+                                  {remainingDaysAct === 0 ? (isRtl ? 'منتهي' : 'Finished') :
+                                   isRtl ? `${remainingDaysAct} يوم` : `${remainingDaysAct}d`}
+                                </span>
+                              </span>
+                              
+                              {act.dependsOnActivityId && (
+                                <span className="text-[7.5px] font-bold text-violet-800 bg-violet-50 px-1 py-0.5 rounded flex items-center gap-0.5">
+                                  <ArrowRightLeft className="w-2 h-2 text-violet-500" />
+                                  <span>{isRtl ? 'تابع' : 'Linked'}</span>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Daily Cells */}
+                          <div className="flex flex-shrink-0">
+                            {daysList.map((day, dIdx) => {
+                              const isPlannedOnDay = day >= actStart && day <= actEnd;
+                              const isToday = day.toDateString() === todayDate.toDateString();
+                              const isWeekend = day.getDay() === 5 || day.getDay() === 6;
+
+                              const dailyPlannedQty = act.plannedDailyProduction 
+                                ? act.plannedDailyProduction 
+                                : act.totalQuantity 
+                                ? Math.round(act.totalQuantity / totalDaysAct) 
+                                : 0;
+
+                              let cellBgClass = 'bg-transparent';
+                              let cellBorderClass = 'border-slate-100/60';
+
+                              if (isPlannedOnDay) {
+                                if (progress >= 100) {
+                                  cellBgClass = 'bg-emerald-100/50 hover:bg-emerald-150/70 text-emerald-800';
+                                  cellBorderClass = 'border-emerald-200';
+                                } else if (isHovered || isSelected) {
+                                  cellBgClass = 'bg-[#0080FF]/30 text-[#0080FF] font-black shadow-xs';
+                                  cellBorderClass = 'border-[#0080FF]';
+                                } else if (isPredecessorOfHovered) {
+                                  cellBgClass = 'bg-violet-100/45 text-violet-900';
+                                  cellBorderClass = 'border-violet-300';
+                                } else if (isDependentOfHovered) {
+                                  cellBgClass = 'bg-teal-100/45 text-teal-900';
+                                  cellBorderClass = 'border-teal-300';
+                                } else if (act.isCritical) {
+                                  cellBgClass = 'bg-rose-100/40 text-rose-900 font-extrabold';
+                                  cellBorderClass = 'border-rose-300';
+                                } else if (actStatus === 'Delayed') {
+                                  cellBgClass = 'bg-amber-100/45 text-amber-900';
+                                  cellBorderClass = 'border-amber-200';
+                                } else {
+                                  cellBgClass = 'bg-blue-100/35 text-blue-900';
+                                  cellBorderClass = 'border-blue-200';
+                                }
+                              } else {
+                                cellBgClass = isWeekend ? 'bg-slate-50/50' : 'bg-transparent';
+                              }
+
+                              return (
+                                <div
+                                  key={dIdx}
+                                  className={`border-r h-13 flex flex-col items-center justify-center relative transition-all duration-100 group/cell flex-shrink-0 ${cellBgClass} ${cellBorderClass} ${
+                                    isToday ? 'ring-2 ring-rose-500/40 z-10' : ''
+                                  }`}
+                                  style={{ width: '40px' }}
+                                >
+                                  {/* Production quantity indicator inside cells */}
+                                  {isPlannedOnDay && dailyPlannedQty > 0 && (
+                                    <span className="text-[9px] font-mono font-bold select-none opacity-90">
+                                      {dailyPlannedQty}
+                                    </span>
+                                  )}
+
+                                  {/* Beautiful hover tooltip */}
+                                  <div className="absolute left-1/2 bottom-full mb-2 -translate-x-1/2 hidden group-hover/cell:flex flex-col bg-white text-slate-800 p-3 rounded-xl shadow-xl border border-slate-200 z-50 w-52 text-[10px] pointer-events-none">
+                                    <div className="font-extrabold text-[10px] text-[#0080FF] border-b border-slate-100 pb-1 mb-1">
+                                      {isRtl ? act.nameAr : act.nameEn}
+                                    </div>
+                                    <div className="space-y-1">
+                                      <div className="flex justify-between">
+                                        <span className="text-slate-500">{isRtl ? 'التاريخ المخطط:' : 'Planned Date:'}</span>
+                                        <span className="font-bold">{day.toLocaleDateString(lang === 'ar' ? 'ar-SA' : 'en-US', { day: 'numeric', month: 'short' })}</span>
+                                      </div>
+                                      {isPlannedOnDay && (
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-slate-500">{isRtl ? 'الإنتاجية اليومية:' : 'Daily Target:'}</span>
+                                          <strong className="text-[#0080FF] font-mono bg-blue-50 px-1 py-0.5 rounded">{dailyPlannedQty} {act.unit}</strong>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          }
+                        </div>
+                        </div>
+                      );
+                    })
+                  )
+                )}
+              </React.Fragment>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function WorkItemsList({
@@ -79,6 +478,7 @@ export default function WorkItemsList({
 
   // Selected state
   const [selectedProjectId, setSelectedProjectId] = useState<string>(projects[0]?.id || '');
+  const [viewMode, setViewMode] = useState<'list' | 'timeline'>('list');
   const [expandedWorkItemIds, setExpandedWorkItemIds] = useState<string[]>([]);
 
   // Modals state
@@ -113,6 +513,108 @@ export default function WorkItemsList({
   const currentProject = useMemo(() => {
     return projects.find(p => p.id === selectedProjectId);
   }, [projects, selectedProjectId]);
+
+  // Interactive hovered activity on the timeline
+  const [hoveredActivityId, setHoveredActivityId] = useState<string | null>(null);
+
+  // Scroll handler to center on Today
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const todayDate = useMemo(() => getSystemToday(), []);
+
+  const parseDateLocal = (str: string | Date | undefined): Date => {
+    if (!str) return new Date();
+    if (str instanceof Date) {
+      const d = new Date(str);
+      d.setHours(0, 0, 0, 0);
+      return d;
+    }
+    const parts = str.split('T')[0].split('-');
+    if (parts.length === 3) {
+      return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), 0, 0, 0, 0);
+    }
+    const d = new Date(str);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  };
+
+  // Compute the total project bounds for the active project
+  const timelineData = useMemo(() => {
+    if (!currentProject) return null;
+    const projStart = parseDateLocal(currentProject.startDate);
+    const projEnd = parseDateLocal(currentProject.endDate);
+    
+    const start = isNaN(projStart.getTime()) ? new Date() : projStart;
+    const end = isNaN(projEnd.getTime()) ? new Date(start.getTime() + 30 * 24 * 60 * 60 * 1000) : projEnd;
+
+    // Frame the project nicely on both sides
+    const minDate = new Date(start);
+    minDate.setDate(minDate.getDate() - 3);
+    minDate.setHours(0, 0, 0, 0);
+    const maxDate = new Date(end);
+    maxDate.setDate(maxDate.getDate() + 7);
+    maxDate.setHours(0, 0, 0, 0);
+
+    const totalDays = Math.ceil((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) || 1;
+
+    return { minDate, maxDate, totalDays };
+  }, [currentProject]);
+
+  // Generate a flat list of days within the padded range
+  const daysList = useMemo(() => {
+    if (!timelineData) return [];
+    const list = [];
+    let curr = new Date(timelineData.minDate);
+    curr.setHours(0, 0, 0, 0);
+    const maxIterations = 400; // Safety cap
+    let count = 0;
+    while (curr <= timelineData.maxDate && count < maxIterations) {
+      list.push(new Date(curr));
+      curr = new Date(curr.getTime() + 24 * 60 * 60 * 1000);
+      curr.setHours(0, 0, 0, 0);
+      count++;
+    }
+    return list;
+  }, [timelineData]);
+
+  // Group days by month to render the top spanning month row
+  const monthsGroup = useMemo(() => {
+    const groups: { monthStr: string; count: number; date: Date }[] = [];
+    daysList.forEach(d => {
+      const monthStr = d.toLocaleDateString(lang === 'ar' ? 'ar-SA' : 'en-US', { month: 'long', year: 'numeric' });
+      const lastGroup = groups[groups.length - 1];
+      if (lastGroup && lastGroup.monthStr === monthStr) {
+        lastGroup.count++;
+      } else {
+        groups.push({ monthStr, count: 1, date: d });
+      }
+    });
+    return groups;
+  }, [daysList, lang]);
+
+  const handleScrollToToday = () => {
+    if (scrollContainerRef.current) {
+      const container = scrollContainerRef.current;
+      const todayElement = container.querySelector('.bg-rose-50');
+      if (todayElement) {
+        const containerWidth = container.clientWidth;
+        const elemLeft = (todayElement as HTMLElement).offsetLeft;
+        const elemWidth = (todayElement as HTMLElement).clientWidth;
+        container.scrollTo({
+          left: elemLeft - (containerWidth / 2) + (elemWidth / 2),
+          behavior: 'smooth'
+        });
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (viewMode === 'timeline') {
+      const timer = setTimeout(() => {
+        handleScrollToToday();
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [viewMode, daysList]);
 
   const projectWorkItems = useMemo(() => {
     return workItems.filter(wi => wi.projectId === selectedProjectId);
@@ -272,7 +774,21 @@ export default function WorkItemsList({
   };
 
   // Predictive calculations (Mathematical Schedule Engine)
-  const calculateSmartPlanningValues = (act: Activity) => {
+  const calculateSmartPlanningValues = (act: Activity, visited = new Set<string>()): any => {
+    if (visited.has(act.id)) {
+      return {
+        sumProductivity: 5,
+        expectedDurationDays: 0,
+        expectedFinishDateStr: currentProject ? currentProject.startDate : '',
+        actualCompleted: 0,
+        remaining: 0,
+        status: 'On Track',
+        reason: '',
+        startStr: currentProject ? currentProject.startDate : ''
+      };
+    }
+    visited.add(act.id);
+
     const activeWorkers = workers.filter(w => act.workerIds.includes(w.id));
     const sumProductivity = activeWorkers.reduce((acc, curr) => acc + (curr.dailyProductivity || 0), 0) || 5; 
 
@@ -285,8 +801,13 @@ export default function WorkItemsList({
     let startStr = currentProject ? currentProject.startDate : '';
     if (act.dependsOnActivityId) {
       const dep = activities.find(a => a.id === act.dependsOnActivityId);
-      if (dep && dep.expectedFinishDate) {
-        startStr = dep.expectedFinishDate;
+      if (dep) {
+        if (dep.expectedFinishDate) {
+          startStr = dep.expectedFinishDate;
+        } else {
+          const depStats = calculateSmartPlanningValues(dep, visited);
+          startStr = depStats.expectedFinishDateStr;
+        }
       }
     }
     const expectedFinishDateStr = act.expectedFinishDate || (() => {
@@ -299,7 +820,7 @@ export default function WorkItemsList({
     const actualCompleted = Math.min(act.totalQuantity, Math.round((act.totalQuantity * actualProgress) / 100));
     const remaining = isCompleted ? 0 : Math.max(0, act.totalQuantity - actualCompleted);
 
-    const { status, reason } = getActivityStatus(act, progressUpdates, materials);
+    const { status, reason } = getActivityStatus(act, progressUpdates, materials, currentProject, activities);
 
     return {
       sumProductivity,
@@ -308,7 +829,8 @@ export default function WorkItemsList({
       actualCompleted,
       remaining,
       status,
-      reason
+      reason,
+      startStr
     };
   };
 
@@ -707,6 +1229,32 @@ export default function WorkItemsList({
             <span>{isRtl ? 'أصناف رئيسية' : 'Primary Only'}</span>
           </button>
         </div>
+
+        {/* View Mode Switcher Pill */}
+        <div className="flex bg-slate-100 p-1 rounded-xl items-center self-stretch md:self-auto border border-slate-200/50">
+          <button
+            onClick={() => setViewMode('list')}
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              viewMode === 'list' 
+                ? 'bg-white text-[#0B1B3D] shadow-xs font-extrabold' 
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <List className="w-3.5 h-3.5" />
+            <span>{isRtl ? 'عرض القائمة' : 'List View'}</span>
+          </button>
+          <button
+            onClick={() => setViewMode('timeline')}
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              viewMode === 'timeline' 
+                ? 'bg-[#0080FF] text-white shadow-xs font-extrabold' 
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Calendar className="w-3.5 h-3.5" />
+            <span>{isRtl ? 'المخطط الزمني' : 'Timeline'}</span>
+          </button>
+        </div>
       </div>
 
       {/* MAIN TWO COLUMN LAYOUT (Image 2 style) */}
@@ -714,9 +1262,34 @@ export default function WorkItemsList({
         
         {/* Left/Center side: The Cases List Table (2/3 width) */}
         <div className="lg:col-span-2 space-y-3">
-          
-          {/* Column Header for cases table */}
-          <div className="hidden md:grid grid-cols-6 gap-4 px-4 py-3 bg-slate-100 border-b border-slate-200 rounded-xl text-[10px] font-black uppercase text-slate-500 tracking-wider">
+          {viewMode === 'timeline' ? (
+            <TimelineGanttView
+              isRtl={isRtl}
+              lang={lang}
+              currentProject={currentProject}
+              filteredWorkItems={filteredWorkItems}
+              filteredActivities={filteredActivities}
+              activities={activities}
+              progressUpdates={progressUpdates}
+              materials={materials}
+              expandedWorkItemIds={expandedWorkItemIds}
+              toggleExpandWi={toggleExpandWi}
+              inspectedActivityId={inspectedActivityId}
+              setInspectedActivityId={setInspectedActivityId}
+              hoveredActivityId={hoveredActivityId}
+              setHoveredActivityId={setHoveredActivityId}
+              scrollContainerRef={scrollContainerRef}
+              todayDate={todayDate}
+              timelineData={timelineData}
+              daysList={daysList}
+              monthsGroup={monthsGroup}
+              handleScrollToToday={handleScrollToToday}
+              calculateSmartPlanningValues={calculateSmartPlanningValues}
+            />
+          ) : (
+            <>
+              {/* Column Header for cases table */}
+              <div className="hidden md:grid grid-cols-6 gap-4 px-4 py-3 bg-slate-100 border-b border-slate-200 rounded-xl text-[10px] font-black uppercase text-slate-500 tracking-wider">
             <div>{isRtl ? 'بند العمل والرمز' : 'Work Item Code'}</div>
             <div>{isRtl ? 'المشرف المسؤول' : 'Lead Engineer'}</div>
             <div>{isRtl ? 'التقدم والمنجز' : 'Progress'}</div>
@@ -1094,6 +1667,8 @@ export default function WorkItemsList({
                 </div>
               );
             })
+          )}
+            </>
           )}
         </div>
 

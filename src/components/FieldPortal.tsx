@@ -21,7 +21,8 @@ import {
   MaterialConsumption,
   MaterialDelivery,
   FieldRequest,
-  EquipmentItem
+  EquipmentItem,
+  MorningMeetingPlan
 } from '../types';
 import { motion } from 'motion/react';
 import { 
@@ -48,6 +49,7 @@ import {
   FileSpreadsheet,
   Globe,
   Printer,
+  Download,
   Eye,
   Edit,
   Package,
@@ -58,7 +60,7 @@ import {
   ShoppingCart,
   Zap
 } from 'lucide-react';
-import { getActivityProgress } from '../utils/progressCalculations';
+import { getActivityProgress, getSystemToday } from '../utils/progressCalculations';
 import { dbApi } from '../lib/api';
 import { runWithOklchSanitizer } from '../utils/pdfSanitizer';
 
@@ -73,6 +75,7 @@ interface FieldPortalProps {
   equipment: EquipmentItem[];
   progressUpdates?: ProgressUpdate[];
   fieldRequests?: FieldRequest[];
+  morningMeetingPlans?: MorningMeetingPlan[];
   onAddPendingSubmission: (submission: FieldWorkSubmission) => Promise<void>;
   onAddFieldRequest: (request: Omit<FieldRequest, 'id'>) => Promise<void>;
   onReturnToMain: () => void;
@@ -90,6 +93,7 @@ export default function FieldPortal({
   equipment,
   progressUpdates = [],
   fieldRequests = [],
+  morningMeetingPlans = [],
   onAddPendingSubmission,
   onAddFieldRequest,
   onReturnToMain,
@@ -99,7 +103,8 @@ export default function FieldPortal({
   
   // Choose project
   const [selectedProjectId, setSelectedProjectId] = useState<string>(projects[0]?.id || '');
-  const [reportDate, setReportDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [reportDate, setReportDate] = useState<string>(getSystemToday().toISOString().split('T')[0]);
+  const [morningPlanSearchDate, setMorningPlanSearchDate] = useState<string>(getSystemToday().toISOString().split('T')[0]);
 
   // Supervisor Check-in state
   const [supName, setSupName] = useState('');
@@ -119,6 +124,7 @@ export default function FieldPortal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [lastSubmission, setLastSubmission] = useState<FieldWorkSubmission | null>(null);
   const [isPrinting, setIsPrinting] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState<string | null>(null);
 
   // 2. Attendance state
   const [workerAttendanceState, setWorkerAttendanceState] = useState<Record<string, {
@@ -667,6 +673,146 @@ export default function FieldPortal({
     }
   };
 
+  const handlePrintMorningMeetingPlanPDF = async (plan: MorningMeetingPlan) => {
+    try {
+      setIsExportingPdf(plan.id);
+      const html2pdf = (await import('html2pdf.js')).default;
+      const projectName = selectedProject ? (isRtl ? selectedProject.nameAr : selectedProject.nameEn) : '---';
+
+      const content = `
+        <div style="font-family: 'Cairo', 'Inter', sans-serif; padding: 30px; direction: ${isRtl ? 'rtl' : 'ltr'}; color: #1e293b; background-color: white;">
+          <!-- Header Card -->
+          <div style="border-bottom: 3px double #040957; padding-bottom: 18px; margin-bottom: 22px; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <h1 style="margin: 0; font-size: 18px; color: #040957; font-weight: 800;">${isRtl ? settings.companyNameAr : settings.companyNameEn}</h1>
+              <p style="margin: 4px 0 0 0; font-size: 10px; color: #0080FF; font-weight: bold; letter-spacing: 0.5px; text-transform: uppercase;">
+                ${isRtl ? 'خطة وجدول أعمال الاجتماع الصباحي والتحضير الميداني' : 'Morning Safety Alignment & Daily Target Briefing'}
+              </p>
+            </div>
+            <div style="text-align: ${isRtl ? 'left' : 'right'}; font-size: 9px; color: #64748b;">
+              <div style="font-weight: bold; color: #040957; font-size: 10px;">${isRtl ? 'تاريخ التصدير:' : 'Exported:'}</div>
+              <div>${new Date().toLocaleString(isRtl ? 'ar-SA' : 'en-GB', { dateStyle: 'medium', timeStyle: 'short' })}</div>
+            </div>
+          </div>
+
+          <!-- Document Meta Details Grid -->
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 22px; background-color: #f8fafc; border-radius: 14px; border: 1px solid #e2e8f0;">
+            <tr>
+              <td colspan="2" style="padding: 15px; border-bottom: 1px dashed #cbd5e1;">
+                <span style="font-size: 8px; font-weight: 800; color: #64748b; text-transform: uppercase; display: block; letter-spacing: 0.5px; margin-bottom: 4px;">${isRtl ? 'المشروع الإنشائي' : 'Construction Project'}</span>
+                <span style="font-size: 13px; font-weight: 800; color: #040957;">${projectName}</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 15px; width: 50%; border-right: 1px dashed #cbd5e1;">
+                <span style="font-size: 8px; font-weight: 800; color: #64748b; text-transform: uppercase; display: block; letter-spacing: 0.5px; margin-bottom: 4px;">${isRtl ? 'تاريخ خطة الاجتماع' : 'Plan / Briefing Date'}</span>
+                <span style="font-size: 11px; font-weight: bold; color: #1e293b; font-family: monospace;">${plan.date}</span>
+              </td>
+              <td style="padding: 15px; width: 50%;">
+                <span style="font-size: 8px; font-weight: 800; color: #64748b; text-transform: uppercase; display: block; letter-spacing: 0.5px; margin-bottom: 4px;">${isRtl ? 'حالة التفعيل الميداني' : 'Field Deployment Status'}</span>
+                <span style="font-size: 10px; font-weight: bold; color: ${plan.isArchived ? '#dc2626' : '#16a34a'};">
+                  ${plan.isArchived 
+                    ? (isRtl ? 'مؤرشفة / غير نشطة' : 'Archived / Historical') 
+                    : (isRtl ? 'نشطة ومفعّلة ميدانياً' : 'Active / Site Deployed')}
+                </span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 15px; width: 50%; border-right: 1px dashed #cbd5e1; border-top: 1px dashed #cbd5e1;">
+                <span style="font-size: 8px; font-weight: 800; color: #64748b; text-transform: uppercase; display: block; letter-spacing: 0.5px; margin-bottom: 4px;">${isRtl ? 'الرقم المرجعي للخطة' : 'Plan Reference ID'}</span>
+                <span style="font-size: 10px; font-weight: bold; color: #475569; font-family: monospace;">${plan.id}</span>
+              </td>
+              <td style="padding: 15px; width: 50%; border-top: 1px dashed #cbd5e1;">
+                <span style="font-size: 8px; font-weight: 800; color: #64748b; text-transform: uppercase; display: block; letter-spacing: 0.5px; margin-bottom: 4px;">${isRtl ? 'تاريخ النشر والإنشاء' : 'Publish Date & Time'}</span>
+                <span style="font-size: 10px; font-weight: bold; color: #475569; font-family: monospace;">
+                  ${plan.createdAt ? new Date(plan.createdAt).toLocaleString(isRtl ? 'ar-SA' : 'en-GB') : plan.date}
+                </span>
+              </td>
+            </tr>
+          </table>
+
+          <!-- Meeting Theme Title -->
+          <div style="margin-bottom: 22px; border-left: 4px solid #0080FF; border-right: ${isRtl ? '4px solid #0080FF' : 'none'}; background-color: #f0f7ff; padding: 12px 18px; border-radius: 6px;">
+            <span style="font-size: 8px; font-weight: 800; color: #0080FF; text-transform: uppercase; display: block; letter-spacing: 0.5px;">${isRtl ? 'العنوان الرئيسي للاجتماع والتوجيه' : 'Key Directive / Briefing Title'}</span>
+            <h2 style="margin: 5px 0 0 0; font-size: 13px; font-weight: 800; color: #040957; line-height: 1.4;">
+              ${isRtl ? plan.titleAr : plan.titleEn}
+            </h2>
+            ${isRtl && plan.titleEn ? `
+              <p style="margin: 4px 0 0 0; font-size: 10px; color: #64748b; font-family: monospace;">${plan.titleEn}</p>
+            ` : ''}
+            ${!isRtl && plan.titleAr ? `
+              <p style="margin: 4px 0 0 0; font-size: 10px; color: #64748b; font-family: 'Cairo', sans-serif;">${plan.titleAr}</p>
+            ` : ''}
+          </div>
+
+          <!-- Guidelines & Directives -->
+          <div style="margin-bottom: 30px;">
+            <h3 style="font-size: 11px; font-weight: 800; color: #040957; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px;">
+              📋 ${isRtl ? 'بنود التوجيه اليومي وخطة العمل التفصيلية' : 'Daily Safety Guidelines & Execution Items'}
+            </h3>
+            <div style="font-size: 11px; line-height: 1.7; color: #334155; white-space: pre-line; background-color: #fafafa; border: 1px solid #f1f5f9; border-radius: 12px; padding: 18px; font-family: inherit;">${plan.content}</div>
+          </div>
+
+          <!-- Official Sign-off Signatures Grid -->
+          <div style="margin-top: 50px; border-top: 1px solid #cbd5e1; padding-top: 25px;">
+            <h4 style="font-size: 10px; font-weight: 800; color: #040957; text-transform: uppercase; margin-bottom: 20px; text-align: center; letter-spacing: 1px;">
+              ${isRtl ? 'اعتماد وموافقة الإدارة الميدانية وممثلي السلامة' : 'Official Site Leadership Sign-off'}
+            </h4>
+            
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr>
+                <td style="width: 33%; text-align: center; padding: 10px;">
+                  <p style="margin: 0; font-size: 9px; font-weight: bold; color: #475569;">${isRtl ? 'مشرف الموقع المسؤول' : 'Supervisor-in-Charge'}</p>
+                  <div style="height: 45px; border-bottom: 1px dashed #cbd5e1; margin-bottom: 5px;"></div>
+                  <p style="margin: 0; font-size: 8px; color: #94a3b8;">${isRtl ? 'التوقيع والاسم' : 'Signature & Date'}</p>
+                </td>
+                <td style="width: 33%; text-align: center; padding: 10px;">
+                  <p style="margin: 0; font-size: 9px; font-weight: bold; color: #475569;">${isRtl ? 'مسؤول السلامة والصحة المهنية' : 'HSE Safety Officer'}</p>
+                  <div style="height: 45px; border-bottom: 1px dashed #cbd5e1; margin-bottom: 5px;"></div>
+                  <p style="margin: 0; font-size: 8px; color: #94a3b8;">${isRtl ? 'التوقيع والاسم' : 'Signature & Date'}</p>
+                </td>
+                <td style="width: 33%; text-align: center; padding: 10px;">
+                  <p style="margin: 0; font-size: 9px; font-weight: bold; color: #475569;">${isRtl ? 'مدير المشروع المعتمد' : 'Project Manager'}</p>
+                  <div style="height: 45px; border-bottom: 1px dashed #cbd5e1; margin-bottom: 5px;"></div>
+                  <p style="margin: 0; font-size: 8px; color: #94a3b8;">${isRtl ? 'الختم والتوقيع الرسمي' : 'Official Stamp & Signature'}</p>
+                </td>
+              </tr>
+            </table>
+          </div>
+
+          <!-- Professional Footer -->
+          <div style="margin-top: 45px; text-align: center; border-top: 1px dashed #cbd5e1; padding-top: 15px;">
+            <p style="font-size: 8px; color: #94a3b8; margin: 0; line-height: 1.4;">
+              ${isRtl 
+                ? 'تم إصدار هذا المستند رسمياً من بوابة المشرف الميدانية الرقمية - شركة الرشيد للمقاولات' 
+                : 'This document was officially generated via Rashed Al-Subaie Central Digital Field Supervisor Portal'}
+            </p>
+            <p style="font-size: 7px; color: #cbd5e1; margin: 3px 0 0 0; font-family: monospace;">
+              Document Reference: MM-PLAN-${plan.id.toUpperCase()}-${plan.date}
+            </p>
+          </div>
+        </div>
+      `;
+
+      const opt = {
+        margin: 10,
+        filename: `Morning_Meeting_Plan_${plan.date}_${plan.id}.pdf`,
+        image: { type: 'jpeg' as const, quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
+      };
+
+      await runWithOklchSanitizer(async () => {
+        await html2pdf().set(opt).from(content).save();
+      });
+    } catch (error) {
+      console.error('Morning Meeting Plan PDF Error:', error);
+      alert(isRtl ? 'حدث خطأ أثناء تصدير التقرير بصيغة PDF' : 'An error occurred while exporting PDF');
+    } finally {
+      setIsExportingPdf(null);
+    }
+  };
+
   const handlePrintProductionDetailPDF = async (update: Omit<ProgressUpdate, 'id' | 'projectId'>) => {
     try {
       const html2pdf = (await import('html2pdf.js')).default;
@@ -842,6 +988,11 @@ export default function FieldPortal({
 
       // Compile Attendance records
       const attendanceList: AttendanceRecord[] = [];
+      // Use reportDate with current time for all timestamps to align reporting day on dashboards
+      const now = new Date();
+      const timePart = now.toISOString().split('T')[1];
+      const reportTimestamp = `${reportDate}T${timePart}`;
+
       Object.keys(workerAttendanceState).forEach((wId) => {
         const state = workerAttendanceState[wId];
         const wrk = workers.find(w => w.id === wId);
@@ -862,7 +1013,7 @@ export default function FieldPortal({
             shiftTime: state.isPresent ? state.shiftTime : '',
             supervisorName: supName,
             notes: state.notes,
-            timestamp: new Date().toISOString()
+            timestamp: reportTimestamp
           });
         }
       });
@@ -873,7 +1024,7 @@ export default function FieldPortal({
         id: `upd-${Date.now()}-${index}`,
         projectId: selectedProjectId,
         reporterName: supName,
-        timestamp: new Date().toISOString()
+        timestamp: reportTimestamp
       }));
 
       // Assemble SafetyRecord if exists
@@ -886,7 +1037,7 @@ export default function FieldPortal({
           violationsCount: safeViolations,
           notes: safeNotes,
           correctiveActions: safeActions,
-          timestamp: new Date().toISOString()
+          timestamp: reportTimestamp
         };
       }
 
@@ -902,7 +1053,7 @@ export default function FieldPortal({
           impactLevel: delayImpact,
           resolutionPlanAr: delayResPlanAr,
           resolutionPlanEn: delayResPlanEn,
-          timestamp: new Date().toISOString()
+          timestamp: reportTimestamp
         };
       }
 
@@ -918,7 +1069,7 @@ export default function FieldPortal({
           priority: issuePriority,
           photos: [],
           isApproved: false,
-          timestamp: new Date().toISOString()
+          timestamp: reportTimestamp
         };
       }
 
@@ -938,7 +1089,7 @@ export default function FieldPortal({
         nationalId: supNationalId,
         jobTitle: supTitle,
         signatureData: signatureDataUrl || signatureText || 'Authorized Digitally',
-        timestamp: new Date().toISOString(),
+        timestamp: reportTimestamp,
         status: 'Pending',
         checkIn: checkInRecord,
         attendanceRecords: attendanceList,
@@ -1701,6 +1852,147 @@ export default function FieldPortal({
                       className="w-full border border-gray-200 rounded-xl p-3 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white text-gray-800 font-bold"
                     />
                   </div>
+                </div>
+
+                {/* MORNING MEETING PLAN SECTION */}
+                <div className="pt-4 border-t border-gray-100 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-slate-50 p-4 rounded-2xl border border-gray-150">
+                    <div>
+                      <h3 className="text-xs font-black text-[#040957] uppercase tracking-wider flex items-center gap-1.5 font-sans">
+                        <span>📋</span>
+                        {isRtl ? 'خطط الاجتماع الصباحي والمهام' : 'Morning Meeting Plans & Tasks'}
+                      </h3>
+                      <p className="text-[10px] text-gray-400 mt-0.5">
+                        {isRtl ? 'ابحث عن خطة أي يوم بالاستعلام بالطلب أدناه' : 'Search daily briefs and safety alignment targets'}
+                      </p>
+                    </div>
+
+                    {/* Date Search Input */}
+                    <div className="flex items-center gap-1.5 min-w-[140px]">
+                      <span className="text-[10px] font-bold text-gray-500 whitespace-nowrap">{isRtl ? 'التاريخ:' : 'Date:'}</span>
+                      <input 
+                        type="date" 
+                        value={morningPlanSearchDate}
+                        onChange={(e) => setMorningPlanSearchDate(e.target.value)}
+                        className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white text-gray-800 font-bold focus:ring-1 focus:ring-[#0080FF] focus:outline-none w-full"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Render matched plans */}
+                  {(() => {
+                    const matchedPlans = morningMeetingPlans.filter(
+                      p => p.projectId === selectedProjectId && p.date === morningPlanSearchDate
+                    );
+
+                    if (matchedPlans.length > 0) {
+                      return (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between">
+                            <p className="text-[10px] text-gray-400">
+                              {isRtl 
+                                ? `تم العثور على (${matchedPlans.length}) خطط لهذا اليوم` 
+                                : `Found (${matchedPlans.length}) daily plans for this date`}
+                            </p>
+                            <span className="bg-emerald-50 text-emerald-800 text-[9px] font-black px-2 py-0.5 rounded-full border border-emerald-100 flex items-center gap-1">
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                              {isRtl ? 'مستندات معتمدة' : 'Official Briefs'}
+                            </span>
+                          </div>
+
+                          <div className="space-y-3">
+                            {matchedPlans.map((plan, idx) => (
+                              <div 
+                                key={plan.id}
+                                className={`border rounded-2xl p-4 space-y-3 shadow-xs transition-all ${plan.isArchived ? 'bg-gray-50/50 border-gray-200 opacity-80' : 'bg-blue-50/40 border-blue-100'}`}
+                              >
+                                <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                                  <h4 className="font-bold text-xs text-[#040957] leading-snug flex items-center gap-1.5">
+                                    <span className="text-blue-500 font-mono text-[10px]">#{idx + 1}</span>
+                                    {isRtl ? plan.titleAr : plan.titleEn}
+                                  </h4>
+                                  <div className="flex items-center gap-2">
+                                    {/* Export PDF Button */}
+                                    <button
+                                      type="button"
+                                      disabled={isExportingPdf !== null}
+                                      onClick={() => handlePrintMorningMeetingPlanPDF(plan)}
+                                      className="flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-blue-50 border border-blue-100 hover:border-blue-200 text-[#0080FF] rounded-lg text-[10px] font-bold transition-all shadow-3xs cursor-pointer disabled:opacity-55 disabled:cursor-not-allowed"
+                                    >
+                                      {isExportingPdf === plan.id ? (
+                                        <>
+                                          <span className="animate-spin h-3 w-3 border-2 border-[#0080FF] border-t-transparent rounded-full"></span>
+                                          <span>{isRtl ? 'جاري التصدير...' : 'Exporting...'}</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Download className="w-3 h-3" />
+                                          <span>{isRtl ? 'تصدير PDF' : 'Export PDF'}</span>
+                                        </>
+                                      )}
+                                    </button>
+
+                                    {plan.isArchived ? (
+                                      <span className="text-[9px] bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-md font-bold">
+                                        {isRtl ? 'مؤرشفة' : 'Archived'}
+                                      </span>
+                                    ) : (
+                                      <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-md font-bold">
+                                        {isRtl ? 'نشط' : 'Active'}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="bg-white/95 border border-gray-100 rounded-xl p-3.5 text-xs text-slate-700 leading-relaxed font-sans whitespace-pre-wrap select-text">
+                                  {plan.content}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    } else {
+                      return (
+                        <div className="bg-slate-50 border border-gray-150 rounded-2xl p-6 text-center space-y-2">
+                          <p className="text-xs text-gray-400 font-bold">
+                            {isRtl ? 'لا توجد خطط منشورة لهذا التاريخ' : 'No Plans Published for this Date'}
+                          </p>
+                          <p className="text-[10px] text-gray-400 max-w-sm mx-auto">
+                            {isRtl 
+                              ? `لم يتم العثور على أي خطة مسجلة لتاريخ اليوم المحدد: ${morningPlanSearchDate}. يمكنك تغيير التاريخ في البحث أعلاه أو إعادة التصفح.` 
+                              : `No briefs recorded for the requested date: ${morningPlanSearchDate}. You can change the search date above.`}
+                          </p>
+                          <div className="pt-1 flex items-center justify-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setMorningPlanSearchDate(getSystemToday().toISOString().split('T')[0])}
+                              className="bg-white hover:bg-gray-100 text-gray-700 border border-gray-200 text-[10px] font-bold px-3 py-1.5 rounded-lg transition-all cursor-pointer shadow-2xs"
+                            >
+                              {isRtl ? 'الرجوع لليوم' : 'Reset to Today'}
+                            </button>
+                            
+                            {morningMeetingPlans.filter(p => p.projectId === selectedProjectId && !p.isArchived).length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const latestActive = morningMeetingPlans
+                                    .filter(p => p.projectId === selectedProjectId && !p.isArchived)
+                                    .sort((a,b) => (b.date || '').localeCompare(a.date || ''))[0];
+                                  if (latestActive) {
+                                    setMorningPlanSearchDate(latestActive.date);
+                                  }
+                                }}
+                                className="bg-[#0080FF] hover:bg-blue-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg transition-all cursor-pointer shadow-xs"
+                              >
+                                {isRtl ? 'عرض أحدث خطة نشطة' : 'View Latest Active'}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    }
+                  })()}
                 </div>
 
                 {/* SIGNATURE SECTION */}

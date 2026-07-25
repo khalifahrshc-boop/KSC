@@ -65,17 +65,37 @@ export default function GanttChart({
   // Fixed Today's reference date matching the system current local time
   const todayDate = useMemo(() => getSystemToday(), []);
 
+  const parseDateLocal = (str: string | Date | undefined): Date => {
+    if (!str) return new Date();
+    if (str instanceof Date) {
+      const d = new Date(str);
+      d.setHours(0, 0, 0, 0);
+      return d;
+    }
+    const parts = str.split('T')[0].split('-');
+    if (parts.length === 3) {
+      return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), 0, 0, 0, 0);
+    }
+    const d = new Date(str);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  };
+
   // Compute the total project bounds
   const timelineData = useMemo(() => {
-    const allDates = projects.flatMap(p => [new Date(p.startDate), new Date(p.endDate)]);
+    const allDates = projects.flatMap(p => [parseDateLocal(p.startDate), parseDateLocal(p.endDate)]);
     if (allDates.length === 0) return null;
 
     const minDate = new Date(Math.min(...allDates.map(d => d.getTime())));
+    minDate.setHours(0, 0, 0, 0);
     const maxDate = new Date(Math.max(...allDates.map(d => d.getTime())));
+    maxDate.setHours(0, 0, 0, 0);
     
     // Add small paddings to frame the project cleanly
     minDate.setDate(minDate.getDate() - 3);
+    minDate.setHours(0, 0, 0, 0);
     maxDate.setDate(maxDate.getDate() + 7);
+    maxDate.setHours(0, 0, 0, 0);
 
     const totalDays = Math.ceil((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24));
 
@@ -87,11 +107,13 @@ export default function GanttChart({
     if (!timelineData) return [];
     const list = [];
     let curr = new Date(timelineData.minDate);
+    curr.setHours(0, 0, 0, 0);
     const maxIterations = 400; // Safety cap covering full calendar year with padding
     let count = 0;
     while (curr <= timelineData.maxDate && count < maxIterations) {
       list.push(new Date(curr));
       curr = new Date(curr.getTime() + 24 * 60 * 60 * 1000);
+      curr.setHours(0, 0, 0, 0);
       count++;
     }
     return list;
@@ -555,8 +577,8 @@ export default function GanttChart({
                           }
                           const endStr = act.expectedFinishDate || project.endDate;
                           
-                          const actStart = new Date(startStr);
-                          const actEnd = new Date(endStr);
+                          const actStart = parseDateLocal(startStr);
+                          const actEnd = parseDateLocal(endStr);
                           
                           const totalDaysAct = Math.ceil((actEnd.getTime() - actStart.getTime()) / (1000 * 60 * 60 * 24)) || 1;
                           const elapsedDaysAct = Math.max(0, Math.ceil((todayDate.getTime() - actStart.getTime()) / (1000 * 60 * 60 * 24)));

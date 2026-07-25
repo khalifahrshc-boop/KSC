@@ -27,6 +27,7 @@ export interface Project {
   projectManager: string;
   status: 'Ahead' | 'On Track' | 'Delayed';
   budget?: number;
+  morningMeetingPlan?: string;
 }
 
 export interface WorkItem {
@@ -356,6 +357,18 @@ export interface QuickNote {
   timestamp: string; // ISO String
   date: string; // YYYY-MM-DD
 }
+
+export interface MorningMeetingPlan {
+  id: string;
+  projectId: string;
+  titleAr: string;
+  titleEn: string;
+  date: string; // YYYY-MM-DD
+  content: string;
+  isArchived: boolean;
+  createdAt: string; // ISO String or similar
+}
+
 
 
 

@@ -21,7 +21,8 @@ import {
   WarehouseMaterial,
   MaterialConsumption,
   MaterialDelivery,
-  FieldRequest
+  FieldRequest,
+  MorningMeetingPlan
 } from '../types';
 import AttendanceReportGenerator from './AttendanceReportGenerator';
 import { renderToString } from 'react-dom/server';
@@ -55,8 +56,12 @@ import {
   Calculator,
   Calendar,
   Truck,
-  ShoppingCart
+  ShoppingCart,
+  Archive,
+  PlusCircle,
+  Search
 } from 'lucide-react';
+import { getSystemToday } from '../utils/progressCalculations';
 
 interface FieldOperationsProps {
   settings: SystemSettings;
@@ -82,6 +87,10 @@ interface FieldOperationsProps {
   materials: WarehouseMaterial[];
   fieldRequests?: FieldRequest[];
   onUpdateFieldRequest?: (request: FieldRequest) => Promise<void>;
+  onUpdateProject?: (projectId: string, updated: Partial<Project>) => Promise<void>;
+  morningMeetingPlans?: MorningMeetingPlan[];
+  onAddMorningMeetingPlan?: (plan: Omit<MorningMeetingPlan, 'id'>) => Promise<void>;
+  onUpdateMorningMeetingPlan?: (id: string, updated: Partial<MorningMeetingPlan>) => Promise<void>;
 }
 
 
@@ -144,7 +153,11 @@ export default function FieldOperations({
   currentUser,
   materials,
   fieldRequests = [],
-  onUpdateFieldRequest
+  onUpdateFieldRequest,
+  onUpdateProject,
+  morningMeetingPlans = [],
+  onAddMorningMeetingPlan,
+  onUpdateMorningMeetingPlan
 }: FieldOperationsProps) {
   const isRtl = lang === 'ar';
   const isReadOnly = userRole === 'Viewer';
@@ -219,8 +232,67 @@ export default function FieldOperations({
   };
 
   // Sub Module view tabs
-  const [activeTab, setActiveTab] = useState<'checkin' | 'attendance' | 'production' | 'safety' | 'delays' | 'issues' | 'approvals' | 'requests'>('checkin');
+  const [activeTab, setActiveTab] = useState<'checkin' | 'attendance' | 'production' | 'safety' | 'delays' | 'issues' | 'approvals' | 'requests' | 'morningPlan'>('checkin');
   const [portalCopied, setPortalCopied] = useState(false);
+
+  // Morning Meeting Plan Edit States
+  const [isSavingMorningPlan, setIsSavingMorningPlan] = useState(false);
+  const [morningPlanNotification, setMorningPlanNotification] = useState<string | null>(null);
+
+  // Form states for creating a new morning plan
+  const [newPlanDate, setNewPlanDate] = useState(getSystemToday());
+  const [newPlanTitleAr, setNewPlanTitleAr] = useState('');
+  const [newPlanTitleEn, setNewPlanTitleEn] = useState('');
+  const [newPlanContent, setNewPlanContent] = useState('');
+
+  const handleCreateNewMorningPlan = async () => {
+    if (!onAddMorningMeetingPlan) return;
+    if (!newPlanTitleEn || !newPlanTitleAr || !newPlanContent) {
+      alert(isRtl ? 'يرجى ملء جميع الحقول المطلوبة' : 'Please fill all required fields');
+      return;
+    }
+    setIsSavingMorningPlan(true);
+    setMorningPlanNotification(null);
+    try {
+      await onAddMorningMeetingPlan({
+        projectId: selectedProjectId,
+        titleAr: newPlanTitleAr,
+        titleEn: newPlanTitleEn,
+        date: newPlanDate,
+        content: newPlanContent,
+        isArchived: false,
+        createdAt: new Date().toISOString()
+      });
+      setMorningPlanNotification(isRtl ? 'تم إضافة ونشر خطة الاجتماع الصباحي بنجاح!' : 'Morning meeting plan published successfully!');
+      
+      // Clear form
+      setNewPlanTitleAr('');
+      setNewPlanTitleEn('');
+      setNewPlanContent('');
+      setTimeout(() => setMorningPlanNotification(null), 4000);
+    } catch (err) {
+      console.error(err);
+      alert('Error saving morning plan');
+    } finally {
+      setIsSavingMorningPlan(false);
+    }
+  };
+
+  const handleToggleArchivePlan = async (plan: MorningMeetingPlan) => {
+    if (!onUpdateMorningMeetingPlan) return;
+    try {
+      await onUpdateMorningMeetingPlan(plan.id, { isArchived: !plan.isArchived });
+      setMorningPlanNotification(
+        isRtl 
+          ? (plan.isArchived ? 'تم إلغاء أرشفة الخطة بنجاح!' : 'تم أرشفة الخطة الصباحية بنجاح!')
+          : (plan.isArchived ? 'Plan activated successfully!' : 'Plan archived successfully!')
+      );
+      setTimeout(() => setMorningPlanNotification(null), 4000);
+    } catch (err) {
+      console.error(err);
+      alert('Error updating archive status');
+    }
+  };
 
   // Material tracking state
   const [materialDeliveries, setMaterialDeliveries] = useState<Omit<MaterialDelivery, 'id'>[]>([]);
@@ -232,7 +304,7 @@ export default function FieldOperations({
 
 
   // --- Attendance Sheet Form State ---
-  const [attendanceDate, setAttendanceDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [attendanceDate, setAttendanceDate] = useState<string>(getSystemToday().toISOString().split('T')[0]);
   const [workerAttendanceState, setWorkerAttendanceState] = useState<Record<string, {
     isPresent: boolean;
     status: 'Present' | 'Absent' | 'Late' | 'Sick' | 'AnnualLeave' | 'ShortLeave';
@@ -958,6 +1030,10 @@ export default function FieldOperations({
       return;
     }
 
+    const now = new Date();
+    const timePart = now.toISOString().split('T')[1];
+    const reportTimestamp = `${attendanceDate}T${timePart}`;
+
     const updateRec: ProgressUpdate = {
       id: `upd-${Date.now()}`,
       projectId: selectedProjectId,
@@ -973,7 +1049,7 @@ export default function FieldOperations({
       notes: prodNotes,
       photos: simulatedFiles.filter(f => f.type === 'photo').map(f => f.name),
       documents: simulatedFiles.filter(f => f.type === 'doc').map(f => f.name),
-      timestamp: new Date().toISOString()
+      timestamp: reportTimestamp
     };
 
     onAddProgressUpdate(updateRec);
@@ -1272,6 +1348,14 @@ export default function FieldOperations({
               {fieldSubmissions.filter(s => s.status === 'Pending').length}
             </span>
           )}
+        </button>
+
+        <button
+          onClick={() => setActiveTab('morningPlan')}
+          className={`py-2 px-3.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 relative border cursor-pointer ${activeTab === 'morningPlan' ? 'bg-blue-50 border-blue-200 text-[#0080FF] font-extrabold shadow-xs' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+        >
+          <FileText className="w-3.5 h-3.5" />
+          <span>{isRtl ? 'خطة الاجتماع الصباحي' : 'Morning Meeting Plan'}</span>
         </button>
       </div>
 
@@ -2431,6 +2515,203 @@ export default function FieldOperations({
                     })}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* TAB: MORNING MEETING PLAN */}
+          {activeTab === 'morningPlan' && (
+            <div className="space-y-6">
+              <div className="border-b border-gray-100 pb-3">
+                <h3 className="font-extrabold text-base text-[#040957] font-sans flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-[#0080FF]" />
+                  {isRtl ? 'إدارة خطط الاجتماعات الصباحية اليومية' : 'Manage Daily Morning Meeting Plans'}
+                </h3>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {isRtl 
+                    ? 'قم بإعداد ونشر خطط الاجتماعات الصباحية، والمهام اليومية المطلوبة، وأرشفة الخطط السابقة للرجوع إليها تاريخياً.' 
+                    : 'Configure daily briefings, track multiple meetings per day, archive old ones, and synchronize instructions with supervisors.'}
+                </p>
+              </div>
+
+              {/* Status/Notification Banner */}
+              {morningPlanNotification && (
+                <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold p-4 rounded-xl flex items-center gap-3 shadow-xs animate-fadeIn">
+                  <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{morningPlanNotification}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Form to create/add a plan */}
+                {!isReadOnly && (
+                  <div className="lg:col-span-5 bg-slate-50 border border-gray-200 rounded-2xl p-5 space-y-4">
+                    <h4 className="font-bold text-xs uppercase tracking-wider text-[#040957] flex items-center gap-1.5 border-b border-gray-200 pb-2">
+                      <PlusCircle className="w-4 h-4 text-[#0080FF]" />
+                      {isRtl ? 'إضافة خطة اجتماع جديدة' : 'Add New Meeting Plan'}
+                    </h4>
+
+                    {/* Date Picker */}
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold text-gray-600">
+                        {isRtl ? 'تاريخ الخطة اليومية' : 'Plan / Meeting Date'}
+                      </label>
+                      <input
+                        type="date"
+                        value={newPlanDate}
+                        onChange={(e) => setNewPlanDate(e.target.value)}
+                        className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0080FF] transition-all"
+                      />
+                    </div>
+
+                    {/* Arabic Title */}
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold text-gray-600">
+                        {isRtl ? 'عنوان الاجتماع (بالعربية)' : 'Meeting Title (Arabic)'}
+                      </label>
+                      <input
+                        type="text"
+                        dir="rtl"
+                        value={newPlanTitleAr}
+                        onChange={(e) => setNewPlanTitleAr(e.target.value)}
+                        placeholder={isRtl ? 'مثال: اجتماع السلامة الصباحي وتنسيق الصب' : 'Ar title...'}
+                        className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0080FF] transition-all"
+                      />
+                    </div>
+
+                    {/* English Title */}
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold text-gray-600">
+                        {isRtl ? 'عنوان الاجتماع (بالإنجليزية)' : 'Meeting Title (English)'}
+                      </label>
+                      <input
+                        type="text"
+                        dir="ltr"
+                        value={newPlanTitleEn}
+                        onChange={(e) => setNewPlanTitleEn(e.target.value)}
+                        placeholder={isRtl ? 'Example: Morning Safety and Concrete Alignment' : 'En title...'}
+                        className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0080FF] transition-all"
+                      />
+                    </div>
+
+                    {/* Content Textarea */}
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold text-gray-600">
+                        {isRtl ? 'بنود الخطة والتوجيهات' : 'Plan Guidelines & Contents'}
+                      </label>
+                      <textarea
+                        value={newPlanContent}
+                        onChange={(e) => setNewPlanContent(e.target.value)}
+                        placeholder={isRtl 
+                          ? '١. التوجيه الفني اليومي...\n٢. توزيع المهام...\n٣. مخاطر السلامة...'
+                          : '1. Technical alignments...\n2. Crew dispatch directions...\n3. Safety checklist...'}
+                        rows={6}
+                        className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0080FF] transition-all resize-none leading-relaxed"
+                      />
+                    </div>
+
+                    <button
+                      onClick={handleCreateNewMorningPlan}
+                      disabled={isSavingMorningPlan}
+                      className="w-full bg-[#0080FF] hover:bg-blue-600 disabled:bg-blue-300 text-white font-black text-xs py-2.5 px-4 rounded-xl shadow-xs transition flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      {isSavingMorningPlan ? (
+                        <>
+                          <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          <span>{isRtl ? 'جاري النشر...' : 'Publishing...'}</span>
+                        </>
+                      ) : (
+                        <>
+                          <UploadCloud className="w-4 h-4" />
+                          <span>{isRtl ? 'حفظ ونشر خطة الاجتماع' : 'Save & Publish Meeting Plan'}</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+
+                {/* List of existing plans */}
+                <div className={`${isReadOnly ? 'lg:col-span-12' : 'lg:col-span-7'} space-y-4`}>
+                  <h4 className="font-bold text-xs uppercase tracking-wider text-[#040957] flex items-center justify-between border-b border-gray-100 pb-2">
+                    <span className="flex items-center gap-1.5">
+                      <Calendar className="w-4 h-4 text-emerald-500" />
+                      {isRtl ? 'سجل الخطط المعتمدة للمشروع' : 'Project Morning Plans Register'}
+                    </span>
+                    <span className="bg-gray-100 text-gray-600 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                      {morningMeetingPlans.filter(p => p.projectId === selectedProjectId).length} {isRtl ? 'خطط' : 'plans'}
+                    </span>
+                  </h4>
+
+                  {/* Plans list */}
+                  <div className="space-y-3 max-h-[580px] overflow-y-auto pr-1">
+                    {morningMeetingPlans.filter(p => p.projectId === selectedProjectId).length === 0 ? (
+                      <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-2xl p-6">
+                        <FileText className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                        <p className="text-xs text-gray-400">
+                          {isRtl ? 'لا توجد خطط مسجلة لهذا المشروع بعد.' : 'No morning meeting plans recorded for this project.'}
+                        </p>
+                      </div>
+                    ) : (
+                      morningMeetingPlans
+                        .filter(p => p.projectId === selectedProjectId)
+                        // Sort by date latest, then createdAt latest
+                        .sort((a, b) => {
+                          const dateCompare = b.date.localeCompare(a.date);
+                          if (dateCompare !== 0) return dateCompare;
+                          return (b.createdAt || '').localeCompare(a.createdAt || '');
+                        })
+                        .map((plan) => (
+                          <div
+                            key={plan.id}
+                            className={`border rounded-xl p-4 transition-all relative ${plan.isArchived ? 'bg-gray-50 border-gray-200 opacity-75' : 'bg-white border-[#0080FF]/20 hover:border-[#0080FF]/40 shadow-xs'}`}
+                          >
+                            <div className="flex items-start justify-between gap-2 mb-2">
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="bg-blue-50 text-[#0080FF] font-black text-[10px] px-2.5 py-0.5 rounded-md font-mono">
+                                    {plan.date}
+                                  </span>
+                                  {plan.isArchived ? (
+                                    <span className="bg-gray-200 text-gray-600 text-[9px] px-2 py-0.5 rounded-md font-bold uppercase">
+                                      {isRtl ? 'مؤرشفة' : 'Archived'}
+                                    </span>
+                                  ) : (
+                                    <span className="bg-emerald-100 text-emerald-800 text-[9px] px-2 py-0.5 rounded-md font-bold uppercase">
+                                      {isRtl ? 'نشط ميدانياً' : 'Active'}
+                                    </span>
+                                  )}
+                                </div>
+                                <h5 className="font-bold text-xs text-[#040957] mt-1.5 leading-snug">
+                                  {isRtl ? plan.titleAr : plan.titleEn}
+                                </h5>
+                                {isRtl && plan.titleEn && (
+                                  <p className="text-[10px] text-gray-400 font-mono mt-0.5">{plan.titleEn}</p>
+                                )}
+                                {!isRtl && plan.titleAr && (
+                                  <p className="text-[10px] text-gray-400 font-sans mt-0.5" dir="rtl">{plan.titleAr}</p>
+                                )}
+                              </div>
+
+                              {/* Archive/Unarchive actions */}
+                              {!isReadOnly && (
+                                <button
+                                  onClick={() => handleToggleArchivePlan(plan)}
+                                  title={plan.isArchived ? (isRtl ? 'تنشيط الخطة' : 'Activate Plan') : (isRtl ? 'أرشفة الخطة' : 'Archive Plan')}
+                                  className={`p-1.5 rounded-lg border transition cursor-pointer ${plan.isArchived ? 'bg-white hover:bg-gray-100 border-gray-200 text-gray-500' : 'bg-amber-50 hover:bg-amber-100 border-amber-200 text-amber-600'}`}
+                                >
+                                  <Archive className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+
+                            <p className="text-[11px] text-gray-600 whitespace-pre-line border-t border-gray-100 pt-2 leading-relaxed">
+                              {plan.content}
+                            </p>
+                          </div>
+                        ))
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 

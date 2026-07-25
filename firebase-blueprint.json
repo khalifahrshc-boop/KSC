@@ -203,6 +203,19 @@
         { "name": "createdByName", "type": "string", "optional": true },
         { "name": "timestamp", "type": "string" }
       ]
+    },
+    {
+      "name": "morningMeetingPlans",
+      "description": "Daily morning meeting plans and task alignments created by management",
+      "fields": [
+        { "name": "projectId", "type": "string" },
+        { "name": "titleAr", "type": "string" },
+        { "name": "titleEn", "type": "string" },
+        { "name": "date", "type": "string" },
+        { "name": "content", "type": "string" },
+        { "name": "isArchived", "type": "boolean" },
+        { "name": "createdAt", "type": "string" }
+      ]
     }
   ]
 }

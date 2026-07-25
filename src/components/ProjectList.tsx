@@ -105,6 +105,7 @@ export default function ProjectList({
   const [formPM, setFormPM] = useState('');
   const [formStatus, setFormStatus] = useState<'Ahead' | 'On Track' | 'Delayed'>('On Track');
   const [formBudget, setFormBudget] = useState(500000);
+  const [formMorningMeetingPlan, setFormMorningMeetingPlan] = useState('');
 
   const [notification, setNotification] = useState<string | null>(null);
 
@@ -181,6 +182,7 @@ export default function ProjectList({
     setFormPM('');
     setFormStatus('On Track');
     setFormBudget(1200000);
+    setFormMorningMeetingPlan('');
     setIsAddOpen(true);
   };
 
@@ -207,7 +209,8 @@ export default function ProjectList({
       endDate: formEndDate,
       projectManager: formPM || 'Engs. Al-Sudairi Group',
       status: formStatus,
-      budget: Number(formBudget)
+      budget: Number(formBudget),
+      morningMeetingPlan: formMorningMeetingPlan
     };
 
     onAddProject(newProj);
@@ -230,6 +233,7 @@ export default function ProjectList({
     setFormPM(p.projectManager);
     setFormStatus(p.status);
     setFormBudget(p.budget || 500000);
+    setFormMorningMeetingPlan(p.morningMeetingPlan || '');
     setIsEditOpen(true);
   };
 
@@ -249,7 +253,8 @@ export default function ProjectList({
       endDate: formEndDate,
       projectManager: formPM,
       status: formStatus,
-      budget: Number(formBudget)
+      budget: Number(formBudget),
+      morningMeetingPlan: formMorningMeetingPlan
     });
 
     setIsEditOpen(false);
@@ -913,6 +918,20 @@ export default function ProjectList({
                   placeholder="E.g. Eng. Fahad Abdullah"
                   required
                   className="w-full border border-gray-200 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#0080FF] outline-none"
+                />
+              </div>
+
+              {/* Morning Meeting Plan */}
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-[#040957]">
+                  {isRtl ? 'خطة الاجتماع الصباحي والمهام المطلوبة' : 'Morning Meeting Plan & Required Tasks'}
+                </label>
+                <textarea
+                  value={formMorningMeetingPlan}
+                  onChange={(e) => setFormMorningMeetingPlan(e.target.value)}
+                  placeholder={isRtl ? 'أدخل خطة الاجتماع الصباحي والمهام اليومية المطلوبة ليتمكن الميدانيون من مراجعتها...' : 'Enter the morning meeting outline and daily critical tasks for field supervisors...'}
+                  rows={4}
+                  className="w-full border border-gray-200 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#0080FF] outline-none resize-none font-sans"
                 />
               </div>
 
