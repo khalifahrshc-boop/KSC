@@ -60,6 +60,8 @@ import ReportsPanel from './components/ReportsPanel';
 import ConfirmModal from './components/ConfirmModal';
 import UsersList from './components/UsersList';
 import FieldPortal from './components/FieldPortal';
+import AdminPanel from './components/AdminPanel';
+import MainLogin from './components/MainLogin';
 
 import { 
   Briefcase, 
@@ -72,6 +74,7 @@ import {
   Building2, 
   FileText, 
   ShieldAlert, 
+  Shield, 
   Sun, 
   Moon, 
   Globe, 
@@ -109,6 +112,39 @@ export default function App() {
 
   // Real active user (Role-Based Access Control)
   const [currentUser, setCurrentUser] = useState<User>(mockUsers[0]);
+
+  // Administrator login session state
+  const [currentAdmin, setCurrentAdmin] = useState<{ idNumber: string; name: string } | null>(() => {
+    const saved = localStorage.getItem('pm_active_admin');
+    try {
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const handleAdminLogin = (admin: { idNumber: string; name: string }) => {
+    setCurrentAdmin(admin);
+    localStorage.setItem('pm_active_admin', JSON.stringify(admin));
+    // Synchronize the current user for RBAC to reflect the logged-in admin
+    const syncedUser: User = {
+      id: admin.idNumber,
+      name: admin.name,
+      role: 'Super Admin',
+      email: `${admin.idNumber}@admin.local`,
+      badgeNumber: admin.idNumber
+    };
+    setCurrentUser(syncedUser);
+    logSystemAction('ADMIN_LOGIN', `Admin ${admin.name} (ID: ${admin.idNumber}) logged in`);
+  };
+
+  const handleAdminLogout = () => {
+    if (currentAdmin) {
+      logSystemAction('ADMIN_LOGOUT', `Admin ${currentAdmin.name} (ID: ${currentAdmin.idNumber}) logged out`);
+    }
+    setCurrentAdmin(null);
+    localStorage.removeItem('pm_active_admin');
+  };
 
   const [showRoleSelector, setShowRoleSelector] = useState(false);
   const [isSidebarMobileOpen, setIsSidebarMobileOpen] = useState(false);
@@ -470,6 +506,17 @@ export default function App() {
     }
   };
 
+  const handleDeleteMorningMeetingPlan = async (id: string) => {
+    try {
+      await dbApi.delete('morningMeetingPlans', id);
+      setMorningMeetingPlans(prev => prev.filter(p => p.id !== id));
+      logSystemAction('DELETE_MORNING_PLAN', `Deleted morning meeting plan id: ${id}`);
+    } catch (e) {
+      console.error(e);
+      alert("Error deleting morning meeting plan");
+    }
+  };
+
   const handleDeleteProject = async (id: string) => {
     try {
       await dbApi.delete('projects', id);
@@ -577,6 +624,24 @@ export default function App() {
     } catch (e) {
       console.error('Failed to delete quick note:', e);
       alert('Error deleting quick note');
+    }
+  };
+
+  const handleUpdateQuickNote = async (id: string, content: string) => {
+    try {
+      const existing = quickNotes.find(n => n.id === id);
+      if (!existing) return;
+      const updatedNote: QuickNote = {
+        ...existing,
+        content,
+        timestamp: new Date().toISOString()
+      };
+      await dbApi.save('quickNotes', updatedNote);
+      setQuickNotes(prev => prev.map(n => n.id === id ? updatedNote : n));
+      logSystemAction('UPDATE_QUICK_NOTE', `Updated quick note content: "${content.substring(0, 30)}..."`);
+    } catch (e) {
+      console.error('Failed to update quick note:', e);
+      alert('Error updating quick note');
     }
   };
 
@@ -1248,6 +1313,16 @@ export default function App() {
     );
   }
 
+  if (!currentAdmin) {
+    return (
+      <MainLogin 
+        lang={lang} 
+        onLogin={handleAdminLogin} 
+        settings={settings}
+      />
+    );
+  }
+
   const isAllSelected = auditLogs.length > 0 && selectedAuditLogIds.length === auditLogs.length;
   const toggleSelectAll = () => {
     if (isAllSelected) {
@@ -1274,6 +1349,35 @@ export default function App() {
       }}
     >
       
+      {/* Active Admin Session Welcome Banner */}
+      {currentAdmin && (
+        <div className="bg-[#040957] text-white px-6 py-2.5 flex items-center justify-between text-xs font-bold border-b border-white/10 relative z-50 shadow-md">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+            <span className="font-sans">
+              {lang === 'ar' 
+                ? `مرحباً بك مجدداً، المسؤول ${currentAdmin.name}` 
+                : `Welcome back, Administrator ${currentAdmin.name}`}
+            </span>
+          </div>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setActiveModule('adminPanel')}
+              className="text-emerald-400 hover:text-emerald-300 transition text-[11px] underline cursor-pointer"
+            >
+              {lang === 'ar' ? 'لوحة المسؤول' : 'Admin Panel'}
+            </button>
+            <span className="text-white/20">|</span>
+            <button
+              onClick={handleAdminLogout}
+              className="text-rose-400 hover:text-rose-300 transition text-[11px] cursor-pointer"
+            >
+              {lang === 'ar' ? 'خروج' : 'Logout'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Universal Enterprise Corporate Top-Header */}
       <header className={`sticky top-0 z-40 px-6 py-4 flex items-center justify-between border-b ${darkMode ? 'bg-[#F5EFEB] border-[#E8DCD3]' : 'bg-white border-slate-200'} shadow-sm`}>
         <div className="flex items-center gap-4">
@@ -1405,7 +1509,14 @@ export default function App() {
               { id: 'users', label: lang === 'ar' ? 'المستخدمين والصلاحيات' : 'Users & Permissions', icon: Users },
               { id: 'settings', label: textDict.settings, icon: Building2 },
               { id: 'reports', label: textDict.reports, icon: FileText },
-              { id: 'logs', label: textDict.logs, icon: ShieldAlert }
+              { id: 'logs', label: textDict.logs, icon: ShieldAlert },
+              { 
+                id: 'adminPanel', 
+                label: currentAdmin 
+                  ? (lang === 'ar' ? `لوحة المسؤول (${currentAdmin.name})` : `Admin Panel (${currentAdmin.name})`) 
+                  : (lang === 'ar' ? 'تسجيل دخول المسؤول' : 'Admin Login'), 
+                icon: Shield 
+              }
             ].map(m => {
               const active = activeModule === m.id;
               const Icon = m.icon;
@@ -1476,7 +1587,14 @@ export default function App() {
                   { id: 'users', label: lang === 'ar' ? 'المستخدمين والصلاحيات' : 'Users & Permissions', icon: Users },
                   { id: 'settings', label: textDict.settings, icon: Building2 },
                   { id: 'reports', label: textDict.reports, icon: FileText },
-                  { id: 'logs', label: textDict.logs, icon: ShieldAlert }
+                  { id: 'logs', label: textDict.logs, icon: ShieldAlert },
+                  { 
+                    id: 'adminPanel', 
+                    label: currentAdmin 
+                      ? (lang === 'ar' ? `لوحة المسؤول (${currentAdmin.name})` : `Admin Panel (${currentAdmin.name})`) 
+                      : (lang === 'ar' ? 'تسجيل دخول المسؤول' : 'Admin Login'), 
+                    icon: Shield 
+                  }
                 ].map(m => {
                   const active = activeModule === m.id;
                   const Icon = m.icon;
@@ -1548,6 +1666,8 @@ export default function App() {
               quickNotes={quickNotes}
               onSaveQuickNote={handleAddQuickNote}
               onDeleteQuickNote={handleDeleteQuickNote}
+              onUpdateQuickNote={handleUpdateQuickNote}
+              openConfirm={openConfirm}
             />
           )}
 
@@ -1656,6 +1776,8 @@ export default function App() {
               morningMeetingPlans={morningMeetingPlans}
               onAddMorningMeetingPlan={handleAddMorningMeetingPlan}
               onUpdateMorningMeetingPlan={handleUpdateMorningMeetingPlan}
+              onDeleteMorningMeetingPlan={handleDeleteMorningMeetingPlan}
+              openConfirm={openConfirm}
             />
           )}
 
@@ -1780,9 +1902,14 @@ export default function App() {
                 {selectedAuditLogIds.length > 0 && (
                   <button
                     onClick={() => {
-                      if (window.confirm(lang === 'ar' ? `هل أنت متأكد من حذف السجلات المحددة (${selectedAuditLogIds.length})؟` : `Are you sure you want to delete the selected (${selectedAuditLogIds.length}) audit log entries?`)) {
-                        handleDeleteSelectedAuditLogs();
-                      }
+                      openConfirm(
+                        lang === 'ar' ? 'تأكيد الحذف' : 'Confirm Deletion',
+                        lang === 'ar' 
+                          ? `هل أنت متأكد من حذف السجلات المحددة (${selectedAuditLogIds.length})؟` 
+                          : `Are you sure you want to delete the selected (${selectedAuditLogIds.length}) audit log entries?`,
+                        () => handleDeleteSelectedAuditLogs(),
+                        true
+                      );
                     }}
                     className="bg-red-50 text-red-600 hover:bg-red-100 font-bold px-3 py-1.5 rounded-lg text-xs uppercase flex items-center gap-1.5 border border-red-200 cursor-pointer transition shadow-sm"
                   >
@@ -1853,9 +1980,12 @@ export default function App() {
                         <td className="p-3 text-center">
                           <button
                             onClick={() => {
-                              if (window.confirm(lang === 'ar' ? 'هل أنت متأكد من حذف هذا السجل؟' : 'Are you sure you want to delete this log entry?')) {
-                                handleDeleteAuditLog(log.id);
-                              }
+                              openConfirm(
+                                lang === 'ar' ? 'تأكيد الحذف' : 'Confirm Deletion',
+                                lang === 'ar' ? 'هل أنت متأكد من حذف هذا السجل؟' : 'Are you sure you want to delete this log entry?',
+                                () => handleDeleteAuditLog(log.id),
+                                true
+                              );
                             }}
                             className="text-gray-300 hover:text-red-500 p-1.5 rounded hover:bg-red-50 cursor-pointer transition flex items-center justify-center mx-auto"
                             title={lang === 'ar' ? 'حذف' : 'Delete'}
@@ -1876,6 +2006,17 @@ export default function App() {
                 </table>
               </div>
             </div>
+          )}
+
+          {/* SECURE ADMINISTRATOR LOGIN & MANAGEMENT PANEL */}
+          {activeModule === 'adminPanel' && (
+            <AdminPanel
+              lang={lang}
+              currentAdmin={currentAdmin}
+              onAdminLogin={handleAdminLogin}
+              onAdminLogout={handleAdminLogout}
+              openConfirm={openConfirm}
+            />
           )}
 
         </main>

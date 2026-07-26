@@ -216,6 +216,16 @@
         { "name": "isArchived", "type": "boolean" },
         { "name": "createdAt", "type": "string" }
       ]
+    },
+    {
+      "name": "admins",
+      "description": "System administrators authenticated by ID number and password",
+      "fields": [
+        { "name": "idNumber", "type": "string" },
+        { "name": "name", "type": "string" },
+        { "name": "password", "type": "string" },
+        { "name": "createdAt", "type": "string" }
+      ]
     }
   ]
 }

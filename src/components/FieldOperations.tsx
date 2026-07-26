@@ -59,7 +59,8 @@ import {
   ShoppingCart,
   Archive,
   PlusCircle,
-  Search
+  Search,
+  Trash2
 } from 'lucide-react';
 import { getSystemToday } from '../utils/progressCalculations';
 
@@ -91,6 +92,8 @@ interface FieldOperationsProps {
   morningMeetingPlans?: MorningMeetingPlan[];
   onAddMorningMeetingPlan?: (plan: Omit<MorningMeetingPlan, 'id'>) => Promise<void>;
   onUpdateMorningMeetingPlan?: (id: string, updated: Partial<MorningMeetingPlan>) => Promise<void>;
+  onDeleteMorningMeetingPlan?: (id: string) => Promise<void>;
+  openConfirm?: (title: string, message: string, onConfirm: () => void, isDestructive?: boolean) => void;
 }
 
 
@@ -157,7 +160,9 @@ export default function FieldOperations({
   onUpdateProject,
   morningMeetingPlans = [],
   onAddMorningMeetingPlan,
-  onUpdateMorningMeetingPlan
+  onUpdateMorningMeetingPlan,
+  onDeleteMorningMeetingPlan,
+  openConfirm
 }: FieldOperationsProps) {
   const isRtl = lang === 'ar';
   const isReadOnly = userRole === 'Viewer';
@@ -244,9 +249,10 @@ export default function FieldOperations({
   const [newPlanTitleAr, setNewPlanTitleAr] = useState('');
   const [newPlanTitleEn, setNewPlanTitleEn] = useState('');
   const [newPlanContent, setNewPlanContent] = useState('');
+  const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
+  const [morningPlanFilter, setMorningPlanFilter] = useState<'all' | 'active' | 'archived'>('all');
 
   const handleCreateNewMorningPlan = async () => {
-    if (!onAddMorningMeetingPlan) return;
     if (!newPlanTitleEn || !newPlanTitleAr || !newPlanContent) {
       alert(isRtl ? 'يرجى ملء جميع الحقول المطلوبة' : 'Please fill all required fields');
       return;
@@ -254,16 +260,29 @@ export default function FieldOperations({
     setIsSavingMorningPlan(true);
     setMorningPlanNotification(null);
     try {
-      await onAddMorningMeetingPlan({
-        projectId: selectedProjectId,
-        titleAr: newPlanTitleAr,
-        titleEn: newPlanTitleEn,
-        date: newPlanDate,
-        content: newPlanContent,
-        isArchived: false,
-        createdAt: new Date().toISOString()
-      });
-      setMorningPlanNotification(isRtl ? 'تم إضافة ونشر خطة الاجتماع الصباحي بنجاح!' : 'Morning meeting plan published successfully!');
+      if (editingPlanId) {
+        if (!onUpdateMorningMeetingPlan) return;
+        await onUpdateMorningMeetingPlan(editingPlanId, {
+          titleAr: newPlanTitleAr,
+          titleEn: newPlanTitleEn,
+          date: newPlanDate,
+          content: newPlanContent
+        });
+        setMorningPlanNotification(isRtl ? 'تم تعديل وحفظ خطة الاجتماع الصباحي بنجاح!' : 'Morning meeting plan updated successfully!');
+        setEditingPlanId(null);
+      } else {
+        if (!onAddMorningMeetingPlan) return;
+        await onAddMorningMeetingPlan({
+          projectId: selectedProjectId,
+          titleAr: newPlanTitleAr,
+          titleEn: newPlanTitleEn,
+          date: newPlanDate,
+          content: newPlanContent,
+          isArchived: false,
+          createdAt: new Date().toISOString()
+        });
+        setMorningPlanNotification(isRtl ? 'تم إضافة ونشر خطة الاجتماع الصباحي بنجاح!' : 'Morning meeting plan published successfully!');
+      }
       
       // Clear form
       setNewPlanTitleAr('');
@@ -2545,9 +2564,28 @@ export default function FieldOperations({
                 {/* Form to create/add a plan */}
                 {!isReadOnly && (
                   <div className="lg:col-span-5 bg-slate-50 border border-gray-200 rounded-2xl p-5 space-y-4">
-                    <h4 className="font-bold text-xs uppercase tracking-wider text-[#040957] flex items-center gap-1.5 border-b border-gray-200 pb-2">
-                      <PlusCircle className="w-4 h-4 text-[#0080FF]" />
-                      {isRtl ? 'إضافة خطة اجتماع جديدة' : 'Add New Meeting Plan'}
+                    <h4 className="font-bold text-xs uppercase tracking-wider text-[#040957] flex items-center justify-between border-b border-gray-200 pb-2">
+                      <span className="flex items-center gap-1.5">
+                        <PlusCircle className="w-4 h-4 text-[#0080FF]" />
+                        {editingPlanId 
+                          ? (isRtl ? 'تعديل خطة الاجتماع الصباحي' : 'Edit Morning Meeting Plan')
+                          : (isRtl ? 'إضافة خطة اجتماع جديدة' : 'Add New Meeting Plan')
+                        }
+                      </span>
+                      {editingPlanId && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingPlanId(null);
+                            setNewPlanTitleAr('');
+                            setNewPlanTitleEn('');
+                            setNewPlanContent('');
+                          }}
+                          className="text-[9px] bg-red-50 text-red-600 hover:bg-red-100 px-2 py-1 rounded-md font-bold uppercase transition cursor-pointer"
+                        >
+                          {isRtl ? 'إلغاء التعديل' : 'Cancel Edit'}
+                        </button>
+                      )}
                     </h4>
 
                     {/* Date Picker */}
@@ -2617,12 +2655,15 @@ export default function FieldOperations({
                       {isSavingMorningPlan ? (
                         <>
                           <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                          <span>{isRtl ? 'جاري النشر...' : 'Publishing...'}</span>
+                          <span>{isRtl ? 'جاري الحفظ...' : 'Saving...'}</span>
                         </>
                       ) : (
                         <>
                           <UploadCloud className="w-4 h-4" />
-                          <span>{isRtl ? 'حفظ ونشر خطة الاجتماع' : 'Save & Publish Meeting Plan'}</span>
+                          <span>{editingPlanId
+                            ? (isRtl ? 'حفظ تعديلات الخطة' : 'Save Plan Changes')
+                            : (isRtl ? 'حفظ ونشر خطة الاجتماع' : 'Save & Publish Meeting Plan')
+                          }</span>
                         </>
                       )}
                     </button>
@@ -2631,15 +2672,49 @@ export default function FieldOperations({
 
                 {/* List of existing plans */}
                 <div className={`${isReadOnly ? 'lg:col-span-12' : 'lg:col-span-7'} space-y-4`}>
-                  <h4 className="font-bold text-xs uppercase tracking-wider text-[#040957] flex items-center justify-between border-b border-gray-100 pb-2">
-                    <span className="flex items-center gap-1.5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-100 pb-2">
+                    <h4 className="font-bold text-xs uppercase tracking-wider text-[#040957] flex items-center gap-1.5">
                       <Calendar className="w-4 h-4 text-emerald-500" />
                       {isRtl ? 'سجل الخطط المعتمدة للمشروع' : 'Project Morning Plans Register'}
-                    </span>
-                    <span className="bg-gray-100 text-gray-600 text-[10px] px-2 py-0.5 rounded-full font-bold">
-                      {morningMeetingPlans.filter(p => p.projectId === selectedProjectId).length} {isRtl ? 'خطط' : 'plans'}
-                    </span>
-                  </h4>
+                    </h4>
+                    
+                    {/* Segmented Filter Controls */}
+                    <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => setMorningPlanFilter('all')}
+                        className={`text-[9px] font-black uppercase px-2 py-1 rounded-md transition ${
+                          morningPlanFilter === 'all' 
+                            ? 'bg-white text-blue-700 shadow-2xs font-extrabold' 
+                            : 'text-gray-500 hover:text-gray-900 hover:bg-white/40'
+                        }`}
+                      >
+                        {isRtl ? 'الكل' : 'All'} ({morningMeetingPlans.filter(p => p.projectId === selectedProjectId).length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMorningPlanFilter('active')}
+                        className={`text-[9px] font-black uppercase px-2 py-1 rounded-md transition ${
+                          morningPlanFilter === 'active' 
+                            ? 'bg-white text-emerald-700 shadow-2xs font-extrabold' 
+                            : 'text-gray-500 hover:text-gray-900 hover:bg-white/40'
+                        }`}
+                      >
+                        {isRtl ? 'النشطة' : 'Active'} ({morningMeetingPlans.filter(p => p.projectId === selectedProjectId && !p.isArchived).length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMorningPlanFilter('archived')}
+                        className={`text-[9px] font-black uppercase px-2 py-1 rounded-md transition ${
+                          morningPlanFilter === 'archived' 
+                            ? 'bg-white text-amber-700 shadow-2xs font-extrabold' 
+                            : 'text-gray-500 hover:text-gray-900 hover:bg-white/40'
+                        }`}
+                      >
+                        {isRtl ? 'الأرشيف' : 'The Archive'} ({morningMeetingPlans.filter(p => p.projectId === selectedProjectId && p.isArchived).length})
+                      </button>
+                    </div>
+                  </div>
 
                   {/* Plans list */}
                   <div className="space-y-3 max-h-[580px] overflow-y-auto pr-1">
@@ -2650,9 +2725,32 @@ export default function FieldOperations({
                           {isRtl ? 'لا توجد خطط مسجلة لهذا المشروع بعد.' : 'No morning meeting plans recorded for this project.'}
                         </p>
                       </div>
+                    ) : morningMeetingPlans
+                        .filter(p => {
+                          const matchesProject = p.projectId === selectedProjectId;
+                          if (!matchesProject) return false;
+                          if (morningPlanFilter === 'active') return !p.isArchived;
+                          if (morningPlanFilter === 'archived') return p.isArchived;
+                          return true;
+                        }).length === 0 ? (
+                      <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-2xl p-6">
+                        <FileText className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                        <p className="text-xs text-gray-400">
+                          {morningPlanFilter === 'active' 
+                            ? (isRtl ? 'لا توجد خطط نشطة حالياً.' : 'No active plans found matching filter.')
+                            : (isRtl ? 'لا توجد خطط مؤرشفة حالياً.' : 'No archived plans found in the archive.')
+                          }
+                        </p>
+                      </div>
                     ) : (
                       morningMeetingPlans
-                        .filter(p => p.projectId === selectedProjectId)
+                        .filter(p => {
+                          const matchesProject = p.projectId === selectedProjectId;
+                          if (!matchesProject) return false;
+                          if (morningPlanFilter === 'active') return !p.isArchived;
+                          if (morningPlanFilter === 'archived') return p.isArchived;
+                          return true;
+                        })
                         // Sort by date latest, then createdAt latest
                         .sort((a, b) => {
                           const dateCompare = b.date.localeCompare(a.date);
@@ -2691,15 +2789,59 @@ export default function FieldOperations({
                                 )}
                               </div>
 
-                              {/* Archive/Unarchive actions */}
+                              {/* Plan action buttons: Edit, Archive, Delete */}
                               {!isReadOnly && (
-                                <button
-                                  onClick={() => handleToggleArchivePlan(plan)}
-                                  title={plan.isArchived ? (isRtl ? 'تنشيط الخطة' : 'Activate Plan') : (isRtl ? 'أرشفة الخطة' : 'Archive Plan')}
-                                  className={`p-1.5 rounded-lg border transition cursor-pointer ${plan.isArchived ? 'bg-white hover:bg-gray-100 border-gray-200 text-gray-500' : 'bg-amber-50 hover:bg-amber-100 border-amber-200 text-amber-600'}`}
-                                >
-                                  <Archive className="w-3.5 h-3.5" />
-                                </button>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  {/* Edit button */}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingPlanId(plan.id);
+                                      setNewPlanDate(plan.date);
+                                      setNewPlanTitleAr(plan.titleAr);
+                                      setNewPlanTitleEn(plan.titleEn);
+                                      setNewPlanContent(plan.content);
+                                    }}
+                                    title={isRtl ? 'تعديل الخطة' : 'Edit Plan'}
+                                    className="p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-100 text-gray-600 transition cursor-pointer"
+                                  >
+                                    <Edit className="w-3.5 h-3.5" />
+                                  </button>
+
+                                  {/* Archive/Unarchive button */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleArchivePlan(plan)}
+                                    title={plan.isArchived ? (isRtl ? 'تنشيط الخطة' : 'Activate Plan') : (isRtl ? 'أرشفة الخطة' : 'Archive Plan')}
+                                    className={`p-1.5 rounded-lg border transition cursor-pointer ${plan.isArchived ? 'bg-white hover:bg-gray-100 border-gray-200 text-gray-500' : 'bg-amber-50 hover:bg-amber-100 border-amber-200 text-amber-600'}`}
+                                  >
+                                    <Archive className="w-3.5 h-3.5" />
+                                  </button>
+
+                                  {/* Delete button */}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (openConfirm) {
+                                        openConfirm(
+                                          isRtl ? 'حذف الخطة' : 'Delete Plan',
+                                          isRtl ? 'هل أنت متأكد من حذف هذه الخطة نهائياً؟' : 'Are you sure you want to permanently delete this plan?',
+                                          () => {
+                                            if (onDeleteMorningMeetingPlan) onDeleteMorningMeetingPlan(plan.id);
+                                          }
+                                        );
+                                      } else if (window.confirm(isRtl ? 'هل أنت متأكد من حذف هذه الخطة نهائياً؟' : 'Are you sure you want to permanently delete this plan?')) {
+                                        if (onDeleteMorningMeetingPlan) {
+                                          onDeleteMorningMeetingPlan(plan.id);
+                                        }
+                                      }
+                                    }}
+                                    title={isRtl ? 'حذف الخطة' : 'Delete Plan'}
+                                    className="p-1.5 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 transition cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
                               )}
                             </div>
 

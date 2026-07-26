@@ -1614,6 +1614,121 @@ export default function FieldPortal({
     }
   };
 
+  // Wait until we have the required states
+  // Authorization state
+  const [isAuthorized, setIsAuthorized] = useState(false);
+  const [authId, setAuthId] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+
+  const handleSupervisorLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    if (!authId.trim() || !authPassword.trim()) {
+      setAuthError(isRtl ? 'الرجاء إدخال رقم الهوية وكلمة المرور' : 'Please enter both ID Number and Password');
+      return;
+    }
+    
+    setIsAuthenticating(true);
+    try {
+      const list = await dbApi.getAll<any>('admins');
+      const found = list.find(a => a.idNumber === authId.trim() && a.password === authPassword.trim());
+      
+      if (found) {
+        setIsAuthorized(true);
+        setSupName(found.name);
+        setSupNationalId(found.idNumber);
+        // Assuming ID number could act as badge for now, or just leave badge to be filled manually if they have a different one.
+        setSupBadge(found.idNumber);
+      } else {
+        setAuthError(isRtl ? 'رقم الهوية أو كلمة المرور المدخلة غير صحيحة' : 'The ID Number or Password entered is incorrect');
+      }
+    } catch (err) {
+      console.error(err);
+      setAuthError(isRtl ? 'حدث خطأ في الاتصال بقاعدة البيانات' : 'Failed to connect to the database');
+    } finally {
+      setIsAuthenticating(false);
+    }
+  };
+
+  if (!isAuthorized) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4" style={{ fontFamily: isRtl ? 'Cairo, sans-serif' : 'Inter, sans-serif', direction: isRtl ? 'rtl' : 'ltr' }}>
+        <div className="max-w-md w-full bg-white rounded-2xl border border-gray-200 shadow-xl overflow-hidden">
+          <div className="bg-[#040957] px-6 py-8 text-center text-white relative">
+            <button 
+              onClick={onReturnToMain}
+              className={`absolute top-4 ${isRtl ? 'right-4' : 'left-4'} text-white/70 hover:text-white transition flex items-center gap-1 text-xs cursor-pointer`}
+            >
+              <ChevronLeft className="w-4 h-4" />
+              {isRtl ? 'عودة للنظام' : 'Return to Main'}
+            </button>
+            <div className="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center mx-auto mb-3 border border-white/20 mt-4">
+              <ShieldAlert className="w-6 h-6 text-emerald-400" />
+            </div>
+            <h2 className="text-xl font-bold font-sans">
+              {isRtl ? 'بوابة المشرف الميدانية' : 'Field Supervisor Portal'}
+            </h2>
+            <p className="text-xs text-slate-300 mt-1 max-w-[280px] mx-auto">
+              {isRtl ? 'يرجى تسجيل الدخول للوصول إلى أدوات المشرفين (المعرف الصادر من النظام)' : 'Please log in to access the field tools (System issued ID)'}
+            </p>
+          </div>
+          <form onSubmit={handleSupervisorLogin} className="p-6 space-y-5">
+            {authError && (
+              <div className="bg-rose-50 border border-rose-100 p-3.5 rounded-xl flex items-start gap-2.5 text-rose-800 text-xs font-semibold">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{authError}</span>
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-black uppercase tracking-wider text-gray-500 block">
+                {isRtl ? 'رقم الهوية / الرقم الوظيفي' : 'ID Number / Badge'}
+              </label>
+              <input
+                type="text"
+                value={authId}
+                onChange={(e) => setAuthId(e.target.value)}
+                className="w-full pl-3 pr-3 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-1 focus:ring-[#0080FF] bg-gray-50/50 text-xs font-bold"
+                placeholder={isRtl ? "مثال: 1001" : "e.g., 1001"}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-black uppercase tracking-wider text-gray-500 block">
+                {isRtl ? 'كلمة المرور' : 'Password'}
+              </label>
+              <input
+                type="password"
+                value={authPassword}
+                onChange={(e) => setAuthPassword(e.target.value)}
+                className="w-full pl-3 pr-3 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-1 focus:ring-[#0080FF] bg-gray-50/50 text-xs font-bold"
+                placeholder="••••••••••••"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={isAuthenticating}
+              className="w-full bg-[#040957] hover:bg-[#0d1680] text-white py-3 rounded-xl font-bold text-xs uppercase tracking-wider shadow-sm transition active:scale-[0.98] cursor-pointer"
+            >
+              {isAuthenticating ? (isRtl ? 'جاري التحقق...' : 'Verifying...') : (isRtl ? 'تسجيل الدخول الأمن' : 'Secure Login')}
+            </button>
+            <div className="border-t border-dashed border-gray-150 pt-4 text-center">
+              <span className="text-[10px] text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100 inline-block font-bold">
+                💡 {isRtl ? 'استخدم بيانات المسؤول المعتمد:' : 'Use authorized administrator credentials:'}{' '}
+                <span className="font-mono bg-white px-1.5 py-0.5 rounded border border-emerald-200 ml-1">
+                  ID: 1001
+                </span>
+                <span className="font-mono bg-white px-1.5 py-0.5 rounded border border-emerald-200 ml-1">
+                  PW: password123
+                </span>
+              </span>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-4xl mx-auto space-y-6 font-sans py-4 px-2">
       {/* HEADER BAR FOR PORTAL */}

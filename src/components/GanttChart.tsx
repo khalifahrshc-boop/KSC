@@ -92,9 +92,9 @@ export default function GanttChart({
   }, []);
 
   const leftWidth = useMemo(() => {
-    if (windowWidth < 640) return 180; // Mobile
-    if (windowWidth < 1024) return 280; // iPad/Tablet
-    return 420; // Desktop
+    if (windowWidth < 640) return 220; // Mobile
+    if (windowWidth < 1024) return 340; // iPad/Tablet
+    return 480; // Desktop
   }, [windowWidth]);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -798,7 +798,7 @@ export default function GanttChart({
               
               {/* Sticky Left Header Column */}
               <div 
-                className="shrink-0 sticky left-0 bg-slate-100/90 border-r border-slate-200 px-3 sm:px-4 md:px-5 flex items-center justify-between z-40"
+                className="shrink-0 sticky left-0 rtl:left-auto rtl:right-0 bg-slate-100 border-r rtl:border-r-0 rtl:border-l border-slate-200 px-3 sm:px-4 md:px-5 flex items-center justify-between z-40"
                 style={{ width: `${leftWidth}px` }}
               >
                 <div className="flex items-center gap-2 overflow-hidden">
@@ -893,8 +893,8 @@ export default function GanttChart({
                       {/* Left sticky details cell */}
                       <div 
                         style={{ width: `${leftWidth}px` }}
-                        className={`shrink-0 sticky left-0 z-20 flex items-center justify-between border-r border-slate-200 px-2 sm:px-3 md:px-5 relative ${
-                          isProj ? 'bg-slate-50/90 font-black' : isWi ? 'bg-slate-50/70 font-extrabold' : 'bg-white'
+                        className={`shrink-0 sticky left-0 rtl:left-auto rtl:right-0 z-20 flex items-center justify-between border-r rtl:border-r-0 rtl:border-l border-slate-200 px-2 sm:px-3 md:px-5 relative ${
+                          isProj ? 'bg-slate-100 font-black' : isWi ? 'bg-slate-50 font-extrabold' : 'bg-white'
                         }`}
                       >
                         <div className="flex items-center gap-1.5 md:gap-2 overflow-hidden flex-1">

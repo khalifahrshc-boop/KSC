@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   Briefcase, 
   Layers, 
@@ -14,6 +14,7 @@ import {
   AlertTriangle, 
   CheckCircle, 
   ChevronRight, 
+  ChevronLeft,
   Search, 
   Bell, 
   Check, 
@@ -25,6 +26,7 @@ import {
   Activity as ActivityIcon,
   User as UserIcon,
   Trash2,
+  Pencil,
   Maximize2,
   X,
   Printer,
@@ -36,7 +38,9 @@ import {
   Mail,
   FileText,
   CheckCircle2,
-  Calendar
+  Calendar,
+  Info,
+  Filter
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { runWithOklchSanitizer } from '../utils/pdfSanitizer';
@@ -95,6 +99,8 @@ interface DashboardProps {
   quickNotes?: QuickNote[];
   onSaveQuickNote?: (content: string) => void;
   onDeleteQuickNote?: (id: string) => void;
+  onUpdateQuickNote?: (id: string, content: string) => void;
+  openConfirm?: (title: string, message: string, onConfirm: () => void, isDestructive?: boolean) => void;
 }
 
 export default function Dashboard({ 
@@ -116,7 +122,9 @@ export default function Dashboard({
   settings,
   quickNotes = [],
   onSaveQuickNote,
-  onDeleteQuickNote
+  onDeleteQuickNote,
+  onUpdateQuickNote,
+  openConfirm
 }: DashboardProps) {
   const isRtl = lang === 'ar';
   const [searchTerm, setSearchTerm] = useState('');
@@ -127,6 +135,7 @@ export default function Dashboard({
   const [isQuickNoteOpen, setIsQuickNoteOpen] = useState(false);
   const [quickNoteContent, setQuickNoteContent] = useState('');
   const [isSavingNote, setIsSavingNote] = useState(false);
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
 
   // Compute stats
   const totalProjCount = projects.length;
@@ -161,6 +170,12 @@ export default function Dashboard({
 
   // Real Daily Production Calculation
   const sysNow = getSystemToday();
+  const todayStr = sysNow.toISOString().split('T')[0];
+  const yesterdayStr = (() => {
+    const d = new Date(sysNow);
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().split('T')[0];
+  })();
   
   const totalDailyTarget = activities.reduce((acc, act) => {
     // Find the work item and project for this activity
@@ -234,6 +249,169 @@ export default function Dashboard({
   
   const [isPrinting, setIsPrinting] = useState(false);
   
+  // High-Level Gantt Chart States
+  const [ganttSearch, setGanttSearch] = useState('');
+  const [ganttTypeFilter, setGanttTypeFilter] = useState<'all' | 'Primary' | 'Secondary'>('all');
+  const [ganttScale, setGanttScale] = useState<'days' | 'weeks'>('weeks');
+  const ganttScrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const scrollGanttTimeline = (direction: 'left' | 'right') => {
+    if (ganttScrollContainerRef.current) {
+      const scrollAmount = direction === 'left' ? -200 : 200;
+      const factor = isRtl ? -1 : 1;
+      ganttScrollContainerRef.current.scrollBy({ left: scrollAmount * factor, behavior: 'smooth' });
+    }
+  };
+
+  // Safe Date parsing helper for Gantt chart
+  const parseDateLocal = (str: string) => {
+    if (!str) return new Date();
+    const [y, m, d] = str.split('-').map(Number);
+    return new Date(y, m - 1, d);
+  };
+
+  const parsedToday = useMemo(() => sysNow, [sysNow]);
+  const parsedTodayStr = todayStr;
+
+  // Process work items with calculated timelines and progress percentage
+  const processedWorkItems = useMemo(() => {
+    return workItems
+      .filter(wi => {
+        // Project filter
+        if (filterProjectId !== 'all' && wi.projectId !== filterProjectId) return false;
+        
+        // Search term
+        const matchesSearch = ganttSearch === '' ||
+          wi.nameEn.toLowerCase().includes(ganttSearch.toLowerCase()) ||
+          wi.nameAr.includes(ganttSearch) ||
+          wi.itemNumber.toLowerCase().includes(ganttSearch.toLowerCase());
+          
+        // Type filter
+        const matchesType = ganttTypeFilter === 'all' || wi.workType === ganttTypeFilter;
+        
+        return matchesSearch && matchesType;
+      })
+      .map(wi => {
+        const proj = projects.find(p => p.id === wi.projectId);
+        const parentNameEn = proj ? proj.nameEn : '-';
+        const parentNameAr = proj ? proj.nameAr : '-';
+        const projectStatus = proj ? proj.status : 'On Track';
+        
+        // Find child activities
+        const wiActivities = activities.filter(a => a.workItemId === wi.id);
+        
+        // Calculate start & end
+        let start = proj ? parseDateLocal(proj.startDate) : parsedToday;
+        let end = proj ? parseDateLocal(proj.endDate) : parsedToday;
+        
+        if (wiActivities.length > 0) {
+          const dates = wiActivities.map(act => {
+            let startStr = proj?.startDate || parsedTodayStr;
+            if (act.dependsOnActivityId) {
+              const dep = activities.find(a => a.id === act.dependsOnActivityId);
+              if (dep && dep.expectedFinishDate) {
+                startStr = dep.expectedFinishDate;
+              }
+            }
+            const endStr = act.expectedFinishDate || proj?.endDate || parsedTodayStr;
+            return {
+              start: parseDateLocal(startStr),
+              end: parseDateLocal(endStr)
+            };
+          });
+          
+          start = new Date(Math.min(...dates.map(d => d.start.getTime())));
+          end = new Date(Math.max(...dates.map(d => d.end.getTime())));
+        }
+        
+        // Calculate progress
+        const progress = Math.round(getWorkItemProgress(wi, activities, progressUpdates));
+        
+        return {
+          ...wi,
+          parentNameEn,
+          parentNameAr,
+          projectStatus,
+          start,
+          end,
+          progress,
+          activities: wiActivities
+        };
+      });
+  }, [workItems, filterProjectId, ganttSearch, ganttTypeFilter, projects, activities, progressUpdates, parsedToday]);
+
+  const ganttTimelineData = useMemo(() => {
+    if (processedWorkItems.length === 0) {
+      const minDate = new Date('2026-07-01');
+      const maxDate = new Date('2026-08-31');
+      return { minDate, maxDate, totalDays: 60 };
+    }
+    
+    const startTimes = processedWorkItems.map(wi => wi.start.getTime());
+    const endTimes = processedWorkItems.map(wi => wi.end.getTime());
+    
+    const minDate = new Date(Math.min(...startTimes));
+    const maxDate = new Date(Math.max(...endTimes));
+    
+    // Add visual padding
+    minDate.setDate(minDate.getDate() - 4);
+    maxDate.setDate(maxDate.getDate() + 10);
+    
+    minDate.setHours(0,0,0,0);
+    maxDate.setHours(23,59,59,999);
+    
+    const totalDays = Math.ceil((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24));
+    return { minDate, maxDate, totalDays };
+  }, [processedWorkItems]);
+
+  const ganttColumns = useMemo(() => {
+    const { minDate, maxDate } = ganttTimelineData;
+    const cols: Date[] = [];
+    
+    if (ganttScale === 'days') {
+      const curr = new Date(minDate);
+      while (curr <= maxDate) {
+        cols.push(new Date(curr));
+        curr.setDate(curr.getDate() + 1);
+      }
+    } else {
+      // weeks scale
+      const curr = new Date(minDate);
+      // Align to Sunday
+      curr.setDate(curr.getDate() - curr.getDay());
+      while (curr <= maxDate) {
+        cols.push(new Date(curr));
+        curr.setDate(curr.getDate() + 7);
+      }
+    }
+    return cols;
+  }, [ganttTimelineData, ganttScale]);
+
+  const ganttColWidth = ganttScale === 'days' ? 50 : 130;
+  const ganttGridStart = ganttColumns[0] || ganttTimelineData.minDate;
+  
+  const getGanttX = (date: Date): number => {
+    const diffMs = date.getTime() - ganttGridStart.getTime();
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    if (ganttScale === 'days') {
+      return diffDays * ganttColWidth;
+    } else {
+      return (diffDays / 7) * ganttColWidth;
+    }
+  };
+
+  const getGanttWidth = (start: Date, end: Date): number => {
+    const diffMs = end.getTime() - start.getTime();
+    const diffDays = Math.max(1, diffMs / (1000 * 60 * 60 * 24));
+    if (ganttScale === 'days') {
+      return diffDays * ganttColWidth;
+    } else {
+      return (diffDays / 7) * ganttColWidth;
+    }
+  };
+
+  const todayX = getGanttX(parsedToday);
+  
   // Accordion state for organizing key details
   const [isCompanyAccordionOpen, setIsCompanyAccordionOpen] = useState(true);
   const [isMetricsAccordionOpen, setIsMetricsAccordionOpen] = useState(true);
@@ -243,12 +421,21 @@ export default function Dashboard({
 
   const handleSaveNoteSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!quickNoteContent.trim() || !onSaveQuickNote) return;
+    if (!quickNoteContent.trim()) return;
     setIsSavingNote(true);
     try {
-      await onSaveQuickNote(quickNoteContent);
+      if (editingNoteId) {
+        if (onUpdateQuickNote) {
+          await onUpdateQuickNote(editingNoteId, quickNoteContent);
+        }
+      } else {
+        if (onSaveQuickNote) {
+          await onSaveQuickNote(quickNoteContent);
+        }
+      }
       setQuickNoteContent('');
       setIsQuickNoteOpen(false);
+      setEditingNoteId(null);
     } catch (err) {
       console.error(err);
     } finally {
@@ -850,17 +1037,6 @@ export default function Dashboard({
       .slice(0, isFeedExpanded ? 50 : 10);
   }, [progressUpdates, activities, workItems, isRtl, isFeedExpanded, filterProjectId]);
 
-  // Date calculations based on simulation day
-  const todayStr = useMemo(() => {
-    return sysNow.toISOString().split('T')[0];
-  }, [sysNow]);
-
-  const yesterdayStr = useMemo(() => {
-    const d = new Date(sysNow);
-    d.setDate(d.getDate() - 1);
-    return d.toISOString().split('T')[0];
-  }, [sysNow]);
-
   // Dynamically filter productionFeed based on selected date filter
   const filteredProductionFeed = useMemo(() => {
     return productionFeed.filter(upd => {
@@ -1372,7 +1548,13 @@ export default function Dashboard({
                         <button 
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (window.confirm(isRtl ? 'هل أنت متأكد من حذف هذا التحديث؟' : 'Are you sure you want to delete this update?')) {
+                            if (openConfirm) {
+                              openConfirm(
+                                isRtl ? 'حذف تحديث' : 'Delete Update',
+                                isRtl ? 'هل أنت متأكد من حذف هذا التحديث؟' : 'Are you sure you want to delete this update?',
+                                () => onDeleteProgressUpdate?.(upd.id)
+                              );
+                            } else if (window.confirm(isRtl ? 'هل أنت متأكد من حذف هذا التحديث؟' : 'Are you sure you want to delete this update?')) {
                               onDeleteProgressUpdate?.(upd.id);
                             }
                           }}
@@ -1389,7 +1571,13 @@ export default function Dashboard({
                   {!isDeleteMode && (
                     <button 
                       onClick={() => {
-                        if (window.confirm(isRtl ? 'هل أنت متأكد من حذف هذا التحديث؟' : 'Are you sure you want to delete this update?')) {
+                        if (openConfirm) {
+                          openConfirm(
+                            isRtl ? 'حذف تحديث' : 'Delete Update',
+                            isRtl ? 'هل أنت متأكد من حذف هذا التحديث؟' : 'Are you sure you want to delete this update?',
+                            () => onDeleteProgressUpdate?.(upd.id)
+                          );
+                        } else if (window.confirm(isRtl ? 'هل أنت متأكد من حذف هذا التحديث؟' : 'Are you sure you want to delete this update?')) {
                           onDeleteProgressUpdate?.(upd.id);
                         }
                       }}
@@ -1502,19 +1690,41 @@ export default function Dashboard({
                   key={note.id} 
                   className="bg-slate-50/50 border border-gray-100 p-3 rounded-xl space-y-2 hover:bg-white hover:border-indigo-200 hover:shadow-md transition-all group relative"
                 >
-                  {onDeleteQuickNote && (
+                  {/* Actions overlay */}
+                  <div className="absolute top-2 left-2 flex items-center gap-1 bg-white/90 backdrop-blur-3xs border border-slate-100 rounded-lg p-0.5 shadow-2xs z-10">
                     <button 
+                      type="button"
                       onClick={() => {
-                        if (window.confirm(isRtl ? 'هل أنت متأكد من حذف هذه المذكرة؟' : 'Are you sure you want to delete this memo?')) {
-                          onDeleteQuickNote(note.id);
-                        }
+                        setEditingNoteId(note.id);
+                        setQuickNoteContent(note.content);
+                        setIsQuickNoteOpen(true);
                       }}
-                      className="absolute top-2 left-2 p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all z-10 cursor-pointer"
-                      title={isRtl ? 'حذف' : 'Delete'}
+                      className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-md cursor-pointer transition-colors"
+                      title={isRtl ? 'تعديل المذكرة' : 'Edit Memo'}
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Pencil className="w-3.5 h-3.5" />
                     </button>
-                  )}
+                    {onDeleteQuickNote && (
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          if (openConfirm) {
+                            openConfirm(
+                              isRtl ? 'حذف المذكرة' : 'Delete Memo',
+                              isRtl ? 'هل أنت متأكد من حذف هذه المذكرة؟' : 'Are you sure you want to delete this memo?',
+                              () => onDeleteQuickNote(note.id)
+                            );
+                          } else if (window.confirm(isRtl ? 'هل أنت متأكد من حذف هذه المذكرة؟' : 'Are you sure you want to delete this memo?')) {
+                            onDeleteQuickNote(note.id);
+                          }
+                        }}
+                        className="p-1 text-slate-500 hover:text-red-500 hover:bg-red-50 rounded-md cursor-pointer transition-colors"
+                        title={isRtl ? 'حذف المذكرة' : 'Delete Memo'}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                   
                   <p className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed">
                     {note.content}
@@ -1540,6 +1750,318 @@ export default function Dashboard({
             </div>
           </div>
         </div>
+      </div>
+
+      {/* High-Level GANTT Chart Visualization for Active Work Items */}
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 space-y-6">
+        <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 border-b border-gray-100 pb-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-emerald-50 rounded-lg">
+                <Calendar className="w-5 h-5 text-emerald-600" />
+              </div>
+              <h2 className="text-lg font-bold text-[#040957] font-sans">
+                {isRtl ? 'المخطط الزمني الشامل (غانت)' : 'Executive Portfolio Gantt Chart'}
+              </h2>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">
+              {isRtl 
+                ? 'مخطط زمني تفاعلي لتتبع تقدم البنود النشطة والاعتماديات والمكتمل والمتبقي.' 
+                : 'Interactive master timeline representing active work item schedules, current progress, and critical paths.'}
+            </p>
+          </div>
+          
+          {/* Controls bar */}
+          <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto text-xs">
+            {/* Search */}
+            <div className="relative flex-1 sm:flex-initial">
+              <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={ganttSearch}
+                onChange={(e) => setGanttSearch(e.target.value)}
+                placeholder={isRtl ? 'بحث في البنود...' : 'Search work items...'}
+                className="pl-8 pr-3 py-1.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-1 focus:ring-[#0080FF] bg-gray-50/50 w-full sm:w-48 text-[11px] font-bold"
+              />
+            </div>
+            
+            {/* Filter by work type */}
+            <div className="flex items-center gap-1.5 bg-gray-100 p-1 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setGanttTypeFilter('all')}
+                className={`px-2.5 py-1 rounded-lg transition text-[10px] font-black uppercase ${ganttTypeFilter === 'all' ? 'bg-[#040957] text-white shadow-xs' : 'text-gray-500 hover:text-gray-900'}`}
+              >
+                {isRtl ? 'الكل' : 'All'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setGanttTypeFilter('Primary')}
+                className={`px-2.5 py-1 rounded-lg transition text-[10px] font-black uppercase ${ganttTypeFilter === 'Primary' ? 'bg-[#0080FF] text-white shadow-xs' : 'text-gray-500 hover:text-gray-900'}`}
+              >
+                {isRtl ? 'أساسي' : 'Primary'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setGanttTypeFilter('Secondary')}
+                className={`px-2.5 py-1 rounded-lg transition text-[10px] font-black uppercase ${ganttTypeFilter === 'Secondary' ? 'bg-teal-600 text-white shadow-xs' : 'text-gray-500 hover:text-gray-900'}`}
+              >
+                {isRtl ? 'ثانوي' : 'Secondary'}
+              </button>
+            </div>
+
+            {/* Scale switch */}
+            <div className="flex items-center gap-1.5 bg-gray-100 p-1 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setGanttScale('days')}
+                className={`px-2.5 py-1 rounded-lg transition text-[10px] font-black uppercase ${ganttScale === 'days' ? 'bg-[#040957] text-white shadow-xs' : 'text-gray-500 hover:text-gray-900'}`}
+              >
+                {isRtl ? 'يومي' : 'Daily'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setGanttScale('weeks')}
+                className={`px-2.5 py-1 rounded-lg transition text-[10px] font-black uppercase ${ganttScale === 'weeks' ? 'bg-[#040957] text-white shadow-xs' : 'text-gray-500 hover:text-gray-900'}`}
+              >
+                {isRtl ? 'أسبوعي' : 'Weekly'}
+              </button>
+            </div>
+
+            {/* Scroll controls */}
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => scrollGanttTimeline('left')}
+                className="p-1.5 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200 text-gray-600 cursor-pointer transition active:scale-95"
+                title={isRtl ? 'تمرير لليسار' : 'Scroll Left'}
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => scrollGanttTimeline('right')}
+                className="p-1.5 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200 text-gray-600 cursor-pointer transition active:scale-95"
+                title={isRtl ? 'تمرير لليمين' : 'Scroll Right'}
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Chart View Area */}
+        {processedWorkItems.length === 0 ? (
+          <div className="text-center py-16 border border-dashed border-gray-200 rounded-2xl bg-gray-50/30">
+            <Layers className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+            <p className="text-sm italic text-gray-400">
+              {isRtl ? 'لا توجد بنود عمل نشطة مطابقة للبحث أو الفلتر حالياً.' : 'No active work items found matching current filter context.'}
+            </p>
+          </div>
+        ) : (
+          <div className="border border-gray-200 rounded-2xl overflow-hidden flex flex-row bg-white relative">
+            
+            {/* LEFT FIXED PANEL: Work Item details */}
+            <div className="w-[180px] sm:w-[260px] md:w-[320px] flex-shrink-0 border-r border-gray-200 bg-gray-50/50 flex flex-col z-10 select-none">
+              {/* Header column title */}
+              <div className="h-12 border-b border-gray-200 bg-gray-100/80 px-3 flex items-center text-[10px] font-black uppercase text-gray-500 tracking-wider">
+                {isRtl ? 'بنود العمل والإنتاجية' : 'Work Item & Core Metrics'}
+              </div>
+              
+              {/* Work Items Rows */}
+              <div className="divide-y divide-gray-150">
+                {processedWorkItems.map((wi) => (
+                  <div key={wi.id} className="h-16 px-3 flex flex-col justify-center space-y-1 bg-white hover:bg-slate-50 transition-colors">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[11px] font-black text-[#040957] truncate font-sans" title={isRtl ? wi.nameAr : wi.nameEn}>
+                        {isRtl ? wi.nameAr : wi.nameEn}
+                      </span>
+                      <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-sm ${wi.workType === 'Primary' ? 'bg-blue-50 text-blue-700 border border-blue-100' : 'bg-teal-50 text-teal-700 border border-teal-100'}`}>
+                        {wi.workType === 'Primary' ? (isRtl ? 'أساسي' : 'PRIM') : (isRtl ? 'ثانوي' : 'SEC')}
+                      </span>
+                    </div>
+                    
+                    <div className="flex flex-wrap items-center justify-between text-[9px] gap-1">
+                      <span className="text-gray-400 font-bold truncate max-w-[120px] sm:max-w-none" title={isRtl ? wi.parentNameAr : wi.parentNameEn}>
+                        {isRtl ? wi.parentNameAr : wi.parentNameEn}
+                      </span>
+                      <span className="text-emerald-600 font-extrabold flex items-center gap-0.5">
+                        <TrendingUp className="w-2.5 h-2.5" />
+                        {wi.progress}%
+                      </span>
+                    </div>
+
+                    {/* Miniature Progress bar */}
+                    <div className="w-full h-1 bg-gray-100 rounded-full overflow-hidden">
+                      <div 
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          wi.projectStatus === 'Ahead' ? 'bg-emerald-500' : wi.projectStatus === 'Delayed' ? 'bg-amber-500' : 'bg-[#0080FF]'
+                        }`}
+                        style={{ width: `${wi.progress}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* RIGHT SCROLL PANEL: Timeline chart */}
+            <div 
+              ref={ganttScrollContainerRef}
+              className="flex-1 overflow-x-auto scrollbar-thin relative scroll-smooth"
+            >
+              {/* Header dates row */}
+              <div 
+                className="h-12 border-b border-gray-200 bg-gray-100/50 flex flex-row relative"
+                style={{ width: `${ganttColumns.length * ganttColWidth}px` }}
+              >
+                {ganttColumns.map((col, idx) => (
+                  <div 
+                    key={idx} 
+                    className="border-r border-gray-100 text-[9px] font-extrabold text-gray-400 p-2 flex flex-col justify-end tracking-wider uppercase flex-shrink-0"
+                    style={{ width: `${ganttColWidth}px` }}
+                  >
+                    {ganttScale === 'days' ? (
+                      <>
+                        <span className="text-gray-300 font-mono leading-none">
+                          {col.toLocaleDateString(lang === 'ar' ? 'ar-SA' : 'en-US', { weekday: 'short' })}
+                        </span>
+                        <span className="text-[#040957] text-[10px] mt-0.5">
+                          {col.getDate()} {col.toLocaleDateString(lang === 'ar' ? 'ar-SA' : 'en-US', { month: 'short' })}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-[#040957] font-semibold flex items-center gap-1">
+                        <Calendar className="w-3 h-3 text-emerald-500" />
+                        {isRtl ? 'أسبوع ' : 'Wk of '}
+                        {col.getDate()}/{col.getMonth() + 1}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Grid content rows */}
+              <div 
+                className="relative divide-y divide-gray-150 min-h-[120px]"
+                style={{ width: `${ganttColumns.length * ganttColWidth}px` }}
+              >
+                {/* Vertical column grids lines */}
+                <div className="absolute inset-y-0 left-0 right-0 flex pointer-events-none z-0">
+                  {ganttColumns.map((_, idx) => (
+                    <div 
+                      key={idx} 
+                      className="border-r border-gray-50 h-full flex-shrink-0"
+                      style={{ width: `${ganttColWidth}px` }}
+                    />
+                  ))}
+                </div>
+
+                {/* TODAY MARKER line */}
+                {todayX >= 0 && todayX <= ganttColumns.length * ganttColWidth && (
+                  <div 
+                    className="absolute top-0 bottom-0 border-l-2 border-dashed border-red-500 z-10 pointer-events-none"
+                    style={{ left: `${todayX}px` }}
+                  >
+                    <span className="absolute top-1 left-2 bg-red-500 text-white text-[8px] font-black uppercase px-1 py-0.5 rounded-sm shadow-xs select-none">
+                      {isRtl ? 'اليوم' : 'Today'}
+                    </span>
+                  </div>
+                )}
+
+                {/* Timeline bars mapping */}
+                {processedWorkItems.map((wi) => {
+                  const leftX = getGanttX(wi.start);
+                  const barWidth = getGanttWidth(wi.start, wi.end);
+                  
+                  // Style configurations based on project status
+                  let barColor = 'bg-blue-100 border-blue-200 text-blue-700';
+                  let progressColor = 'bg-[#0080FF]';
+                  
+                  if (wi.projectStatus === 'Ahead') {
+                    barColor = 'bg-emerald-50 border-emerald-100 text-emerald-700';
+                    progressColor = 'bg-emerald-500';
+                  } else if (wi.projectStatus === 'Delayed') {
+                    barColor = 'bg-amber-50 border-amber-100 text-amber-700';
+                    progressColor = 'bg-amber-500';
+                  }
+
+                  const startText = wi.start.toLocaleDateString(lang === 'ar' ? 'ar-SA' : 'en-US', { month: 'short', day: 'numeric' });
+                  const endText = wi.end.toLocaleDateString(lang === 'ar' ? 'ar-SA' : 'en-US', { month: 'short', day: 'numeric' });
+
+                  return (
+                    <div 
+                      key={wi.id} 
+                      className="h-16 relative flex items-center px-1 z-0 bg-white hover:bg-slate-50 transition-colors group/bar"
+                    >
+                      {/* Gantt Bar */}
+                      {barWidth > 0 && (
+                        <div 
+                          className={`absolute h-7 rounded-lg border flex items-center shadow-2xs overflow-hidden transition-all duration-300 group-hover/bar:shadow-md z-10 cursor-pointer ${barColor}`}
+                          style={{ 
+                            left: `${Math.max(0, leftX)}px`, 
+                            width: `${Math.max(28, barWidth)}px` 
+                          }}
+                        >
+                          {/* Inner filled physical progress */}
+                          <div 
+                            className={`absolute inset-y-0 left-0 transition-all duration-500 ${progressColor} opacity-20`}
+                            style={{ width: `${wi.progress}%` }}
+                          />
+
+                          {/* Details & text inside bar */}
+                          <div className="w-full px-2.5 flex items-center justify-between text-[9px] font-extrabold select-none truncate">
+                            <span className="truncate pr-1">
+                              {wi.progress}% {isRtl ? 'منجز' : 'Done'}
+                            </span>
+                            <span className="text-[8px] opacity-75 font-mono hidden sm:inline">
+                              {startText} - {endText}
+                            </span>
+                          </div>
+
+                          {/* Premium Hover Card details popover */}
+                          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 hidden group-hover/bar:block bg-slate-900/95 backdrop-blur-md text-white text-[10px] p-3 rounded-xl border border-slate-700/80 shadow-2xl w-60 z-50 pointer-events-none leading-relaxed space-y-1.5 font-sans font-medium">
+                            <div className="font-extrabold text-white flex justify-between border-b border-slate-800 pb-1 text-[11px]">
+                              <span className="truncate">{isRtl ? wi.nameAr : wi.nameEn}</span>
+                              <span className="text-emerald-400">{wi.progress}%</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-400 font-bold block text-[8px] uppercase">{isRtl ? 'المشروع:' : 'Project'}</span>
+                              <span className="text-slate-100 font-semibold">{isRtl ? wi.parentNameAr : wi.parentNameEn}</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-[9px]">
+                              <div>
+                                <span className="text-slate-400 font-bold block text-[8px] uppercase">{isRtl ? 'تاريخ البدء:' : 'Start Date'}</span>
+                                <span className="text-slate-200">{startText}</span>
+                              </div>
+                              <div>
+                                <span className="text-slate-400 font-bold block text-[8px] uppercase">{isRtl ? 'تاريخ الانتهاء:' : 'End Date'}</span>
+                                <span className="text-slate-200">{endText}</span>
+                              </div>
+                            </div>
+                            {wi.activities.length > 0 && (
+                              <div className="pt-1.5 border-t border-slate-800">
+                                <span className="text-slate-400 font-bold block text-[8px] uppercase mb-0.5">{isRtl ? 'الأنشطة المجدولة:' : 'Scheduled Activities'}</span>
+                                <div className="space-y-0.5 max-h-[60px] overflow-y-auto pr-1">
+                                  {wi.activities.map((act) => (
+                                    <div key={act.id} className="flex justify-between text-[8px] text-slate-300">
+                                      <span className="truncate max-w-[140px]">{isRtl ? act.nameAr : act.nameEn}</span>
+                                      <span className="text-blue-400 font-semibold">{act.totalQuantity} {act.unit}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Projects Status Overview Matrix */}
@@ -2324,7 +2846,13 @@ export default function Dashboard({
                                       <td className="py-3 px-3 text-center print:hidden">
                                         <button 
                                           onClick={() => {
-                                            if (window.confirm(isRtl ? 'هل أنت متأكد من حذف هذا التحديث؟' : 'Are you sure you want to delete this update?')) {
+                                            if (openConfirm) {
+                                              openConfirm(
+                                                isRtl ? 'حذف تحديث' : 'Delete Update',
+                                                isRtl ? 'هل أنت متأكد من حذف هذا التحديث؟' : 'Are you sure you want to delete this update?',
+                                                () => onDeleteProgressUpdate?.(upd.id)
+                                              );
+                                            } else if (window.confirm(isRtl ? 'هل أنت متأكد من حذف هذا التحديث؟' : 'Are you sure you want to delete this update?')) {
                                               onDeleteProgressUpdate?.(upd.id);
                                             }
                                           }}
@@ -2446,12 +2974,19 @@ export default function Dashboard({
                 <div className="flex items-center gap-2">
                   <FileText className="w-5 h-5 text-blue-400" />
                   <h3 className="font-extrabold text-sm uppercase tracking-wider">
-                    {isRtl ? 'إضافة ملاحظة سريعة' : 'New Quick Note / Memo'}
+                    {editingNoteId 
+                      ? (isRtl ? 'تعديل ملاحظة سريعة' : 'Edit Quick Note / Memo')
+                      : (isRtl ? 'إضافة ملاحظة سريعة' : 'New Quick Note / Memo')
+                    }
                   </h3>
                 </div>
                 <button 
                   type="button"
-                  onClick={() => setIsQuickNoteOpen(false)}
+                  onClick={() => {
+                    setIsQuickNoteOpen(false);
+                    setEditingNoteId(null);
+                    setQuickNoteContent('');
+                  }}
                   className="text-gray-300 hover:text-white transition cursor-pointer"
                 >
                   <X className="w-5 h-5" />
@@ -2494,7 +3029,11 @@ export default function Dashboard({
                 <div className="flex gap-3 justify-end pt-2">
                   <button
                     type="button"
-                    onClick={() => setIsQuickNoteOpen(false)}
+                    onClick={() => {
+                      setIsQuickNoteOpen(false);
+                      setEditingNoteId(null);
+                      setQuickNoteContent('');
+                    }}
                     className="px-4 py-2 text-xs font-bold text-gray-500 hover:text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-xl transition cursor-pointer"
                   >
                     {isRtl ? 'إلغاء' : 'Cancel'}
