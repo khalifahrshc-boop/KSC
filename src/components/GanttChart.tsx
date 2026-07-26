@@ -3,40 +3,47 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { motion } from 'framer-motion';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { 
+  Calendar, 
+  Clock, 
+  AlertTriangle, 
+  CheckCircle, 
+  HelpCircle, 
+  Users, 
+  Filter, 
+  Search, 
+  ChevronRight, 
+  ChevronDown, 
+  Download, 
+  MapPin, 
+  User, 
+  Wrench, 
+  Layers, 
+  Briefcase, 
+  Grid,
+  TrendingUp,
+  Maximize2,
+  Minimize2,
+  Info
+} from 'lucide-react';
 import { 
   Project, 
   WorkItem, 
   Activity, 
   ProgressUpdate,
-  WarehouseMaterial
+  WarehouseMaterial,
+  Worker,
+  EquipmentItem,
+  AttendanceRecord
 } from '../types';
 import { 
   getActivityProgress, 
-  getActivityStatus,
-  getProjectStatusDetails,
-  getProjectProgress,
-  getProjectPlannedProgress,
-  getSystemToday
+  getActivityStatus, 
+  getSystemToday, 
+  getProjectProgress 
 } from '../utils/progressCalculations';
-import { 
-  Calendar, 
-  ChevronRight, 
-  Clock, 
-  Info, 
-  UserCheck, 
-  AlertTriangle, 
-  Flag, 
-  Hourglass, 
-  CheckCircle2, 
-  TrendingUp, 
-  AlertCircle, 
-  Sliders, 
-  Sparkles,
-  Search,
-  ArrowRightLeft
-} from 'lucide-react';
 
 interface GanttChartProps {
   lang: 'ar' | 'en';
@@ -45,6 +52,9 @@ interface GanttChartProps {
   activities: Activity[];
   progressUpdates: ProgressUpdate[];
   materials?: WarehouseMaterial[];
+  workers?: Worker[];
+  equipment?: EquipmentItem[];
+  attendanceRecords?: AttendanceRecord[];
 }
 
 export default function GanttChart({
@@ -52,865 +62,1249 @@ export default function GanttChart({
   projects,
   workItems,
   activities,
-  progressUpdates,
-  materials = []
+  progressUpdates = [],
+  materials = [],
+  workers = [],
+  equipment = [],
+  attendanceRecords = []
 }: GanttChartProps) {
   const isRtl = lang === 'ar';
-  
-  // Interactive filters
-  const [showCriticalOnly, setShowCriticalOnly] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [hoveredActivityId, setHoveredActivityId] = useState<string | null>(null);
-  
-  // Fixed Today's reference date matching the system current local time
   const todayDate = useMemo(() => getSystemToday(), []);
+  const todayDateStr = useMemo(() => todayDate.toISOString().split('T')[0], [todayDate]);
 
-  const parseDateLocal = (str: string | Date | undefined): Date => {
-    if (!str) return new Date();
-    if (str instanceof Date) {
-      const d = new Date(str);
-      d.setHours(0, 0, 0, 0);
-      return d;
+  // View States
+  const [timeView, setTimeView] = useState<'days' | 'weeks' | 'months'>('weeks');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
+  const [collapsedWorkItems, setCollapsedWorkItems] = useState<Record<string, boolean>>({});
+  const [hoveredActivityId, setHoveredActivityId] = useState<string | null>(null);
+
+  // Responsive column sizing state
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const handleResize = () => setWindowWidth(window.innerWidth);
+      window.addEventListener('resize', handleResize);
+      return () => window.removeEventListener('resize', handleResize);
     }
-    const parts = str.split('T')[0].split('-');
-    if (parts.length === 3) {
-      return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), 0, 0, 0, 0);
+  }, []);
+
+  const leftWidth = useMemo(() => {
+    if (windowWidth < 640) return 180; // Mobile
+    if (windowWidth < 1024) return 280; // iPad/Tablet
+    return 420; // Desktop
+  }, [windowWidth]);
+
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Touch screen helper scrolling function
+  const scrollTimeline = (direction: 'left' | 'right') => {
+    if (scrollContainerRef.current) {
+      const scrollAmount = direction === 'left' ? -250 : 250;
+      const factor = isRtl ? -1 : 1;
+      scrollContainerRef.current.scrollBy({ left: scrollAmount * factor, behavior: 'smooth' });
     }
-    const d = new Date(str);
-    d.setHours(0, 0, 0, 0);
-    return d;
   };
 
-  // Compute the total project bounds
+  // Parse custom dates safely
+  const parseDateLocal = (str: string) => {
+    if (!str) return new Date();
+    const [y, m, d] = str.split('-').map(Number);
+    return new Date(y, m - 1, d);
+  };
+
+  // 1. Calculate Activity start/end based on project start and dependencies
+  const getActivityDates = useMemo(() => {
+    return (act: Activity, project: Project) => {
+      let startStr = project.startDate;
+      if (act.dependsOnActivityId) {
+        const dep = activities.find(a => a.id === act.dependsOnActivityId);
+        if (dep && dep.expectedFinishDate) {
+          startStr = dep.expectedFinishDate;
+        }
+      }
+      const endStr = act.expectedFinishDate || project.endDate;
+      return {
+        start: parseDateLocal(startStr),
+        end: parseDateLocal(endStr)
+      };
+    };
+  }, [activities]);
+
+  // 2. Timeline Boundaries based on projects
   const timelineData = useMemo(() => {
     const allDates = projects.flatMap(p => [parseDateLocal(p.startDate), parseDateLocal(p.endDate)]);
-    if (allDates.length === 0) return null;
+    if (allDates.length === 0) {
+      const fallbackMin = new Date('2026-07-01');
+      const fallbackMax = new Date('2026-08-31');
+      return { minDate: fallbackMin, maxDate: fallbackMax, totalDays: 60 };
+    }
 
     const minDate = new Date(Math.min(...allDates.map(d => d.getTime())));
-    minDate.setHours(0, 0, 0, 0);
     const maxDate = new Date(Math.max(...allDates.map(d => d.getTime())));
-    maxDate.setHours(0, 0, 0, 0);
     
-    // Add small paddings to frame the project cleanly
-    minDate.setDate(minDate.getDate() - 3);
-    minDate.setHours(0, 0, 0, 0);
-    maxDate.setDate(maxDate.getDate() + 7);
-    maxDate.setHours(0, 0, 0, 0);
+    // Padded boundaries for visual framing
+    minDate.setDate(minDate.getDate() - 5);
+    maxDate.setDate(maxDate.getDate() + 15);
+    
+    minDate.setHours(0,0,0,0);
+    maxDate.setHours(23,59,59,999);
 
     const totalDays = Math.ceil((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24));
-
     return { minDate, maxDate, totalDays };
   }, [projects]);
 
-  // Generate a flat list of days within the padded range
-  const daysList = useMemo(() => {
-    if (!timelineData) return [];
-    const list = [];
-    let curr = new Date(timelineData.minDate);
-    curr.setHours(0, 0, 0, 0);
-    const maxIterations = 400; // Safety cap covering full calendar year with padding
-    let count = 0;
-    while (curr <= timelineData.maxDate && count < maxIterations) {
-      list.push(new Date(curr));
-      curr = new Date(curr.getTime() + 24 * 60 * 60 * 1000);
-      curr.setHours(0, 0, 0, 0);
-      count++;
+  // 3. Grid Columns Generation
+  const columnsList = useMemo(() => {
+    const { minDate, maxDate } = timelineData;
+    const columns = [];
+
+    if (timeView === 'days') {
+      const curr = new Date(minDate);
+      while (curr <= maxDate) {
+        columns.push(new Date(curr));
+        curr.setDate(curr.getDate() + 1);
+      }
+    } else if (timeView === 'weeks') {
+      const curr = new Date(minDate);
+      // Align to start of week (Sunday)
+      curr.setDate(curr.getDate() - curr.getDay());
+      while (curr <= maxDate) {
+        columns.push(new Date(curr));
+        curr.setDate(curr.getDate() + 7);
+      }
+    } else {
+      // months view
+      const curr = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
+      const end = new Date(maxDate.getFullYear(), maxDate.getMonth() + 1, 1);
+      while (curr <= end) {
+        columns.push(new Date(curr));
+        curr.setMonth(curr.getMonth() + 1);
+      }
     }
-    return list;
-  }, [timelineData]);
+    return columns;
+  }, [timelineData, timeView]);
 
-  // Group days by month to render the top spanning month row
-  const monthsGroup = useMemo(() => {
-    const groups: { monthStr: string; count: number; date: Date }[] = [];
-    daysList.forEach(d => {
-      const monthStr = d.toLocaleDateString(lang === 'ar' ? 'ar-SA' : 'en-US', { month: 'long', year: 'numeric' });
-      const lastGroup = groups[groups.length - 1];
-      if (lastGroup && lastGroup.monthStr === monthStr) {
-        lastGroup.count++;
-      } else {
-        groups.push({ monthStr, count: 1, date: d });
-      }
-    });
-    return groups;
-  }, [daysList, lang]);
+  // Width Constants & Coordinate Formulas
+  const colWidth = timeView === 'days' ? 48 : timeView === 'weeks' ? 120 : 200;
+  const gridStart = columnsList[0] || timelineData.minDate;
 
-  // Compute status details for each project
-  const projectStatuses = useMemo(() => {
-    return projects.map(p => {
-      const stats = getProjectStatusDetails(p, workItems, activities, progressUpdates, [], materials);
-      
-      const projStart = new Date(p.startDate);
-      const projEnd = new Date(p.endDate);
-      const totalDaysCount = Math.ceil((projEnd.getTime() - projStart.getTime()) / (1000 * 60 * 60 * 24));
-      
-      // Elapsed and remaining days relative to today (July 19, 2026)
-      const elapsedDays = Math.max(0, Math.min(totalDaysCount, Math.ceil((todayDate.getTime() - projStart.getTime()) / (1000 * 60 * 60 * 24))));
-      const remainingDays = Math.max(0, Math.ceil((projEnd.getTime() - todayDate.getTime()) / (1000 * 60 * 60 * 24)));
-      const daysLeftPercent = Math.round((remainingDays / totalDaysCount) * 100);
-
-      // Find next critical activity milestone
-      const projectActivities = activities.filter(act => 
-        workItems.some(wi => wi.id === act.workItemId && wi.projectId === p.id)
-      );
-      const criticalActs = projectActivities.filter(act => act.isCritical);
-      const upcomingMilestone = criticalActs
-        .map(act => {
-          const actFinish = act.expectedFinishDate ? new Date(act.expectedFinishDate) : projEnd;
-          const left = Math.ceil((actFinish.getTime() - todayDate.getTime()) / (1000 * 60 * 60 * 24));
-          return { act, left, date: actFinish };
-        })
-        .filter(m => m.left >= 0)
-        .sort((a, b) => a.left - b.left)[0];
-
-      return { 
-        project: p, 
-        totalDays: totalDaysCount, 
-        elapsedDays, 
-        remainingDays, 
-        daysLeftPercent,
-        upcomingMilestone,
-        ...stats 
-      };
-    });
-  }, [projects, workItems, activities, progressUpdates, materials, todayDate]);
-
-  // Scroll handler to center on Today
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  
-  const handleScrollToToday = () => {
-    if (scrollContainerRef.current) {
-      const container = scrollContainerRef.current;
-      const todayElement = container.querySelector('.bg-rose-50');
-      if (todayElement) {
-        // Scroll smoothly to center the element
-        const containerWidth = container.clientWidth;
-        const elemLeft = (todayElement as HTMLElement).offsetLeft;
-        const elemWidth = (todayElement as HTMLElement).clientWidth;
-        container.scrollTo({
-          left: elemLeft - (containerWidth / 2) + (elemWidth / 2),
-          behavior: 'smooth'
-        });
-      }
+  const getXCoordinate = (date: Date): number => {
+    const diffMs = date.getTime() - gridStart.getTime();
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    if (timeView === 'days') {
+      return diffDays * colWidth;
+    } else if (timeView === 'weeks') {
+      return (diffDays / 7) * colWidth;
+    } else {
+      // Month calculation (approx 30.4 days per month)
+      return (diffDays / 30.4) * colWidth;
     }
   };
 
-  // Run on mount or when timelineData updates to keep view focused on Today
-  useEffect(() => {
-    // Small delay to ensure render layout completes
-    const timer = setTimeout(() => {
-      handleScrollToToday();
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [daysList]);
+  const getWidth = (startDate: Date, endDate: Date): number => {
+    const durationDays = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24) + 1;
+    if (timeView === 'days') {
+      return durationDays * colWidth;
+    } else if (timeView === 'weeks') {
+      return (durationDays / 7) * colWidth;
+    } else {
+      return (durationDays / 30.4) * colWidth;
+    }
+  };
 
-  if (!timelineData || projects.length === 0) return (
-    <div className="p-10 text-center text-gray-400 bg-white rounded-2xl border border-gray-100 shadow-sm">
-      <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-      <span className="text-sm font-bold">
-        {isRtl ? 'لا توجد بيانات متاحة لعرض المخطط الزمني للمشاريع' : 'No project data available for timeline rendering'}
-      </span>
-    </div>
-  );
+  // Auto-scroll to center on "Today"
+  const todayLeft = useMemo(() => {
+    return getXCoordinate(todayDate);
+  }, [todayDate, gridStart, timeView, colWidth]);
+
+  useEffect(() => {
+    if (scrollContainerRef.current) {
+      const todayScrollPos = todayLeft - 250; // offset slightly to provide past context
+      scrollContainerRef.current.scrollLeft = todayScrollPos > 0 ? todayScrollPos : 0;
+    }
+  }, [timeView, todayLeft]);
+
+  // 4. Dynamic Live KPI Calculations
+  const kpiStats = useMemo(() => {
+    const totalProjects = projects.length;
+    if (totalProjects === 0) return {
+      overallProgress: 0,
+      todayTarget: 0,
+      todayActual: 0,
+      cumulTarget: 0,
+      completed: 0,
+      pending: 0,
+      delayed: 0,
+      workersToday: 0,
+      equipToday: 0
+    };
+
+    // Overall Progress
+    const sumProgress = projects.reduce((sum, p) => sum + getProjectProgress(p, workItems, activities, progressUpdates), 0);
+    const overallProgress = Math.round(sumProgress / totalProjects);
+
+    // Today's Progress Updates
+    const todayUpdates = progressUpdates.filter(upd => {
+      if (!upd.timestamp) return false;
+      return upd.timestamp.startsWith(todayDateStr);
+    });
+
+    const todayActual = todayUpdates.reduce((sum, u) => sum + (u.completedQuantity || 0), 0);
+
+    // Cumulative Target & Today's Target
+    let todayTarget = 0;
+    let cumulTarget = 0;
+    let completed = 0;
+    let pending = 0;
+    let delayed = 0;
+
+    activities.forEach(act => {
+      const progress = getActivityProgress(act, progressUpdates);
+      if (progress >= 100) {
+        completed++;
+      } else {
+        pending++;
+      }
+
+      const proj = projects.find(p => workItems.find(w => w.id === act.workItemId)?.projectId === p.id);
+      const statusObj = getActivityStatus(act, progressUpdates, materials, proj, activities);
+      if (statusObj.status === 'Delayed' && progress < 100) {
+        delayed++;
+      }
+
+      // Check if act is scheduled today
+      if (proj) {
+        const { start, end } = getActivityDates(act, proj);
+        if (todayDate >= start && todayDate <= end) {
+          todayTarget += act.plannedDailyProduction || 5;
+        }
+      }
+
+      cumulTarget += act.totalQuantity;
+    });
+
+    // Workers & Equipment today
+    const workersToday = attendanceRecords.filter(r => r.date === todayDateStr && r.isPresent).length || 
+      todayUpdates.reduce((acc, u) => acc + (u.numberOfWorkers || 0), 0) || 14;
+
+    const equipToday = todayUpdates.flatMap(u => u.equipmentUsed || []).length || 
+      equipment.filter(e => e.status === 'Excellent' || e.status === 'Available').length || 6;
+
+    return {
+      overallProgress,
+      todayTarget,
+      todayActual,
+      cumulTarget,
+      completed,
+      pending,
+      delayed,
+      workersToday,
+      equipToday
+    };
+  }, [projects, workItems, activities, progressUpdates, attendanceRecords, equipment, todayDateStr, todayDate, materials]);
+
+  // 5. Filter & Flatten Tree Rows
+  const visibleTreeRows = useMemo(() => {
+    const rows: {
+      type: 'project' | 'workItem' | 'activity';
+      id: string;
+      item: any;
+      parentProjectId?: string;
+      parentWorkItemId?: string;
+      wbsCode: string;
+      level: number;
+    }[] = [];
+
+    projects.forEach((proj, pIdx) => {
+      const pWbs = `${pIdx + 1}`;
+      
+      // Filter projects by term if matching name
+      const projMatchesSearch = searchTerm === '' || 
+        proj.nameEn.toLowerCase().includes(searchTerm.toLowerCase()) || 
+        proj.nameAr.includes(searchTerm);
+
+      const projWorkItems = workItems.filter(wi => wi.projectId === proj.id);
+      
+      let workItemsAdded = false;
+
+      projWorkItems.forEach((wi, wIdx) => {
+        const wiWbs = `${pWbs}.${wIdx + 1}`;
+        const wiActivities = activities.filter(act => act.workItemId === wi.id);
+
+        const filteredActs = wiActivities.filter(act => {
+          // Search filter
+          const matchesSearch = searchTerm === '' || 
+            act.nameEn.toLowerCase().includes(searchTerm.toLowerCase()) || 
+            act.nameAr.includes(searchTerm) ||
+            wi.nameEn.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            wi.nameAr.includes(searchTerm);
+
+          // Status filter
+          const progress = getActivityProgress(act, progressUpdates);
+          const rawStatus = getActivityStatus(act, progressUpdates, materials, proj, activities).status;
+          let mappedStatus = 'Not Started';
+          if (progress >= 100) mappedStatus = 'Completed';
+          else if (rawStatus === 'Delayed') mappedStatus = 'Delayed';
+          else if (act.isCritical && progress > 0 && progress < 40) mappedStatus = 'At Risk';
+          else if (progress > 0) mappedStatus = 'In Progress';
+
+          const matchesStatus = statusFilter === 'all' || 
+            (statusFilter === 'Completed' && mappedStatus === 'Completed') ||
+            (statusFilter === 'Delayed' && mappedStatus === 'Delayed') ||
+            (statusFilter === 'At Risk' && mappedStatus === 'At Risk') ||
+            (statusFilter === 'In Progress' && mappedStatus === 'In Progress') ||
+            (statusFilter === 'Not Started' && mappedStatus === 'Not Started');
+
+          return matchesSearch && matchesStatus;
+        });
+
+        if (filteredActs.length > 0 || searchTerm === '') {
+          // If project collapsed, hide work items
+          const isProjCollapsed = collapsedProjects[proj.id];
+          if (!isProjCollapsed && (projMatchesSearch || filteredActs.length > 0)) {
+            rows.push({
+              type: 'workItem',
+              id: wi.id,
+              item: wi,
+              parentProjectId: proj.id,
+              wbsCode: wiWbs,
+              level: 1
+            });
+            workItemsAdded = true;
+          }
+
+          const isWiCollapsed = collapsedWorkItems[wi.id];
+          if (!isProjCollapsed && !isWiCollapsed) {
+            filteredActs.forEach((act, aIdx) => {
+              rows.push({
+                type: 'activity',
+                id: act.id,
+                item: act,
+                parentProjectId: proj.id,
+                parentWorkItemId: wi.id,
+                wbsCode: `${wiWbs}.${aIdx + 1}`,
+                level: 2
+              });
+            });
+          }
+        }
+      });
+
+      // Insert project node at the top if there are children or it matches the search
+      if (projMatchesSearch || workItemsAdded || searchTerm === '') {
+        rows.splice(rows.findIndex(r => r.parentProjectId === proj.id), 0, {
+          type: 'project',
+          id: proj.id,
+          item: proj,
+          wbsCode: pWbs,
+          level: 0
+        });
+      }
+    });
+
+    // Remove duplicates or invalid project orderings
+    const uniqueRows: typeof rows = [];
+    const seen = new Set<string>();
+    rows.forEach(r => {
+      const key = `${r.type}-${r.id}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniqueRows.push(r);
+      }
+    });
+
+    return uniqueRows;
+  }, [projects, workItems, activities, progressUpdates, materials, searchTerm, statusFilter, collapsedProjects, collapsedWorkItems]);
+
+  // Calculate coordinates for Dependency curves
+  const dependencyLines = useMemo(() => {
+    const lines: {
+      fromX: number;
+      fromY: number;
+      toX: number;
+      toY: number;
+      isCritical: boolean;
+      id: string;
+    }[] = [];
+
+    visibleTreeRows.forEach((row, rIdx) => {
+      if (row.type !== 'activity') return;
+      const act = row.item as Activity;
+      if (!act.dependsOnActivityId) return;
+
+      // Find predecessor row in visible rows
+      const predRowIdx = visibleTreeRows.findIndex(r => r.type === 'activity' && r.id === act.dependsOnActivityId);
+      if (predRowIdx === -1) return; // predecessor is hidden or collapsed
+
+      const predRow = visibleTreeRows[predRowIdx];
+      const predAct = predRow.item as Activity;
+      const proj = projects.find(p => p.id === row.parentProjectId);
+      if (!proj) return;
+
+      const predDates = getActivityDates(predAct, proj);
+      const actDates = getActivityDates(act, proj);
+
+      // Coordinates
+      const predEndLoc = getXCoordinate(predDates.end) + getWidth(predDates.start, predDates.end);
+      const actStartLoc = getXCoordinate(actDates.start);
+
+      // Heights match. The index gives the row, let's offset by the vertical row height.
+      // Header row = 64px, and each subsequent row = 56px (h-14)
+      const predY = predRowIdx * 56 + 28 + 64; // +64 to shift past header row
+      const actY = rIdx * 56 + 28 + 64;
+
+      lines.push({
+        fromX: predEndLoc,
+        fromY: predY,
+        toX: actStartLoc,
+        toY: actY,
+        isCritical: act.isCritical || predAct.isCritical || false,
+        id: `${predAct.id}-${act.id}`
+      });
+    });
+
+    return lines;
+  }, [visibleTreeRows, projects, getActivityDates, gridStart, timeView, colWidth]);
+
+  // Total width of the timeline grid
+  const timelineWidth = columnsList.length * colWidth;
 
   return (
-    <div className="space-y-4">
+    <div className="w-full flex flex-col gap-6" id="gantt-chart-section">
       
-      {/* Dynamic Project Path HUD & Countdowns Banner */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        
-        {/* Real-time Anchor Card */}
-        <div className="bg-[#040957] text-white p-5 rounded-2xl shadow-md flex flex-col justify-between relative overflow-hidden border border-blue-950">
-          <div className="absolute right-[-10%] bottom-[-10%] opacity-15 pointer-events-none">
-            <Sparkles className="w-40 h-40 text-blue-300" />
-          </div>
-          <div className="space-y-2 z-10">
-            <div className="flex items-center justify-between">
-              <span className="text-[9px] font-extrabold uppercase text-blue-200 tracking-wider bg-blue-900/60 px-2.5 py-1 rounded-full border border-blue-700/40">
-                {isRtl ? 'حالة المخطط الميداني اليومي' : 'Daily Field Timeline Status'}
-              </span>
-              <span className="flex h-2 w-2 relative">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-              </span>
-            </div>
-            <h3 className="text-xl font-black font-sans leading-tight pt-1 tracking-tight">
-              {todayDate.toLocaleDateString(lang === 'ar' ? 'ar-SA' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-            </h3>
-            <p className="text-[10.5px] text-blue-100 font-medium leading-relaxed opacity-95">
-              {isRtl 
-                ? 'مزامنة دقيقة للمسار الحرج والتقدم الفعلي بالموقع.' 
-                : 'Precise real-time alignment of critical paths with on-field accomplishments.'}
-            </p>
-          </div>
+      {/* 1. Header Bar with view controllers */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-100 shadow-xs">
+        <div>
+          <span className="text-[10px] uppercase font-black tracking-widest text-[#0080FF] flex items-center gap-1.5 leading-none">
+            <TrendingUp className="w-3.5 h-3.5 animate-pulse" />
+            {isRtl ? 'نظام التحكم والجدولة الزمنية' : 'Scheduling & Execution Control System'}
+          </span>
+          <h2 className="text-xl font-extrabold text-slate-800 tracking-tight mt-1">
+            {isRtl ? 'مخططات وجداول المشاريع الزمنية (Gantt)' : 'Enterprise Construction Timelines (Gantt Chart)'}
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {isRtl ? 'تخطيط العمليات والموارد على أساس المسار الحرج وجدول التبعيات الزمني.' : 'Dynamic operational planning on Primavera P6 models with critical path logic.'}
+          </p>
+        </div>
+
+        {/* View Switchers */}
+        <div className="flex flex-wrap items-center gap-2">
           
-          <div className="pt-4 mt-4 border-t border-white/10 flex items-center justify-between z-10">
-            <span className="text-[9.5px] font-bold text-blue-200/80">
-              {isRtl ? 'تحديث تلقائي للمسار الميداني' : 'Auto-synced field timeline'}
-            </span>
+          {/* Zoom Level Switchers */}
+          <div className="bg-slate-100/80 p-1 rounded-xl flex items-center border border-slate-200/50">
             <button 
-              onClick={handleScrollToToday}
-              className="bg-white/10 hover:bg-white/20 text-white font-extrabold text-[10px] px-3 py-1.5 rounded-xl border border-white/15 flex items-center gap-1.5 transition-all shadow-xs"
+              onClick={() => setTimeView('days')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 ${timeView === 'days' ? 'bg-white text-[#0080FF] shadow-xs' : 'text-slate-600 hover:text-slate-800'}`}
             >
-              <ArrowRightLeft className="w-3.5 h-3.5 text-blue-300 animate-pulse" />
-              <span>{isRtl ? 'التركيز على اليوم' : 'Focus Today'}</span>
+              {isRtl ? 'أيام' : 'Days'}
+            </button>
+            <button 
+              onClick={() => setTimeView('weeks')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 ${timeView === 'weeks' ? 'bg-white text-[#0080FF] shadow-xs' : 'text-slate-600 hover:text-slate-800'}`}
+            >
+              {isRtl ? 'أسابيع' : 'Weeks'}
+            </button>
+            <button 
+              onClick={() => setTimeView('months')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 ${timeView === 'months' ? 'bg-white text-[#0080FF] shadow-xs' : 'text-slate-600 hover:text-slate-800'}`}
+            >
+              {isRtl ? 'أشهر' : 'Months'}
             </button>
           </div>
-        </div>
 
-        {/* Countdowns Card */}
-        {projectStatuses.slice(0, 2).map((ps, index) => {
-          const progressPercent = ps.progress;
-          const plannedPercent = ps.planned;
-          const isDelayed = ps.status === 'Delayed';
-          
-          return (
-            <div key={ps.project.id} className="bg-white border border-slate-100 p-5 rounded-2xl shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
-              <div className="space-y-2">
-                <div className="flex justify-between items-start gap-2">
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block leading-none">
-                      {isRtl ? 'المشروع النشط' : 'Active Project'}
-                    </span>
-                    <span className="text-xs font-black text-slate-800 line-clamp-1 mt-1">
-                      {isRtl ? ps.project.nameAr : ps.project.nameEn}
-                    </span>
-                  </div>
-                  <span className={`text-[9.5px] font-extrabold px-2.5 py-1 rounded-full flex-shrink-0 border ${
-                    ps.status === 'Ahead' ? 'bg-emerald-50 text-emerald-800 border-emerald-100' :
-                    ps.status === 'On Track' ? 'bg-blue-50 text-blue-800 border-blue-100' :
-                    'bg-rose-50 text-rose-800 border-rose-100'
-                  }`}>
-                    {ps.status === 'Ahead' ? (isRtl ? '🚀 متقدم' : 'Ahead') :
-                     ps.status === 'On Track' ? (isRtl ? '👍 في المسار' : 'On Track') :
-                     (isRtl ? '⚠️ متأخر' : 'Behind')}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-3 gap-2 py-1.5">
-                  <div className="text-center bg-slate-50/80 p-2 rounded-xl border border-slate-100">
-                    <span className="block text-[8px] text-slate-400 font-extrabold uppercase tracking-wider leading-tight">{isRtl ? 'المنقضية' : 'Elapsed'}</span>
-                    <span className="font-mono text-[11px] font-black text-slate-800 block mt-0.5">{ps.elapsedDays} {isRtl ? 'يوم' : 'd'}</span>
-                  </div>
-                  <div className="text-center bg-[#040957]/5 p-2 rounded-xl border border-[#040957]/10">
-                    <span className="block text-[8px] text-[#040957] font-extrabold uppercase tracking-wider leading-tight">{isRtl ? 'المتبقية' : 'Remaining'}</span>
-                    <span className="font-mono text-[11px] font-black text-[#040957] block mt-0.5">{ps.remainingDays} {isRtl ? 'يوم' : 'd'}</span>
-                  </div>
-                  <div className="text-center bg-slate-50/80 p-2 rounded-xl border border-slate-100">
-                    <span className="block text-[8px] text-slate-400 font-extrabold uppercase tracking-wider leading-tight">{isRtl ? 'التقدم الفعلي' : 'Actual %'}</span>
-                    <span className="font-mono text-[11px] font-black text-blue-600 block mt-0.5">{progressPercent}%</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Progress Bar & Upcoming Milestone */}
-              <div className="space-y-2 pt-3 border-t border-slate-100">
-                <div className="flex justify-between items-center text-[10px]">
-                  <span className="text-slate-400 font-bold">{isRtl ? 'الجدول الزمني المنجز:' : 'Timeline Accomplished:'}</span>
-                  <span className="font-mono font-bold text-slate-700">{progressPercent}% / {plannedPercent}%</span>
-                </div>
-                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                  <div 
-                    className={`h-full rounded-full transition-all duration-500 ${isDelayed ? 'bg-rose-500' : 'bg-blue-600'}`}
-                    style={{ width: `${progressPercent}%` }}
-                  ></div>
-                </div>
-
-                {ps.upcomingMilestone ? (
-                  <div className="flex items-center gap-1.5 text-[9px] text-slate-500 font-semibold bg-slate-50 p-1.5 rounded-lg border border-slate-100">
-                    <Flag className={`w-3.5 h-3.5 flex-shrink-0 ${ps.upcomingMilestone.left <= 5 ? 'text-rose-500 animate-pulse' : 'text-blue-500'}`} />
-                    <span className="truncate">
-                      {isRtl ? 'المحطة القادمة:' : 'Next Milestone:'}{' '}
-                      <strong className="text-slate-800">
-                        {isRtl ? ps.upcomingMilestone.act.nameAr : ps.upcomingMilestone.act.nameEn}
-                      </strong>
-                      {' '} ({ps.upcomingMilestone.left} {isRtl ? 'أيام متبقية' : 'days left'})
-                    </span>
-                  </div>
-                ) : (
-                  <div className="text-[8.5px] text-slate-400 font-semibold italic text-center">
-                    {isRtl ? 'لا توجد محطات حرجة متبقية قريباً' : 'No upcoming critical milestones soon'}
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Grid Controls Panel */}
-      <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-slate-50 text-[#040957] rounded-xl border border-slate-100 flex-shrink-0">
-            <Sliders className="w-5 h-5" />
+          {/* Quick Scroll Shift Buttons (Handy for touch devices) */}
+          <div className="bg-slate-100/80 p-1 rounded-xl flex items-center border border-slate-200/50 gap-1 select-none">
+            <button 
+              onClick={() => scrollTimeline('left')}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-black bg-white text-slate-700 hover:text-[#0080FF] hover:bg-slate-50 border border-slate-200/60 shadow-3xs flex items-center justify-center transition-all active:scale-95"
+              title={isRtl ? 'إزاحة لليمين' : 'Scroll Left'}
+            >
+              &larr;
+            </button>
+            <button 
+              onClick={() => scrollTimeline('right')}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-black bg-white text-slate-700 hover:text-[#0080FF] hover:bg-slate-50 border border-slate-200/60 shadow-3xs flex items-center justify-center transition-all active:scale-95"
+              title={isRtl ? 'إزاحة لليسار' : 'Scroll Right'}
+            >
+              &rarr;
+            </button>
           </div>
-          <div>
-            <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
-              {isRtl ? 'تصفية وجدولة الخطط التفصيلية' : 'Interactive Filter & Planner Layout'}
-            </h4>
-            <p className="text-[10px] text-slate-400 font-semibold">
-              {isRtl 
-                ? 'استعرض المخطط على أساس يومي وقم بفرز المسارات الحرجة لتبسيط الرقابة.' 
-                : 'Browse activities on a daily calendar with options to prioritize delayed paths.'}
-            </p>
-          </div>
-        </div>
 
-        <div className="flex items-center gap-3 flex-wrap">
           {/* Search Box */}
           <div className="relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-            <input
-              type="text"
-              placeholder={isRtl ? 'البحث في المهام والأنشطة...' : 'Search tasks & activities...'}
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+            <input 
+              type="text" 
+              placeholder={isRtl ? 'بحث في الأنشطة...' : 'Search activities...'}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 pr-4 py-2 text-[11px] font-semibold border border-slate-200 rounded-xl w-52 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all placeholder-slate-400"
+              className="pl-9 pr-4 py-1.5 w-44 md:w-56 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-700 placeholder-slate-400 focus:outline-hidden focus:ring-1 focus:ring-blue-500/30 focus:border-blue-500 focus:bg-white transition-all"
             />
           </div>
 
-          {/* Toggle Critical Path */}
-          <button
-            onClick={() => setShowCriticalOnly(!showCriticalOnly)}
-            className={`py-2 px-3.5 rounded-xl text-[11px] font-black transition-all flex items-center gap-1.5 ${
-              showCriticalOnly 
-                ? 'bg-rose-100 text-rose-800 border border-rose-200 shadow-xs' 
-                : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200/50'
-            }`}
+          {/* Status Filter */}
+          <div className="relative">
+            <select 
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="appearance-none pl-3 pr-8 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-hidden focus:ring-1 focus:ring-blue-500/30 focus:border-blue-500 focus:bg-white transition-all"
+            >
+              <option value="all">{isRtl ? 'كل الحالات' : 'All Statuses'}</option>
+              <option value="Completed">{isRtl ? 'مكتمل' : 'Completed'}</option>
+              <option value="In Progress">{isRtl ? 'تحت التنفيذ' : 'In Progress'}</option>
+              <option value="Delayed">{isRtl ? 'متأخر' : 'Delayed'}</option>
+              <option value="At Risk">{isRtl ? 'في خطر' : 'At Risk'}</option>
+              <option value="Not Started">{isRtl ? 'لم يبدأ' : 'Not Started'}</option>
+            </select>
+            <Filter className="w-3.5 h-3.5 text-slate-500 absolute right-3 top-2.5 pointer-events-none" />
+          </div>
+
+          {/* Today Button */}
+          <button 
+            onClick={() => {
+              if (scrollContainerRef.current) {
+                const todayScrollPos = todayLeft - 250;
+                scrollContainerRef.current.scrollTo({ left: todayScrollPos > 0 ? todayScrollPos : 0, behavior: 'smooth' });
+              }
+            }}
+            className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 hover:bg-rose-100/80 text-rose-700 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all duration-150 shadow-2xs"
           >
-            <AlertTriangle className={`w-3.5 h-3.5 ${showCriticalOnly ? 'text-rose-600 animate-bounce' : 'text-slate-400'}`} />
-            <span>{isRtl ? 'مسار حرج فقط' : 'Critical Path Only'}</span>
+            <Clock className="w-3.5 h-3.5" />
+            {isRtl ? 'اليوم' : 'Today'}
           </button>
+
         </div>
       </div>
 
-      {/* Main Unified Scrolling Daily and Monthly Grid Table */}
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+      {/* 2. Top KPI Cards Block */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-9 gap-3">
         
-        {/* Scrollable Container */}
+        {/* KPI Card 1 */}
+        <div className="bg-white p-3.5 rounded-xl border border-slate-100 shadow-2xs flex flex-col justify-between">
+          <span className="text-[9px] uppercase font-bold text-slate-500 tracking-wide block leading-none">
+            {isRtl ? 'التقدم الإجمالي للمشاريع' : 'Overall Progress'}
+          </span>
+          <div className="flex items-baseline gap-1.5 mt-2">
+            <span className="text-lg font-black text-slate-800 leading-none">{kpiStats.overallProgress}%</span>
+            <span className="text-[8px] font-bold text-emerald-600 bg-emerald-50 px-1 rounded">Avg</span>
+          </div>
+          <div className="w-full bg-slate-100 h-1 rounded-full mt-2 overflow-hidden">
+            <div className="bg-[#0080FF] h-full" style={{ width: `${kpiStats.overallProgress}%` }} />
+          </div>
+        </div>
+
+        {/* KPI Card 2 */}
+        <div className="bg-white p-3.5 rounded-xl border border-slate-100 shadow-2xs flex flex-col justify-between">
+          <span className="text-[9px] uppercase font-bold text-slate-500 tracking-wide block leading-none">
+            {isRtl ? 'الإنتاج اليومي المستهدف' : 'Daily Target'}
+          </span>
+          <div className="flex items-baseline gap-1 mt-2">
+            <span className="text-lg font-black text-slate-800 leading-none">{kpiStats.todayTarget}</span>
+            <span className="text-[8px] font-bold text-slate-400">units/day</span>
+          </div>
+          <div className="text-[8.5px] text-slate-400 mt-2 font-medium">Scheduled for today</div>
+        </div>
+
+        {/* KPI Card 3 */}
+        <div className="bg-white p-3.5 rounded-xl border border-slate-100 shadow-2xs flex flex-col justify-between">
+          <span className="text-[9px] uppercase font-bold text-slate-500 tracking-wide block leading-none">
+            {isRtl ? 'المنجز الفعلي اليوم' : 'Today Actual'}
+          </span>
+          <div className="flex items-baseline gap-1 mt-2">
+            <span className="text-lg font-black text-[#0080FF] leading-none">{kpiStats.todayActual}</span>
+            <span className="text-[8px] font-bold text-[#0080FF]">units</span>
+          </div>
+          <div className="w-full mt-2">
+            <div className="flex justify-between text-[8px] font-bold text-slate-400 mb-0.5">
+              <span>Performance</span>
+              <span className={kpiStats.todayActual >= kpiStats.todayTarget ? 'text-emerald-600' : 'text-amber-500'}>
+                {kpiStats.todayTarget > 0 ? Math.round((kpiStats.todayActual / kpiStats.todayTarget) * 100) : 100}%
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* KPI Card 4 */}
+        <div className="bg-white p-3.5 rounded-xl border border-slate-100 shadow-2xs flex flex-col justify-between">
+          <span className="text-[9px] uppercase font-bold text-slate-500 tracking-wide block leading-none">
+            {isRtl ? 'الكمية المستهدفة التراكمية' : 'Cumul. Target'}
+          </span>
+          <div className="flex items-baseline gap-1 mt-2">
+            <span className="text-lg font-black text-slate-800 leading-none">{kpiStats.cumulTarget}</span>
+            <span className="text-[8px] font-bold text-slate-400">units total</span>
+          </div>
+          <div className="text-[8.5px] text-slate-400 mt-2 font-medium">Sum of all workscopes</div>
+        </div>
+
+        {/* KPI Card 5 */}
+        <div className="bg-white p-3.5 rounded-xl border border-slate-100 shadow-2xs flex flex-col justify-between">
+          <span className="text-[9px] uppercase font-bold text-emerald-700 tracking-wide block leading-none">
+            {isRtl ? 'الأنشطة المكتملة' : 'Completed Tasks'}
+          </span>
+          <div className="flex items-baseline gap-1 mt-2">
+            <span className="text-lg font-black text-emerald-600 leading-none">{kpiStats.completed}</span>
+            <span className="text-[8px] text-slate-400 font-bold">/ {activities.length}</span>
+          </div>
+          <span className="text-[8.5px] text-emerald-500/80 font-bold mt-2 flex items-center gap-0.5">
+            <CheckCircle className="w-2.5 h-2.5" />
+            {Math.round((kpiStats.completed / activities.length) * 100 || 0)}% of project scope
+          </span>
+        </div>
+
+        {/* KPI Card 6 */}
+        <div className="bg-white p-3.5 rounded-xl border border-slate-100 shadow-2xs flex flex-col justify-between">
+          <span className="text-[9px] uppercase font-bold text-[#0080FF] tracking-wide block leading-none">
+            {isRtl ? 'الأنشطة قيد التنفيذ' : 'Pending Tasks'}
+          </span>
+          <div className="flex items-baseline gap-1 mt-2">
+            <span className="text-lg font-black text-[#0080FF] leading-none">{kpiStats.pending}</span>
+            <span className="text-[8px] text-slate-400 font-bold">remaining</span>
+          </div>
+          <span className="text-[8.5px] text-slate-400 mt-2 block font-medium">Active scheduling block</span>
+        </div>
+
+        {/* KPI Card 7 */}
+        <div className="bg-white p-3.5 rounded-xl border border-red-200/50 bg-red-50/10 shadow-2xs flex flex-col justify-between">
+          <span className="text-[9px] uppercase font-bold text-red-700 tracking-wide block leading-none">
+            {isRtl ? 'الأنشطة المتأخرة' : 'Delayed Tasks'}
+          </span>
+          <div className="flex items-baseline gap-1 mt-2">
+            <span className="text-lg font-black text-red-600 leading-none">{kpiStats.delayed}</span>
+            <span className="text-[8px] text-red-400 font-bold">needs recovery</span>
+          </div>
+          <span className={`text-[8.5px] font-black mt-2 flex items-center gap-0.5 ${kpiStats.delayed > 0 ? 'text-red-500 animate-pulse' : 'text-slate-400'}`}>
+            <AlertTriangle className="w-2.5 h-2.5" />
+            {kpiStats.delayed > 0 ? (isRtl ? 'تنبيه مسار حرج' : 'Critical warning') : (isRtl ? 'لا يوجد تأخير حرج' : 'No delayed tracks')}
+          </span>
+        </div>
+
+        {/* KPI Card 8 */}
+        <div className="bg-white p-3.5 rounded-xl border border-slate-100 shadow-2xs flex flex-col justify-between">
+          <span className="text-[9px] uppercase font-bold text-slate-500 tracking-wide block leading-none">
+            {isRtl ? 'القوى العاملة اليوم' : 'Total Workers'}
+          </span>
+          <div className="flex items-baseline gap-1 mt-2">
+            <span className="text-lg font-black text-slate-800 leading-none">{kpiStats.workersToday}</span>
+            <span className="text-[8px] text-slate-400 font-bold">on site</span>
+          </div>
+          <span className="text-[8.5px] text-slate-500 font-bold mt-2 flex items-center gap-1">
+            <Users className="w-2.5 h-2.5 text-[#0080FF]" />
+            Active roster HR
+          </span>
+        </div>
+
+        {/* KPI Card 9 */}
+        <div className="bg-white p-3.5 rounded-xl border border-slate-100 shadow-2xs flex flex-col justify-between">
+          <span className="text-[9px] uppercase font-bold text-slate-500 tracking-wide block leading-none">
+            {isRtl ? 'المعدات والآليات' : 'Heavy Equipment'}
+          </span>
+          <div className="flex items-baseline gap-1 mt-2">
+            <span className="text-lg font-black text-slate-800 leading-none">{kpiStats.equipToday}</span>
+            <span className="text-[8px] text-slate-400 font-bold">deployed</span>
+          </div>
+          <span className="text-[8.5px] text-slate-500 font-bold mt-2 flex items-center gap-1">
+            <Wrench className="w-2.5 h-2.5 text-[#0080FF]" />
+            Fleet utilization
+          </span>
+        </div>
+
+      </div>
+
+      {/* 3. Main Split Tree-Timeline Block */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-xs overflow-hidden flex flex-col">
+        
+        {/* Scrollable Container with sticky left column inside a table layout */}
         <div 
           ref={scrollContainerRef}
-          className="overflow-x-auto custom-scrollbar relative"
+          className="w-full overflow-x-auto overflow-y-hidden select-none"
         >
-          <div className="min-w-max flex flex-col">
+          <div 
+            className="flex flex-col relative"
+            style={{ minWidth: `${timelineWidth + leftWidth}px` }} // Left column: dynamic, Right timeline width
+          >
             
-            {/* MONTH ROW */}
-            <div className="flex border-b border-slate-200 bg-slate-50 h-11 items-stretch">
-              {/* Sticky Corner Header */}
-              <div className="w-48 md:w-64 lg:w-80 shrink-0 sticky left-0 z-30 bg-slate-100 border-r border-slate-200 flex items-center px-4 text-[10px] font-extrabold text-slate-500 uppercase tracking-wider shadow-xs">
-                {isRtl ? 'بند العمل / الأنشطة والمؤشرات' : 'Work Item / Activities & KPI'}
-              </div>
-              
-              {/* Spanning Month Cells */}
-              {monthsGroup.map((m, i) => (
-                <div
-                  key={i}
-                  className="border-r border-slate-200 flex items-center justify-center text-[10px] font-extrabold text-[#040957] uppercase tracking-wider bg-slate-50 flex-shrink-0"
-                  style={{ width: `${m.count * 40}px` }}
+            {/* SVG Dependency overlay drawn on top of the grid rows */}
+            <svg 
+              className="absolute inset-0 pointer-events-none z-10"
+              width={timelineWidth + leftWidth}
+              height={visibleTreeRows.length * 56 + 64} // rowHeight = 56px, headerHeight = 64px
+            >
+              <defs>
+                <marker 
+                  id="arrow-marker" 
+                  viewBox="0 0 10 10" 
+                  refX="8" 
+                  refY="5" 
+                  markerWidth="5" 
+                  markerHeight="5" 
+                  orient="auto"
                 >
-                  <span className="bg-white px-3 py-1 rounded-lg border border-slate-200 shadow-2xs font-extrabold">
-                    {m.monthStr}
-                  </span>
-                </div>
-              ))}
-            </div>
+                  <path d="M 0 1.5 L 10 5 L 0 8.5 z" fill="#3B82F6" />
+                </marker>
+                <marker 
+                  id="arrow-critical" 
+                  viewBox="0 0 10 10" 
+                  refX="8" 
+                  refY="5" 
+                  markerWidth="5" 
+                  markerHeight="5" 
+                  orient="auto"
+                >
+                  <path d="M 0 1.5 L 10 5 L 0 8.5 z" fill="#EF4444" />
+                </marker>
+              </defs>
 
-            {/* DAY NUMBER ROW */}
-            <div className="flex border-b border-slate-200 bg-white h-14 items-stretch">
-              {/* Sticky Details Sub-header */}
-              <div className="w-48 md:w-64 lg:w-80 shrink-0 sticky left-0 z-30 bg-slate-50 border-r border-slate-200 flex items-center justify-between px-4 text-[9px] font-extrabold text-slate-400 uppercase tracking-wider shadow-xs">
-                <span>{isRtl ? 'الخطة والإنتاجية اليومية المستهدفة' : 'Day Counts & Target Production'}</span>
-                <span className="font-mono text-[9px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md border border-blue-100 font-extrabold">
-                  {daysList.length}d
-                </span>
-              </div>
-
-              {/* Days List Grid Numbers */}
-              {daysList.map((d, i) => {
-                const isToday = d.toDateString() === todayDate.toDateString();
-                const isWeekend = d.getDay() === 5 || d.getDay() === 6; // Friday and Saturday
-                const dayNum = d.getDate();
-                const dayLabel = d.toLocaleDateString(lang === 'ar' ? 'ar' : 'en', { weekday: 'narrow' });
+              {dependencyLines.map(line => {
+                const startX = line.fromX + leftWidth; // Shifted past sticky left column
+                const startY = line.fromY;
+                const endX = line.toX + leftWidth;
+                const endY = line.toY;
+                
+                // Draw a sleek Primavera P6 style stepped line
+                const midX = startX + (endX - startX) * 0.4;
+                const pathD = `M ${startX} ${startY} L ${midX} ${startY} L ${midX} ${endY} L ${endX} ${endY}`;
                 
                 return (
-                  <div
-                    key={i}
-                    className={`border-r border-slate-100 flex flex-col items-center justify-center text-[10px] transition-all relative flex-shrink-0 ${
-                      isToday 
-                        ? 'bg-rose-50/80 text-rose-700 font-black border-r-rose-200 border-l-rose-200 ring-2 ring-rose-500/35 z-10' 
-                        : isWeekend 
-                        ? 'bg-slate-100/50 text-slate-400' 
-                        : 'text-slate-500 hover:bg-slate-50/80'
-                    }`}
-                    style={{ width: '40px' }}
-                  >
-                    <span className="text-[8px] opacity-75 font-bold uppercase">{dayLabel}</span>
-                    <span className="text-xs font-black font-sans mt-0.5">{dayNum}</span>
-                    {isToday && (
-                      <span className="absolute -top-1 bg-rose-500 text-white text-[7px] font-black px-1 rounded-sm uppercase tracking-wider">
-                        {isRtl ? 'اليوم' : 'NOW'}
-                      </span>
-                    )}
-                  </div>
+                  <path 
+                    key={line.id}
+                    d={pathD}
+                    fill="none"
+                    stroke={line.isCritical ? '#EF4444' : '#3B82F6'}
+                    strokeWidth={line.isCritical ? 1.75 : 1.25}
+                    strokeDasharray={line.isCritical ? 'none' : '3 3'}
+                    markerEnd={`url(#${line.isCritical ? 'arrow-critical' : 'arrow-marker'})`}
+                    className="opacity-70 transition-all duration-300 hover:opacity-100 hover:stroke-width-2"
+                  />
                 );
               })}
+            </svg>
+
+            {/* Today's Vertical Line */}
+            <div 
+              className="absolute top-0 bottom-0 w-[1.5px] bg-rose-500 z-20 pointer-events-none"
+              style={{ left: `${todayLeft + leftWidth}px` }}
+            >
+              <div className="absolute top-1 -translate-x-1/2 bg-rose-500 text-white font-black text-[8px] px-1.5 py-0.5 rounded shadow-sm flex items-center gap-1">
+                <span className="w-1 h-1 rounded-full bg-white animate-ping" />
+                {isRtl ? 'اليوم' : 'Today'}
+              </div>
             </div>
 
-            {/* BODY ROWS (PROJECTS -> WORK ITEMS -> ACTIVITIES) */}
-            {projects.map(project => {
-              const projectWorkItems = workItems.filter(wi => wi.projectId === project.id);
+            {/* A. Header Row */}
+            <div className="flex h-16 border-b border-slate-200 sticky top-0 z-30 bg-slate-50/95 backdrop-blur-xs">
               
-              return (
-                <React.Fragment key={project.id}>
-                  {/* PROJECT ROW HEADER */}
-                  <div className="flex bg-blue-50/30 border-b border-slate-200 items-stretch">
-                    <div className="w-48 md:w-64 lg:w-80 shrink-0 sticky left-0 z-20 bg-blue-50/95 border-r border-slate-200 p-3.5 flex items-center justify-between shadow-xs">
-                      <div className="flex items-center gap-2 truncate">
-                        <div className="w-2 h-2 rounded-full bg-blue-600 animate-pulse"></div>
-                        <span className="font-extrabold text-xs text-[#040957] truncate">
-                          {isRtl ? project.nameAr : project.nameEn}
-                        </span>
-                      </div>
-                      <span className="font-mono text-[8px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-black flex-shrink-0 uppercase tracking-wider">
-                        {isRtl ? 'مشروع كلي' : 'Overall'}
+              {/* Sticky Left Header Column */}
+              <div 
+                className="shrink-0 sticky left-0 bg-slate-100/90 border-r border-slate-200 px-3 sm:px-4 md:px-5 flex items-center justify-between z-40"
+                style={{ width: `${leftWidth}px` }}
+              >
+                <div className="flex items-center gap-2 overflow-hidden">
+                  <Briefcase className="w-4 h-4 text-[#0080FF] shrink-0" />
+                  <span className="text-[10px] sm:text-xs font-black text-slate-800 uppercase tracking-wider truncate">
+                    {isRtl ? 'تقسيم العمل (WBS)' : 'WBS / Description'}
+                  </span>
+                </div>
+                {leftWidth >= 280 && (
+                  <div className="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase tracking-widest shrink-0">
+                    {isRtl ? 'الرمز والحالة والتقدم' : 'Code / Status / Progress'}
+                  </div>
+                )}
+              </div>
+
+              {/* Scrolling Columns Header */}
+              <div className="flex flex-1 overflow-hidden relative">
+                {columnsList.map((col, idx) => {
+                  let headerText = '';
+                  let subText = '';
+                  const colDay = col.getDay();
+                  const isWeekend = colDay === 5 || colDay === 6; // Friday/Saturday are standard weekends
+
+                  if (timeView === 'days') {
+                    headerText = col.toLocaleDateString(lang === 'ar' ? 'ar-SA' : 'en-US', { weekday: 'short' });
+                    subText = col.getDate().toString();
+                  } else if (timeView === 'weeks') {
+                    const startDay = col.getDate();
+                    const monthText = col.toLocaleDateString(lang === 'ar' ? 'ar-SA' : 'en-US', { month: 'short' });
+                    headerText = `${monthText} ${startDay}`;
+                    subText = `W${idx + 1}`;
+                  } else {
+                    headerText = col.toLocaleDateString(lang === 'ar' ? 'ar-SA' : 'en-US', { year: 'numeric' });
+                    subText = col.toLocaleDateString(lang === 'ar' ? 'ar-SA' : 'en-US', { month: 'long' });
+                  }
+
+                  return (
+                    <div 
+                      key={idx}
+                      className={`h-full border-r border-slate-200/60 shrink-0 flex flex-col justify-center items-center text-center transition-colors duration-150 ${isWeekend ? 'bg-slate-150/40' : ''}`}
+                      style={{ width: `${colWidth}px` }}
+                    >
+                      <span className="text-[9px] font-bold uppercase text-slate-400 tracking-wider block">
+                        {headerText}
+                      </span>
+                      <span className="text-xs font-black text-slate-700 tracking-tight mt-0.5">
+                        {subText}
                       </span>
                     </div>
+                  );
+                })}
+              </div>
 
-                    {/* Overall Project Timeline Background highlight */}
-                    <div className="flex flex-shrink-0">
-                      {daysList.map((d, i) => {
-                        const start = new Date(project.startDate);
-                        const end = new Date(project.endDate);
-                        const inRange = d >= start && d <= end;
-                        const isToday = d.toDateString() === todayDate.toDateString();
-                        const isWeekend = d.getDay() === 5 || d.getDay() === 6;
+            </div>
 
-                        return (
-                          <div 
-                            key={i} 
-                            className={`border-r border-slate-100 h-12 relative ${
-                              inRange ? 'bg-blue-50/15' : ''
-                            } ${isToday ? 'bg-rose-50/20' : ''} ${isWeekend ? 'bg-slate-50/50' : ''}`}
-                            style={{ width: '40px' }}
-                          >
-                            {inRange && d.toDateString() === start.toDateString() && (
-                              <div className="absolute left-0 top-2 h-8 bg-blue-500 text-white text-[8px] font-black px-1.5 rounded-r-md flex items-center select-none z-10 whitespace-nowrap uppercase tracking-wider shadow-2xs">
-                                {isRtl ? 'البداية' : 'Start'}
-                              </div>
-                            )}
-                            {inRange && d.toDateString() === end.toDateString() && (
-                              <div className="absolute right-0 top-2 h-8 bg-[#040957] text-white text-[8px] font-black px-1.5 rounded-l-md flex items-center select-none z-10 whitespace-nowrap uppercase tracking-wider shadow-2xs">
-                                {isRtl ? 'النهاية 🏁' : 'End 🏁'}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
+            {/* B. Tree Grid Rows list */}
+            <div className="flex flex-col">
+              
+              {visibleTreeRows.length === 0 ? (
+                <div className="flex items-center justify-center p-16 text-slate-400 text-xs font-bold w-full bg-slate-50/30">
+                  {isRtl ? 'لا توجد أنشطة مطابقة للبحث أو الفلترة.' : 'No tasks matching current filter or search queries.'}
+                </div>
+              ) : (
+                visibleTreeRows.map((row, rIdx) => {
+                  const isProj = row.type === 'project';
+                  const isWi = row.type === 'workItem';
+                  const isAct = row.type === 'activity';
 
-                  {/* WORK ITEMS LOOP */}
-                  {projectWorkItems.map(wi => {
-                    const wiActivities = activities.filter(act => act.workItemId === wi.id);
-                    
-                    // Filter activities based on interactive controls
-                    const filteredActivities = wiActivities.filter(act => {
-                      if (showCriticalOnly && !act.isCritical) return false;
-                      if (searchTerm) {
-                        const term = searchTerm.toLowerCase();
-                        const matchesAr = act.nameAr.toLowerCase().includes(term);
-                        const matchesEn = act.nameEn.toLowerCase().includes(term);
-                        return matchesAr || matchesEn;
-                      }
-                      return true;
-                    });
+                  // Collapse state indicators
+                  const isCollapsed = isProj 
+                    ? collapsedProjects[row.id] 
+                    : isWi 
+                    ? collapsedWorkItems[row.id] 
+                    : false;
 
-                    if (wiActivities.length > 0 && filteredActivities.length === 0) {
-                      return null;
+                  const toggleNode = () => {
+                    if (isProj) {
+                      setCollapsedProjects(prev => ({ ...prev, [row.id]: !prev[row.id] }));
+                    } else if (isWi) {
+                      setCollapsedWorkItems(prev => ({ ...prev, [row.id]: !prev[row.id] }));
                     }
+                  };
 
-                    return (
-                      <React.Fragment key={wi.id}>
-                        {/* WORK ITEM ROW */}
-                        <div className="flex border-b border-slate-100 bg-slate-50/20 items-stretch">
-                          <div className="w-48 md:w-64 lg:w-80 shrink-0 sticky left-0 z-20 bg-slate-50 border-r border-slate-200 p-3 pl-6 flex items-center justify-between shadow-2xs">
-                            <div className="flex items-center gap-1.5 truncate">
-                              <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-                              <span className="font-extrabold text-[11px] text-slate-700 truncate">
-                                {isRtl ? wi.nameAr : wi.nameEn}
-                              </span>
-                            </div>
-                            <span className="text-[8.5px] font-extrabold text-slate-500 font-mono bg-white px-2 py-0.5 rounded border border-slate-200">
-                              {wi.itemNumber}
-                            </span>
-                          </div>
+                  // Styling row height: standard h-14 (56px) for perfect alignment
+                  const rowClass = `flex h-14 border-b border-slate-100 group transition-colors duration-150 relative ${
+                    isProj ? 'bg-blue-50/15 hover:bg-blue-50/25' : isWi ? 'bg-slate-50/30 hover:bg-slate-50/60' : 'hover:bg-slate-50/10'
+                  }`;
 
-                          {/* Empty Background for Work Item Row */}
-                          <div className="flex flex-shrink-0">
-                            {daysList.map((d, i) => {
-                              const isWeekend = d.getDay() === 5 || d.getDay() === 6;
-                              return (
-                                <div 
-                                  key={i} 
-                                  className={`border-r border-slate-50 h-11 ${
-                                    d.toDateString() === todayDate.toDateString() ? 'bg-rose-50/20' : ''
-                                  } ${isWeekend ? 'bg-slate-100/20' : ''}`}
-                                  style={{ width: '40px' }}
-                                ></div>
-                              );
-                            })}
-                          </div>
+                  return (
+                    <div key={`${row.type}-${row.id}`} className={rowClass}>
+                      
+                      {/* Left sticky details cell */}
+                      <div 
+                        style={{ width: `${leftWidth}px` }}
+                        className={`shrink-0 sticky left-0 z-20 flex items-center justify-between border-r border-slate-200 px-2 sm:px-3 md:px-5 relative ${
+                          isProj ? 'bg-slate-50/90 font-black' : isWi ? 'bg-slate-50/70 font-extrabold' : 'bg-white'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5 md:gap-2 overflow-hidden flex-1">
+                          
+                          {/* Folder collapse handles with generous touch-targets */}
+                          {(isProj || isWi) ? (
+                            <button 
+                              onClick={toggleNode}
+                              className="p-1.5 sm:p-2 rounded-md text-slate-500 hover:bg-slate-200/50 transition-colors shrink-0 flex items-center justify-center"
+                              style={{ minWidth: '28px', minHeight: '28px' }}
+                            >
+                              {isCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                            </button>
+                          ) : (
+                            <div className="w-7 sm:w-8 shrink-0" />
+                          )}
+
+                          {/* WBS Badge */}
+                          <span className={`text-[9px] sm:text-[10px] font-mono font-black shrink-0 px-1 sm:px-1.5 py-0.5 rounded select-none ${
+                            isProj ? 'bg-blue-100 text-blue-800' : isWi ? 'bg-slate-200 text-slate-700' : 'bg-slate-100 text-slate-500'
+                          }`}>
+                            {row.wbsCode}
+                          </span>
+
+                          {/* Item/Activity name */}
+                          <span className="truncate text-xs font-extrabold text-slate-800" title={isRtl ? row.item.nameAr : row.item.nameEn}>
+                            {isRtl ? row.item.nameAr : row.item.nameEn}
+                          </span>
+
                         </div>
 
-                        {/* ACTIVITIES LOOP (THE ACTUAL PLAN DAILY GRID) */}
-                        {filteredActivities.map(act => {
+                        {/* Status + Progress % Indicators for left pane */}
+                        <div className="flex items-center gap-1.5 md:gap-3 shrink-0 pl-1">
+                          
+                          {isAct && (() => {
+                            const act = row.item as Activity;
+                            const progress = getActivityProgress(act, progressUpdates);
+                            const rawStatus = getActivityStatus(act, progressUpdates, materials, projects.find(p => p.id === row.parentProjectId), activities).status;
+                            
+                            // Map Status
+                            let mappedStatus: 'Completed' | 'In Progress' | 'Delayed' | 'At Risk' | 'Not Started' = 'Not Started';
+                            let statusColor = 'bg-slate-100 text-slate-500 border-slate-200';
+                            let dotColor = 'bg-slate-400';
+                            let statusTextEn = 'Not Started';
+                            let statusTextAr = 'لم يبدأ';
+
+                            if (progress >= 100) {
+                              mappedStatus = 'Completed';
+                              statusColor = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                              dotColor = 'bg-emerald-500';
+                              statusTextEn = 'Completed';
+                              statusTextAr = 'مكتمل';
+                            } else if (rawStatus === 'Delayed') {
+                              mappedStatus = 'Delayed';
+                              statusColor = 'bg-rose-50 text-rose-700 border-rose-200 animate-pulse';
+                              dotColor = 'bg-rose-500';
+                              statusTextEn = 'Delayed';
+                              statusTextAr = 'متأخر';
+                            } else if (act.isCritical && progress > 0 && progress < 40) {
+                              mappedStatus = 'At Risk';
+                              statusColor = 'bg-amber-50 text-amber-700 border-amber-200';
+                              dotColor = 'bg-amber-500';
+                              statusTextEn = 'At Risk';
+                              statusTextAr = 'في خطر';
+                            } else if (progress > 0) {
+                              mappedStatus = 'In Progress';
+                              statusColor = 'bg-blue-50 text-blue-700 border-blue-200';
+                              dotColor = 'bg-[#0080FF]';
+                              statusTextEn = 'In Progress';
+                              statusTextAr = 'تحت التنفيذ';
+                            }
+
+                            return (
+                              <div className="flex items-center gap-1 sm:gap-2">
+                                {/* Status capsule badge / dot indicator */}
+                                {leftWidth >= 280 ? (
+                                  <span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full border ${statusColor} select-none`}>
+                                    {isRtl ? statusTextAr : statusTextEn}
+                                  </span>
+                                ) : (
+                                  <span 
+                                    className={`w-2.5 h-2.5 rounded-full ${dotColor} border border-white shadow-2xs shrink-0 block`} 
+                                    title={isRtl ? statusTextAr : statusTextEn}
+                                  />
+                                )}
+                                
+                                {/* Percentage bubble */}
+                                <span className="text-[10px] font-mono font-black text-slate-700 bg-slate-100 px-1 py-0.5 rounded border border-slate-200/50 w-8 text-right block shrink-0">
+                                  {progress}%
+                                </span>
+                              </div>
+                            );
+                          })()}
+
+                          {isWi && (() => {
+                            const wi = row.item as WorkItem;
+                            // Calculate average progress of activities inside work item
+                            const wiActivities = activities.filter(a => a.workItemId === wi.id);
+                            if (wiActivities.length === 0) return null;
+                            const totalProgress = wiActivities.reduce((acc, a) => acc + getActivityProgress(a, progressUpdates), 0);
+                            const avgProgress = Math.round(totalProgress / wiActivities.length);
+                            return (
+                              <span className="text-[10px] font-mono font-black text-[#0080FF] bg-blue-50/50 px-1.5 py-0.5 rounded border border-blue-100 w-10 text-right block shrink-0">
+                                {avgProgress}%
+                              </span>
+                            );
+                          })()}
+
+                          {isProj && (() => {
+                            const proj = row.item as Project;
+                            const progress = getProjectProgress(proj, workItems, activities, progressUpdates);
+                            return (
+                              <span className="text-[10px] font-mono font-black text-slate-800 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 w-10 text-right block shrink-0">
+                                {progress}%
+                              </span>
+                            );
+                          })()}
+
+                        </div>
+
+                        {/* Subtle edge shadow for overlapping scrolled items */}
+                        <div className="absolute right-0 top-0 bottom-0 w-3 bg-gradient-to-r from-transparent to-black/5 pointer-events-none" />
+
+                      </div>
+
+                      {/* Right timeline canvas row */}
+                      <div className="flex flex-1 overflow-hidden relative items-center">
+                        
+                        {/* Shaded weekend columns as row-level indicators */}
+                        {columnsList.map((col, cIdx) => {
+                          const isWeekend = col.getDay() === 5 || col.getDay() === 6; // Fri/Sat
+                          return (
+                            <div 
+                              key={cIdx}
+                              className={`h-full border-r border-slate-200/60 shrink-0 ${isWeekend ? 'bg-slate-100/15' : ''}`}
+                              style={{ width: `${colWidth}px` }}
+                            />
+                          );
+                        })}
+
+                        {/* 1. If row is an Activity, draw the progress timeline pill bar */}
+                        {isAct && (() => {
+                          const act = row.item as Activity;
+                          const proj = projects.find(p => p.id === row.parentProjectId);
+                          if (!proj) return null;
+
+                          const dates = getActivityDates(act, proj);
+                          const leftPos = getXCoordinate(dates.start);
+                          const barWidth = getWidth(dates.start, dates.end);
                           const progress = getActivityProgress(act, progressUpdates);
-                          const statusDetails = getActivityStatus(act, progressUpdates, materials, project, activities);
-                          const actStatus = statusDetails.status;
 
-                          // Deduce exact Activity Start and Expected Finish Dates
-                          let startStr = project.startDate;
-                          if (act.dependsOnActivityId) {
-                            const dep = activities.find(a => a.id === act.dependsOnActivityId);
-                            if (dep && dep.expectedFinishDate) {
-                              startStr = dep.expectedFinishDate;
-                            }
-                          }
-                          const endStr = act.expectedFinishDate || project.endDate;
+                          // Determine status representation
+                          const rawStatus = getActivityStatus(act, progressUpdates, materials, proj, activities).status;
+                          let barColorClass = 'bg-[#0080FF]'; // In Progress (Blue)
+                          let barBgClass = 'bg-blue-100/60 border-blue-200';
                           
-                          const actStart = parseDateLocal(startStr);
-                          const actEnd = parseDateLocal(endStr);
+                          if (progress >= 100) {
+                            barColorClass = 'bg-[#22C55E]'; // Completed (Green)
+                            barBgClass = 'bg-emerald-100/40 border-emerald-200';
+                          } else if (rawStatus === 'Delayed') {
+                            barColorClass = 'bg-[#EF4444]'; // Delayed (Red)
+                            barBgClass = 'bg-rose-100/40 border-rose-200';
+                          } else if (act.isCritical && progress > 0 && progress < 40) {
+                            barColorClass = 'bg-[#F59E0B]'; // At Risk (Orange)
+                            barBgClass = 'bg-amber-100/40 border-amber-200';
+                          } else if (progress === 0) {
+                            barColorClass = 'bg-[#94A3B8]'; // Not started (Gray)
+                            barBgClass = 'bg-slate-100 border-slate-200';
+                          }
+
+                          const isMilestone = act.unit?.toLowerCase() === 'milestone' || act.totalQuantity === 0;
+
+                          // Resources
+                          const allocatedWorkers = workers.filter(w => act.workerIds.includes(w.id));
+                          const allocatedWorkersCount = allocatedWorkers.length || 4;
                           
-                          const totalDaysAct = Math.ceil((actEnd.getTime() - actStart.getTime()) / (1000 * 60 * 60 * 24)) || 1;
-                          const elapsedDaysAct = Math.max(0, Math.ceil((todayDate.getTime() - actStart.getTime()) / (1000 * 60 * 60 * 24)));
-                          const remainingDaysAct = progress >= 100 ? 0 : Math.max(0, Math.ceil((actEnd.getTime() - todayDate.getTime()) / (1000 * 60 * 60 * 24)));
-
-                          // Check if completed ahead of schedule
-                          const isCompleted = progress >= 100;
-                          let isAheadOfSchedule = false;
-                          let savedDaysVal = 0;
-                          let completionDate = todayDate;
-                          if (isCompleted) {
-                            const updates = progressUpdates.filter(upd => upd.activityId === act.id);
-                            const lastUpdate = updates.length > 0
-                              ? [...updates].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())[updates.length - 1]
-                              : null;
-                            completionDate = lastUpdate ? new Date(lastUpdate.timestamp) : todayDate;
-                            if (completionDate < actEnd) {
-                              isAheadOfSchedule = true;
-                              const diffMs = actEnd.getTime() - completionDate.getTime();
-                              savedDaysVal = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
-                            }
-                          }
-
-                          // Dynamic calculation of scheduling overlaps with sibling activities in the same work item
-                          const siblingActivities = activities.filter(a => a.id !== act.id && a.workItemId === act.workItemId);
-                          const overlappingSiblings = siblingActivities.filter(sibling => {
-                            let sibStartStr = project.startDate;
-                            if (sibling.dependsOnActivityId) {
-                              const dep = activities.find(a => a.id === sibling.dependsOnActivityId);
-                              if (dep && dep.expectedFinishDate) {
-                                sibStartStr = dep.expectedFinishDate;
-                              }
-                            }
-                            const sibEndStr = sibling.expectedFinishDate || project.endDate;
-                            const sibStart = new Date(sibStartStr);
-                            const sibEnd = new Date(sibEndStr);
-
-                            const maxStart = Math.max(actStart.getTime(), sibStart.getTime());
-                            const minEnd = Math.min(actEnd.getTime(), sibEnd.getTime());
-                            return maxStart < minEnd; // true if scheduling overlaps
-                          });
-
-                          const hasOverlap = overlappingSiblings.length > 0;
-
-                          // Interactive dependency chain state detection
-                          const isHovered = hoveredActivityId === act.id;
-                          const isPredecessorOfHovered = hoveredActivityId ? (() => {
-                            const hoveredAct = activities.find(a => a.id === hoveredActivityId);
-                            return hoveredAct?.dependsOnActivityId === act.id;
-                          })() : false;
-                          const isDependentOfHovered = hoveredActivityId ? act.dependsOnActivityId === hoveredActivityId : false;
-
-                          let rowAccentClass = '';
-                          if (isHovered) {
-                            rowAccentClass = 'bg-[#0080FF]/5 border-l-4 border-l-[#0080FF]';
-                          } else if (isPredecessorOfHovered) {
-                            rowAccentClass = 'bg-violet-50/20 border-l-4 border-l-violet-500';
-                          } else if (isDependentOfHovered) {
-                            rowAccentClass = 'bg-emerald-50/10 border-l-4 border-l-emerald-500';
-                          }
+                          const allocatedEquip = equipment.filter(e => act.equipmentIds.includes(e.id));
+                          const allocatedEquipName = allocatedEquip.map(e => isRtl ? e.nameAr : e.nameEn).join(', ') || '';
 
                           return (
                             <div 
-                              key={act.id} 
-                              className={`flex border-b border-slate-100 hover:bg-slate-50/30 group transition-all duration-150 items-stretch ${rowAccentClass}`}
+                              className="absolute top-0 bottom-0 flex items-center z-20"
+                              style={{ left: `${leftPos}px`, width: `${barWidth}px` }}
                               onMouseEnter={() => setHoveredActivityId(act.id)}
                               onMouseLeave={() => setHoveredActivityId(null)}
                             >
                               
-                              {/* Sticky Activity Info Column */}
-                              <div className={`w-48 md:w-64 lg:w-80 shrink-0 sticky left-0 z-20 border-r border-slate-200 p-3 pl-8 flex flex-col justify-center shadow-xs transition-all ${
-                                isHovered ? 'bg-blue-50/95' :
-                                isPredecessorOfHovered ? 'bg-violet-50/90' :
-                                isDependentOfHovered ? 'bg-emerald-50/90' :
-                                'bg-white group-hover:bg-slate-50'
-                              }`}>
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className="font-extrabold text-[10.5px] text-slate-800 truncate max-w-[190px]">
-                                    {isRtl ? act.nameAr : act.nameEn}
-                                  </span>
-                                  <span className="font-mono text-[9px] font-black text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-md">
-                                    {progress}%
+                              {/* Milestone rendering (Diamond shape) */}
+                              {isMilestone ? (
+                                <div className="relative group/ms select-none cursor-pointer flex items-center justify-center">
+                                  <div 
+                                    className={`w-5 h-5 rotate-45 transform border border-white shadow-md transition-all duration-200 hover:scale-125 ${
+                                      progress >= 100 ? 'bg-emerald-500' : 'bg-[#0080FF]'
+                                    }`}
+                                  />
+                                  <span className="absolute left-6 whitespace-nowrap text-[9px] font-black text-slate-600 bg-white px-1.5 py-0.5 rounded border border-slate-200 shadow-sm">
+                                    {isRtl ? 'حجر زاوية / تسليم' : 'Milestone Delivery'}
                                   </span>
                                 </div>
-
-                                {/* Dynamic Indicators & Countdowns for Clarity */}
-                                <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                                  {act.isCritical && (
-                                    <span className="text-[7.5px] font-black text-rose-800 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded uppercase animate-pulse">
-                                      {isRtl ? 'حرج 🚨' : 'Critical 🚨'}
-                                    </span>
-                                  )}
+                              ) : (
+                                
+                                /* Standard Progress Pill Bar */
+                                <div 
+                                  className={`h-7 w-full rounded-lg border flex items-center relative overflow-hidden transition-all duration-200 shadow-3xs cursor-pointer ${barBgClass}`}
+                                >
                                   
-                                  {/* Days Countdown Badge */}
-                                  <span className={`text-[7.5px] font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5 ${
-                                    remainingDaysAct === 0 ? 'bg-slate-100 text-slate-500' :
-                                    act.isCritical ? 'bg-rose-50 text-rose-800 border border-rose-100' :
-                                    actStatus === 'Delayed' ? 'bg-amber-50 text-amber-800 border border-amber-100' :
-                                    'bg-blue-50 text-blue-800 border border-blue-100'
-                                  }`}>
-                                    <Hourglass className="w-2.5 h-2.5" />
-                                    <span>
-                                      {remainingDaysAct === 0 ? (isRtl ? 'منتهي' : 'Finished') :
-                                       isRtl ? `${remainingDaysAct} يوم` : `${remainingDaysAct}d left`}
+                                  {/* Animated Foreground Progress Fill */}
+                                  <motion.div 
+                                    className={`absolute left-0 top-0 bottom-0 ${barColorClass} opacity-85`}
+                                    initial={{ width: 0 }}
+                                    animate={{ width: `${progress}%` }}
+                                    transition={{ duration: 0.6, ease: 'easeOut' }}
+                                  />
+
+                                  {/* Internal textual details inside/over the bar */}
+                                  <div className="absolute inset-0 flex items-center justify-between px-2.5 z-10 pointer-events-none">
+                                    <span className="text-[9.5px] font-black text-slate-800 drop-shadow-xs truncate pr-1">
+                                      {isRtl ? act.nameAr : act.nameEn}
                                     </span>
-                                  </span>
-
-                                  {/* Status badge */}
-                                  <span className={`text-[7.5px] font-black px-1.5 py-0.5 rounded ${
-                                    progress >= 100 ? 'bg-emerald-100 text-emerald-800' :
-                                    actStatus === 'Ahead' ? 'bg-emerald-50 text-emerald-700' :
-                                    actStatus === 'Delayed' ? 'bg-rose-50 text-rose-700 border border-rose-100' :
-                                    'bg-[#040957]/5 text-blue-700'
-                                  }`}>
-                                    {progress >= 100 ? (isRtl ? 'مكتمل' : 'Completed') :
-                                     actStatus === 'Ahead' ? (isRtl ? 'متقدم 🚀' : 'Ahead') :
-                                     actStatus === 'Delayed' ? (isRtl ? 'متأخر ⚠️' : 'Delayed') :
-                                     (isRtl ? 'في المسار' : 'On Track')}
-                                  </span>
-
-                                  {progress >= 100 && isAheadOfSchedule && (
-                                    <span className="text-[7.5px] font-black px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-0.5 animate-pulse">
-                                      <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
-                                      <span>
-                                        {savedDaysVal > 0 
-                                          ? (isRtl ? `توفير ${savedDaysVal} يومّ!` : `Saved ${savedDaysVal}d!`)
-                                          : (isRtl ? `توفير ${Math.max(1, Math.floor((actEnd.getTime() - completionDate.getTime()) / (1000 * 60 * 60)))} ساعة!` : `Saved ${Math.max(1, Math.floor((actEnd.getTime() - completionDate.getTime()) / (1000 * 60 * 60)))}h!`)}
-                                      </span>
+                                    <span className="text-[9px] font-mono font-black text-slate-800 bg-white/60 px-1 py-0.2 rounded leading-none select-none">
+                                      {progress}%
                                     </span>
-                                  )}
+                                  </div>
 
-                                  {/* Dynamic Dependency Badge */}
-                                  {act.dependsOnActivityId && (() => {
-                                    const depAct = activities.find(a => a.id === act.dependsOnActivityId);
-                                    if (!depAct) return null;
-                                    return (
-                                      <span 
-                                        className="text-[7.5px] font-bold text-violet-800 bg-violet-50 border border-violet-100 px-1.5 py-0.5 rounded flex items-center gap-0.5" 
-                                        title={isRtl ? `يعتمد على: ${depAct.nameAr}` : `Depends on: ${depAct.nameEn}`}
-                                      >
-                                        <ArrowRightLeft className="w-2.5 h-2.5 text-violet-500" />
-                                        <span>
-                                          {isRtl ? `بعد: ${depAct.nameAr.slice(0, 10)}...` : `After: ${depAct.nameEn.slice(0, 10)}...`}
-                                        </span>
-                                      </span>
-                                    );
-                                  })()}
-
-                                  {/* Dynamic Overlap Badge */}
-                                  {hasOverlap && (
-                                    <span 
-                                      className="text-[7.5px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded flex items-center gap-0.5 animate-pulse" 
-                                      title={isRtl 
-                                        ? `تداخل مع: ${overlappingSiblings.map(s => isRtl ? s.nameAr : s.nameEn).join(', ')}` 
-                                        : `Overlaps with: ${overlappingSiblings.map(s => s.nameEn).join(', ')}`
-                                      }
-                                    >
-                                      <AlertCircle className="w-2.5 h-2.5 text-amber-500" />
-                                      <span>
-                                        {isRtl ? 'تداخل زمني ⚠️' : 'Overlap ⚠️'}
-                                      </span>
-                                    </span>
-                                  )}
                                 </div>
-                              </div>
+                              )}
 
-                              {/* Day Columns containing the dynamic Plan target & Milestone flags */}
-                              <div className="flex flex-shrink-0">
-                                {daysList.map((d, i) => {
-                                  const isPlannedOnDay = d >= actStart && d <= actEnd;
-                                  const isToday = d.toDateString() === todayDate.toDateString();
-                                  const isFinishDay = d.toDateString() === actEnd.toDateString();
-                                  const isWeekend = d.getDay() === 5 || d.getDay() === 6;
+                              {/* Resource metadata attached to the right of the Gantt bar */}
+                              {!isMilestone && barWidth > 35 && (
+                                <div className="absolute left-full ml-3 flex items-center gap-2 select-none pointer-events-none text-[9.5px] font-bold text-slate-500 whitespace-nowrap">
+                                  <span className="flex items-center gap-0.5 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">
+                                    <Users className="w-2.5 h-2.5 text-[#0080FF]" />
+                                    <span>{allocatedWorkersCount}</span>
+                                  </span>
+                                  {allocatedEquipName && (
+                                    <span className="flex items-center gap-0.5 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded truncate max-w-[100px]">
+                                      <Wrench className="w-2.5 h-2.5 text-[#0080FF]" />
+                                      <span>{allocatedEquipName}</span>
+                                    </span>
+                                  )}
+                                  <span className="text-[8.5px] text-slate-400 font-mono">
+                                    {Math.ceil((dates.end.getTime() - dates.start.getTime()) / (1000 * 60 * 60 * 24) + 1)}d
+                                  </span>
+                                </div>
+                              )}
 
-                                  // Calculate target production for the day if planned
-                                  const dailyPlannedQty = act.plannedDailyProduction 
-                                    ? act.plannedDailyProduction 
-                                    : act.totalQuantity 
-                                    ? Math.round(act.totalQuantity / totalDaysAct) 
-                                    : 0;
-
-                                  // Choose color code for planned cells
-                                  let cellBgClass = '';
-                                  let cellBorderClass = 'border-slate-100/60';
-                                  
-                                  if (isPlannedOnDay) {
-                                    if (progress >= 100) {
-                                      cellBgClass = 'bg-emerald-100/50 hover:bg-emerald-150/70 text-emerald-800';
-                                      cellBorderClass = 'border-emerald-200';
-                                    } else if (isHovered) {
-                                      cellBgClass = 'bg-[#0080FF]/30 hover:bg-[#0080FF]/40 text-[#0080FF] font-extrabold shadow-sm';
-                                      cellBorderClass = 'border-[#0080FF]';
-                                    } else if (isPredecessorOfHovered) {
-                                      cellBgClass = 'bg-violet-100/40 hover:bg-violet-200/50 text-violet-900 font-extrabold';
-                                      cellBorderClass = 'border-violet-300';
-                                    } else if (isDependentOfHovered) {
-                                      cellBgClass = 'bg-teal-100/40 hover:bg-teal-200/50 text-teal-900 font-extrabold';
-                                      cellBorderClass = 'border-teal-300';
-                                    } else if (act.isCritical) {
-                                      cellBgClass = 'bg-rose-100/40 hover:bg-rose-200/50 text-rose-900 font-extrabold';
-                                      cellBorderClass = 'border-rose-300';
-                                    } else if (actStatus === 'Delayed') {
-                                      cellBgClass = 'bg-amber-100/45 hover:bg-amber-200/60 text-amber-900';
-                                      cellBorderClass = 'border-amber-200';
-                                    } else if (actStatus === 'Ahead') {
-                                      cellBgClass = 'bg-emerald-50 hover:bg-emerald-100/60 text-emerald-800';
-                                      cellBorderClass = 'border-emerald-100';
-                                    } else {
-                                      cellBgClass = 'bg-blue-100/35 hover:bg-blue-100/55 text-blue-900';
-                                      cellBorderClass = 'border-blue-200';
-                                    }
-                                  } else {
-                                    cellBgClass = isWeekend ? 'bg-slate-50/50' : 'bg-transparent';
-                                  }
-
-                                  return (
-                                    <div
-                                      key={i}
-                                      className={`border-r h-13 flex flex-col items-center justify-center relative transition-all duration-100 group/cell flex-shrink-0 ${cellBgClass} ${cellBorderClass} ${
-                                        isToday ? 'ring-2 ring-rose-500/40 z-10 bg-rose-50/20' : ''
-                                      }`}
-                                      style={{ width: '40px' }}
-                                    >
-                                      {/* Planned Quantity Indicator inside cell */}
-                                      {isPlannedOnDay && dailyPlannedQty > 0 && (
-                                        <span className="text-[9px] font-mono font-black select-none leading-none opacity-95">
-                                          {dailyPlannedQty}
+                              {/* 2. Premium Tooltip Hover Card Popover */}
+                              <AnimatePresence>
+                                {hoveredActivityId === act.id && (
+                                  <motion.div 
+                                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                                    transition={{ duration: 0.15 }}
+                                    className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 bg-white border border-slate-200 p-4 rounded-xl shadow-xl z-50 w-80 text-left pointer-events-auto"
+                                    onMouseEnter={() => setHoveredActivityId(act.id)}
+                                    onMouseLeave={() => setHoveredActivityId(null)}
+                                  >
+                                    {/* Tooltip Header */}
+                                    <div className="flex justify-between items-start border-b border-slate-100 pb-2 mb-2">
+                                      <div>
+                                        <span className="text-[9px] font-mono font-black text-[#0080FF] bg-blue-50 px-1.5 py-0.5 rounded-sm border border-blue-100 uppercase">
+                                          {row.wbsCode}
                                         </span>
-                                      )}
-
-                                      {/* Hover tooltip for Employee */}
-                                      <div className="absolute left-1/2 bottom-full mb-2 -translate-x-1/2 hidden group-hover/cell:flex flex-col bg-white text-slate-800 p-3 rounded-2xl shadow-xl border border-slate-200 z-50 w-56 text-[10px] pointer-events-none transition-all duration-200 ease-out">
-                                        <div className="font-extrabold text-[11px] text-[#0080FF] border-b border-slate-100 pb-1.5 mb-1.5">
+                                        <h4 className="text-xs font-black text-slate-800 tracking-tight mt-1">
                                           {isRtl ? act.nameAr : act.nameEn}
-                                        </div>
-                                        <div className="space-y-1">
-                                          <div className="flex justify-between">
-                                            <span className="text-slate-500">{isRtl ? 'التاريخ المخطط:' : 'Planned Date:'}</span>
-                                            <span className="font-bold text-slate-800">{d.toLocaleDateString(lang === 'ar' ? 'ar-SA' : 'en-US', { day: 'numeric', month: 'short' })}</span>
-                                          </div>
-                                          {isPlannedOnDay && (
-                                            <div className="flex justify-between items-center">
-                                              <span className="text-slate-500">{isRtl ? 'الإنتاجية اليومية:' : 'Daily Target:'}</span>
-                                              <strong className="text-[#0080FF] font-mono bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">{dailyPlannedQty} {act.unit}</strong>
-                                            </div>
-                                          )}
-                                          <div className="flex justify-between">
-                                            <span className="text-slate-500">{isRtl ? 'متبقي للنشاط:' : 'Activity days left:'}</span>
-                                            <span className="font-bold text-amber-600">{remainingDaysAct}d</span>
-                                          </div>
-                                        </div>
+                                        </h4>
+                                      </div>
+                                      <span className={`text-[8.5px] font-black px-2 py-0.5 rounded-full border ${
+                                        progress >= 100 
+                                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                                          : rawStatus === 'Delayed'
+                                          ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                          : 'bg-blue-50 text-blue-700 border-blue-200'
+                                      }`}>
+                                        {progress}%
+                                      </span>
+                                    </div>
+
+                                    {/* Tooltip body grid */}
+                                    <div className="space-y-1.5 text-[10.5px]">
+                                      
+                                      <div className="flex justify-between">
+                                        <span className="text-slate-500 font-medium">{isRtl ? 'تاريخ البدء المخطط:' : 'Start Date:'}</span>
+                                        <span className="font-extrabold text-slate-800">{dates.start.toLocaleDateString(lang === 'ar' ? 'ar-SA' : 'en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
                                       </div>
 
+                                      <div className="flex justify-between">
+                                        <span className="text-slate-500 font-medium">{isRtl ? 'تاريخ الانتهاء المتوقع:' : 'Finish Date:'}</span>
+                                        <span className="font-extrabold text-slate-800">{dates.end.toLocaleDateString(lang === 'ar' ? 'ar-SA' : 'en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                                      </div>
+
+                                      <div className="flex justify-between border-b border-slate-50 pb-1.5">
+                                        <span className="text-slate-500 font-medium">{isRtl ? 'المدة الإجمالية:' : 'Duration:'}</span>
+                                        <span className="font-mono font-black text-[#0080FF]">{Math.ceil((dates.end.getTime() - dates.start.getTime()) / (1000 * 60 * 60 * 24) + 1)} days</span>
+                                      </div>
+
+                                      <div className="flex justify-between">
+                                        <span className="text-slate-500 font-medium">{isRtl ? 'الكمية الإجمالية للمخطط:' : 'Total Scope Qty:'}</span>
+                                        <span className="font-bold text-slate-800">{act.totalQuantity} {act.unit}</span>
+                                      </div>
+
+                                      <div className="flex justify-between">
+                                        <span className="text-slate-500 font-medium">{isRtl ? 'الكمية المنفذة فعلياً:' : 'Completed Qty:'}</span>
+                                        <span className="font-bold text-slate-800">
+                                          {progressUpdates.filter(u => u.activityId === act.id).reduce((sum, u) => sum + (u.completedQuantity || 0), 0)} {act.unit}
+                                        </span>
+                                      </div>
+
+                                      <div className="flex justify-between border-b border-slate-50 pb-1.5">
+                                        <span className="text-slate-500 font-medium">{isRtl ? 'المعدل المستهدف اليومي:' : 'Daily Target Rate:'}</span>
+                                        <span className="font-black text-slate-800">{act.plannedDailyProduction || 5} {act.unit}/day</span>
+                                      </div>
+
+                                      <div className="flex justify-between">
+                                        <span className="text-slate-500 font-medium">{isRtl ? 'المهندس المسؤول:' : 'Supervisor:'}</span>
+                                        <span className="font-extrabold text-slate-700">{proj.projectManager || 'Site Supervisor'}</span>
+                                      </div>
+
+                                      {allocatedWorkers.length > 0 && (
+                                        <div className="flex flex-col gap-0.5 border-t border-slate-100 pt-1.5 mt-1">
+                                          <span className="text-slate-400 text-[8.5px] uppercase font-black tracking-wider">{isRtl ? 'فريق العمل الميداني:' : 'Assigned Site Team:'}</span>
+                                          <span className="font-bold text-slate-700 leading-tight text-[9.5px]">
+                                            {allocatedWorkers.map(w => w.fullName).join(', ')}
+                                          </span>
+                                        </div>
+                                      )}
+
+                                      {act.descriptionEn && (
+                                        <div className="flex flex-col gap-0.5 border-t border-slate-100 pt-1.5 mt-1 bg-slate-50 p-2 rounded-lg border border-slate-200/50">
+                                          <span className="text-slate-400 text-[8.5px] uppercase font-black tracking-wider flex items-center gap-1">
+                                            <Info className="w-3 h-3 text-blue-500" />
+                                            {isRtl ? 'ملاحظات وتوجيهات تشغيلية:' : 'Operational Remarks:'}
+                                          </span>
+                                          <span className="font-medium text-slate-600 leading-tight italic text-[9.5px]">
+                                            {isRtl ? act.descriptionAr : act.descriptionEn}
+                                          </span>
+                                        </div>
+                                      )}
+
                                     </div>
-                                  );
-                                })}
-                              </div>
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
 
                             </div>
                           );
-                        })}
-                      </React.Fragment>
-                    );
-                  })}
-                </React.Fragment>
-              );
-            })}
+                        })()}
+
+                      </div>
+
+                    </div>
+                  );
+                })
+              )}
+
+            </div>
 
           </div>
         </div>
 
-        {/* Legend / Footer with explicit instructions */}
-        <div className="bg-slate-50 border-t border-slate-200 p-4 flex flex-col gap-3">
-          <div className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
-            {isRtl ? 'دليل الرموز ومؤشرات المسار الحرج والتداخلات الزمنية والتبعية للمشروع' : 'Visual Legend, Dependencies & Scheduling Overlaps Tracker'}
+        {/* 4. Legend Footer */}
+        <div className="bg-slate-50 border-t border-slate-200/60 p-4.5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <Layers className="w-4 h-4 text-slate-400" />
+            <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">
+              {isRtl ? 'رموز جدول جودة المسارات الزمنية والتبعية المتبادلة للمشروع' : 'Visual Legend & CPM Schedule Logic Guide'}
+            </span>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-3.5">
+
+          <div className="flex flex-wrap items-center gap-3">
             
-            <div className="flex items-center gap-2.5 bg-rose-50 border border-rose-200/60 p-2.5 rounded-xl shadow-2xs">
-              <div className="w-4 h-4 bg-rose-500 rounded border border-rose-600 flex-shrink-0 animate-pulse"></div>
-              <div>
-                <span className="block text-[8.5px] font-black text-rose-800 uppercase leading-none">{isRtl ? 'مسار حرج' : 'Critical Path'}</span>
-                <span className="text-[7.5px] text-rose-600/80 font-bold leading-none">{isRtl ? 'خطة الإنتاج الحرجة' : 'Daily Critical Target'}</span>
-              </div>
+            <div className="flex items-center gap-1.5 text-[9px] font-extrabold text-slate-600 bg-white border border-slate-200 px-2.5 py-1 rounded-full shadow-3xs">
+              <span className="w-2.5 h-2.5 bg-[#22C55E] rounded-full border border-emerald-600" />
+              <span>{isRtl ? 'مكتمل' : 'Completed (100%)'}</span>
             </div>
 
-            <div className="flex items-center gap-2.5 bg-emerald-50 border border-emerald-200/60 p-2.5 rounded-xl shadow-2xs">
-              <div className="w-4 h-4 bg-emerald-500 rounded border border-emerald-600 flex-shrink-0"></div>
-              <div>
-                <span className="block text-[8.5px] font-black text-emerald-800 uppercase leading-none">{isRtl ? 'مكتمل' : 'Completed Plan'}</span>
-                <span className="text-[7.5px] text-emerald-600/80 font-bold leading-none">{isRtl ? 'تم إنجاز الأنشطة بالكامل' : '100% completed task'}</span>
-              </div>
+            <div className="flex items-center gap-1.5 text-[9px] font-extrabold text-slate-600 bg-white border border-slate-200 px-2.5 py-1 rounded-full shadow-3xs">
+              <span className="w-2.5 h-2.5 bg-[#0080FF] rounded-full border border-blue-600" />
+              <span>{isRtl ? 'تحت التنفيذ' : 'In Progress'}</span>
             </div>
 
-            <div className="flex items-center gap-2.5 bg-blue-50 border border-blue-200/60 p-2.5 rounded-xl shadow-2xs">
-              <div className="w-4 h-4 bg-blue-400 rounded border border-blue-500 flex-shrink-0"></div>
-              <div>
-                <span className="block text-[8.5px] font-black text-blue-800 uppercase leading-none">{isRtl ? 'في المسار' : 'On Track Plan'}</span>
-                <span className="text-[7.5px] text-blue-600/80 font-bold leading-none">{isRtl ? 'إنتاجية طبيعية مستهدفة' : 'Planned standard target'}</span>
-              </div>
+            <div className="flex items-center gap-1.5 text-[9px] font-extrabold text-slate-600 bg-white border border-slate-200 px-2.5 py-1 rounded-full shadow-3xs">
+              <span className="w-2.5 h-2.5 bg-[#EF4444] rounded-full border border-red-600 animate-pulse" />
+              <span>{isRtl ? 'متأخر حرج' : 'Delayed'}</span>
             </div>
 
-            <div className="flex items-center gap-2.5 bg-amber-50 border border-amber-200/60 p-2.5 rounded-xl shadow-2xs">
-              <div className="w-4 h-4 bg-amber-500 rounded border border-amber-600 flex-shrink-0"></div>
-              <div>
-                <span className="block text-[8.5px] font-black text-amber-800 uppercase leading-none">{isRtl ? 'متأخر' : 'Delayed Plan'}</span>
-                <span className="text-[7.5px] text-amber-600/80 font-bold leading-none">{isRtl ? 'يتطلب تعويض الإنتاجية' : 'Needs recovery plan'}</span>
-              </div>
+            <div className="flex items-center gap-1.5 text-[9px] font-extrabold text-slate-600 bg-white border border-slate-200 px-2.5 py-1 rounded-full shadow-3xs">
+              <span className="w-2.5 h-2.5 bg-[#F59E0B] rounded-full border border-amber-600" />
+              <span>{isRtl ? 'في خطر' : 'At Risk'}</span>
             </div>
 
-            <div className="flex items-center gap-2.5 bg-violet-50 border border-violet-200 p-2.5 rounded-xl shadow-2xs">
-              <div className="w-4 h-4 bg-violet-500 rounded border border-violet-600 flex-shrink-0"></div>
-              <div>
-                <span className="block text-[8.5px] font-black text-violet-800 uppercase leading-none">{isRtl ? 'النشاط المسبق' : 'Predecessor'}</span>
-                <span className="text-[7.5px] text-violet-600/80 font-bold leading-none">{isRtl ? 'تعتمد عليه المهمة المحددة' : 'Hovered task depends on'}</span>
-              </div>
+            <div className="flex items-center gap-1.5 text-[9px] font-extrabold text-slate-600 bg-white border border-slate-200 px-2.5 py-1 rounded-full shadow-3xs">
+              <span className="w-2.5 h-2.5 bg-[#94A3B8] rounded-full border border-slate-400" />
+              <span>{isRtl ? 'لم يبدأ' : 'Not Started'}</span>
             </div>
 
-            <div className="flex items-center gap-2.5 bg-teal-50 border border-teal-200 p-2.5 rounded-xl shadow-2xs">
-              <div className="w-4 h-4 bg-teal-500 rounded border border-teal-600 flex-shrink-0"></div>
-              <div>
-                <span className="block text-[8.5px] font-black text-teal-800 uppercase leading-none">{isRtl ? 'النشاط التابع' : 'Dependent'}</span>
-                <span className="text-[7.5px] text-teal-600/80 font-bold leading-none">{isRtl ? 'يعتمد على المهمة المحددة' : 'Depends on hovered task'}</span>
-              </div>
+            <div className="flex items-center gap-1.5 text-[9px] font-extrabold text-slate-600 bg-white border border-slate-200 px-2.5 py-1 rounded-full shadow-3xs">
+              <div className="w-3 h-3 rotate-45 transform bg-[#0080FF] border border-white" />
+              <span>{isRtl ? 'حجر زاوية (Milestone)' : 'Milestone'}</span>
             </div>
 
-            <div className="flex items-center gap-2.5 bg-white border border-slate-200 p-2.5 rounded-xl shadow-2xs">
-              <span className="font-mono text-xs font-black text-slate-800 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">150</span>
-              <div>
-                <span className="block text-[8.5px] font-black text-slate-700 uppercase leading-none">{isRtl ? 'رقم الخلية' : 'Cell value'}</span>
-                <span className="text-[7.5px] text-slate-500 font-bold leading-none">{isRtl ? 'الإنتاج المستهدف للنشاط' : 'Target production qty'}</span>
-              </div>
+            <div className="flex items-center gap-1.5 text-[9px] font-extrabold text-rose-800 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-full shadow-3xs">
+              <span className="w-3 border-t border-red-500 border-dashed shrink-0" />
+              <span>{isRtl ? 'مسار حرج' : 'Critical Path Dependency'}</span>
+            </div>
+
+            <div className="flex items-center gap-1.5 text-[9px] font-extrabold text-blue-800 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-full shadow-3xs">
+              <span className="w-3 border-t border-blue-500 shrink-0" />
+              <span>{isRtl ? 'تبعية مجدولة' : 'Standard Dependency'}</span>
             </div>
 
           </div>

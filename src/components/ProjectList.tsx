@@ -12,7 +12,9 @@ import {
   Activity,
   ProgressUpdate,
   AttendanceRecord,
-  WarehouseMaterial
+  WarehouseMaterial,
+  Worker,
+  EquipmentItem
 } from '../types';
 import { getProjectProgress, getProjectStatusDetails } from '../utils/progressCalculations';
 import { 
@@ -47,6 +49,8 @@ interface ProjectListProps {
   materials: WarehouseMaterial[];
   settings: SystemSettings;
   userRole: UserRole;
+  workers?: Worker[];
+  equipment?: EquipmentItem[];
   onAddProject: (project: Project) => void;
   onUpdateProject: (id: string, updated: Partial<Project>) => void;
   onDeleteProject: (id: string) => void;
@@ -67,6 +71,8 @@ export default function ProjectList({
   materials = [],
   settings,
   userRole,
+  workers = [],
+  equipment = [],
   onAddProject,
   onUpdateProject,
   onDeleteProject,
@@ -739,6 +745,9 @@ export default function ProjectList({
           activities={activities}
           progressUpdates={progressUpdates}
           materials={materials}
+          workers={workers}
+          equipment={equipment}
+          attendanceRecords={attendanceRecords}
         />
       )}
 

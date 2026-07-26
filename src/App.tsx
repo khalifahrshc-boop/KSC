@@ -1590,6 +1590,8 @@ export default function App() {
               materials={materials}
               settings={settings}
               userRole={currentUser.role}
+              workers={workers}
+              equipment={equipment}
               onAddProject={handleAddProject}
               onUpdateProject={handleUpdateProject}
               onDeleteProject={handleDeleteProject}
