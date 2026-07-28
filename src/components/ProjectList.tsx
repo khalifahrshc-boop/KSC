@@ -1303,6 +1303,12 @@ export default function ProjectList({
               ? (isRtl ? `زيادة ${diffHours} ساعة` : `Extra ${diffHours} Hours`)
               : (isRtl ? 'متطابق تماماً' : 'Exactly Match');
 
+          const fieldSupervisor = progressUpdates.find(pu => pu.projectId === reportProject.id)?.reporterName 
+            || workItems.find(wi => wi.projectId === reportProject.id)?.responsiblePerson 
+            || (isRtl ? 'يوسف الحربي' : 'Yousef Al-Harbi');
+
+          const watermarkText = ((settings.companyNameEn || 'AL-SUDAIRI').split(' ')[0] || 'AL-SUDAIRI').toUpperCase() + ' PMO';
+
           const printHtml = `
             <!DOCTYPE html>
             <html dir="${isRtl ? 'rtl' : 'ltr'}">
@@ -1719,7 +1725,7 @@ export default function ProjectList({
             <body>
               <!-- PAGE 1: OFFICIAL COMPLETION CERTIFICATE -->
               <div class="certificate-container">
-                <div class="certificate-watermark">${(settings.companyNameEn || 'AL-SUDAIRI').toUpperCase()} SERVICE</div>
+                <div class="certificate-watermark">${watermarkText}</div>
                 
                 <div class="content-wrapper">
                   <!-- Header Section -->
@@ -1850,39 +1856,52 @@ export default function ProjectList({
                   <table class="signature-matrix">
                     <tr>
                       <td>
-                        <div class="sig-title">${isRtl ? 'مهندس الموقع الميداني' : 'Field Supervisor'}</div>
-                        <div class="sig-dept">${isRtl ? 'إدارة الهندسة المدنية' : 'Civil Engineering Dept'}</div>
-                        <div class="sig-dotted-line"></div>
+                        <div class="sig-title">${isRtl ? 'مشرف الموقع الميداني' : 'Field Site Supervisor'}</div>
+                        <div class="sig-dept" style="font-weight: bold; color: #334155; font-size: 8.5px; margin-bottom: 4px;">
+                          ${fieldSupervisor}
+                        </div>
+                        <div class="sig-signature" style="font-family: 'Courier New', Courier, monospace; font-style: italic; font-weight: bold; color: #1e3a8a; font-size: 11px; margin: 5px 0; text-align: center;">
+                          ${fieldSupervisor.replace('Eng. ', '').replace('Lead Sup. ', '')}
+                        </div>
+                        <div class="sig-dotted-line" style="margin-top: 2px;"></div>
                         <div class="digital-seal-box">
-                          <span>${isRtl ? 'التوقيع الرقمي معتمد' : 'Digitally Signed'}</span>
+                          <span style="color: #10b981; font-weight: bold;">${isRtl ? 'التوقيع الرقمي معتمد' : 'Digitally Signed'}</span>
                           <span style="font-size: 7px; color: #94a3b8; margin-top: 3px; font-family: monospace;">ID: SU-CIV-${reportProject.projectNumber}</span>
                         </div>
                       </td>
                       <td>
-                        <div class="sig-title">${isRtl ? 'مدير إدارة المشروعات للمجموعة' : 'PMO Director'}</div>
-                        <div class="sig-dept">${isRtl ? 'مكتب إدارة المشاريع (PMO)' : 'Project Management Office'}</div>
-                        <div class="sig-dotted-line"></div>
+                        <div class="sig-title">${isRtl ? 'مدير المشروع المعتمد' : 'Authorized Project Manager'}</div>
+                        <div class="sig-dept" style="font-weight: bold; color: #334155; font-size: 8.5px; margin-bottom: 4px;">
+                          ${reportProject.projectManager}
+                        </div>
+                        <div class="sig-signature" style="font-family: 'Courier New', Courier, monospace; font-style: italic; font-weight: bold; color: #1e3a8a; font-size: 11px; margin: 5px 0; text-align: center;">
+                          ${reportProject.projectManager.replace('Eng. ', '').replace('Project Manager ', '')}
+                        </div>
+                        <div class="sig-dotted-line" style="margin-top: 2px;"></div>
                         <div class="digital-seal-box" style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
-                          <span class="pmo-verified-stamp" style="font-size: 7px; padding: 1px 4px; border-color: #0080FF; color: #0080FF;">
-                            ${isRtl ? 'معتمد ومطابق' : 'PMO AUDITED'}
+                          ${settings.officialStampUrl && (settings.officialStampUrl.startsWith('data:') || settings.officialStampUrl.startsWith('http'))
+                            ? `<img src="${settings.officialStampUrl}" style="max-height: 35px; width: auto; object-fit: contain; margin: 0 auto 3px auto; filter: hue-rotate(140deg);" referrerPolicy="no-referrer" />`
+                            : `<span style="font-size: 20px; margin-bottom: 2px;">💠</span>`
+                          }
+                          <span class="pmo-verified-stamp" style="font-size: 6.5px; padding: 1px 3px; border-color: #0080FF; color: #0080FF; font-weight: bold;">
+                            ${isRtl ? 'تدقيق ومطابقة الـ PMO' : 'PMO AUDITED & VERIFIED'}
                           </span>
-                          <span style="font-weight: bold; font-size: 7.5px; color: #475569; margin-top: 4px; text-align: center;">
-                            ${isRtl ? settings.companyNameAr : settings.companyNameEn}
-                          </span>
-                          <span style="font-size: 6.5px; color: #94a3b8; font-family: monospace; margin-top: 1px;">TAX: ${settings.taxNumber || '310248201900003'}</span>
+                          <span style="font-size: 6px; color: #94a3b8; font-family: monospace; margin-top: 2px;">TAX: ${settings.taxNumber || '310248201900003'}</span>
                         </div>
                       </td>
                       <td>
-                        <div class="sig-title">${isRtl ? settings.managerNameAr : settings.managerNameEn}</div>
-                        <div class="sig-dept">${isRtl ? 'الإدارة التنفيذية العليا' : 'Executive Management'}</div>
+                        <div class="sig-title">${isRtl ? 'اعتماد الإدارة التنفيذية' : 'Executive VP of Operations'}</div>
+                        <div class="sig-dept" style="font-weight: bold; color: #334155; font-size: 8.5px; margin-bottom: 4px;">
+                          ${isRtl ? settings.managerNameAr : settings.managerNameEn}
+                        </div>
                         <div class="sig-signature" style="font-family: 'Courier New', Courier, monospace; font-style: italic; font-weight: bold; color: #1e3a8a; font-size: 11px; margin: 5px 0; text-align: center;">
                           ${settings.managerSignature || 'Mishaal.Sudairi.Opr'}
                         </div>
                         <div class="sig-dotted-line" style="margin-top: 2px;"></div>
                         <div class="digital-seal-box" style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
                           ${settings.officialStampUrl && (settings.officialStampUrl.startsWith('data:') || settings.officialStampUrl.startsWith('http'))
-                            ? `<img src="${settings.officialStampUrl}" style="max-height: 40px; width: auto; object-fit: contain; margin: 0 auto 3px auto;" referrerPolicy="no-referrer" />`
-                            : `<span style="font-size: 22px; margin-bottom: 2px;">${settings.officialStampUrl || '💮'}</span>`
+                            ? `<img src="${settings.officialStampUrl}" style="max-height: 35px; width: auto; object-fit: contain; margin: 0 auto 3px auto;" referrerPolicy="no-referrer" />`
+                            : `<span style="font-size: 20px; margin-bottom: 2px;">💮</span>`
                           }
                           <span style="font-weight: bold; font-size: 7px; color: #040957; text-align: center;">${isRtl ? settings.companyNameAr : settings.companyNameEn}</span>
                           <span style="font-size: 6px; color: #94a3b8; font-family: monospace; margin-top: 1px;">CR: ${settings.commercialRegistration || '1010349102'}</span>
@@ -2069,12 +2088,15 @@ export default function ProjectList({
             if (isGeneratingPDF) return;
             setIsGeneratingPDF(true);
 
-            // Create off-screen container for rendering
+            // Create off-screen container for rendering (safely positioned within visible coordinate space but hidden behind)
             const container = document.createElement('div');
-            container.style.position = 'fixed';
-            container.style.left = '-9999px';
-            container.style.top = '-9999px';
-            container.style.width = '210mm'; // Standard A4 width
+            container.style.position = 'absolute';
+            container.style.left = '0';
+            container.style.top = `${window.scrollY}px`; // Place in current visible viewport to avoid scroll offsets
+            container.style.width = '210mm'; // Standard A4 A-series width
+            container.style.zIndex = '-9999'; // Render behind the active application UI
+            container.style.pointerEvents = 'none'; // Ensure no interference with user interactions
+            container.style.opacity = '1'; // Must be fully visible for html2canvas to capture it
             container.dir = isRtl ? 'rtl' : 'ltr';
             container.innerHTML = printHtml;
             document.body.appendChild(container);
@@ -2089,7 +2111,8 @@ export default function ProjectList({
                 logging: false,
                 letterRendering: true
               },
-              jsPDF:        { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
+              jsPDF:        { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const },
+              pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] }
             };
 
             // Generate and download PDF
