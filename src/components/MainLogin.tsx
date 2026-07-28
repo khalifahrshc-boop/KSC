@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { dbApi } from '../lib/api';
 import { Key, Shield, Eye, EyeOff } from 'lucide-react';
 import { motion } from 'motion/react';
+// @ts-ignore
 import bgImage from '../assets/images/construction_login_bg_1785108867490.jpg';
 
 interface MainLoginProps {

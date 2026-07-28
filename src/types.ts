@@ -28,6 +28,8 @@ export interface Project {
   status: 'Ahead' | 'On Track' | 'Delayed';
   budget?: number;
   morningMeetingPlan?: string;
+  isCompleted?: boolean;
+  completionDate?: string;
 }
 
 export interface WorkItem {
