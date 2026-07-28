@@ -167,7 +167,10 @@ export default function FieldOperations({
   const isRtl = lang === 'ar';
   const isReadOnly = userRole === 'Viewer';
 
-  const [selectedProjectId, setSelectedProjectId] = useState<string>(projects[0]?.id || '');
+  // Filter out completed/closed projects
+  const activeProjects = projects.filter(p => !p.isCompleted);
+
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(activeProjects[0]?.id || '');
 
   // AI Audit States
   const [auditingSubId, setAuditingSubId] = useState<string | null>(null);
@@ -1284,7 +1287,7 @@ export default function FieldOperations({
             onChange={(e) => setSelectedProjectId(e.target.value)}
             className="bg-slate-50 text-slate-800 font-bold border border-gray-200 py-1.5 px-3 rounded-lg text-xs outline-none focus:ring-2 focus:ring-[#0080FF] cursor-pointer"
           >
-            {projects.map(p => (
+            {activeProjects.map(p => (
               <option key={p.id} value={p.id} className="text-[#040957]">
                 {isRtl ? p.nameAr : p.nameEn}
               </option>

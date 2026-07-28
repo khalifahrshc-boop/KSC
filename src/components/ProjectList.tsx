@@ -1327,7 +1327,7 @@ export default function ProjectList({
                   box-sizing: border-box;
                 }
 
-                body {
+                body, .pdf-render-container {
                   font-family: ${isRtl ? "'Cairo', sans-serif" : "'Plus Jakarta Sans', sans-serif"};
                   color: #0f172a;
                   background: #ffffff;
@@ -1864,9 +1864,14 @@ export default function ProjectList({
                           ${fieldSupervisor.replace('Eng. ', '').replace('Lead Sup. ', '')}
                         </div>
                         <div class="sig-dotted-line" style="margin-top: 2px;"></div>
-                        <div class="digital-seal-box">
-                          <span style="color: #10b981; font-weight: bold;">${isRtl ? 'التوقيع الرقمي معتمد' : 'Digitally Signed'}</span>
-                          <span style="font-size: 7px; color: #94a3b8; margin-top: 3px; font-family: monospace;">ID: SU-CIV-${reportProject.projectNumber}</span>
+                        <div class="digital-seal-box" style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                          <div style="border: 2px solid rgba(16, 185, 129, 0.4); color: #10b981; font-family: 'Courier New', Courier, monospace; font-size: 7px; font-weight: 900; padding: 4px; width: 65px; height: 65px; border-radius: 50%; display: flex; flex-direction: column; justify-content: center; align-items: center; transform: rotate(-5deg); margin: 0 auto 4px auto; background: rgba(16, 185, 129, 0.02); text-align: center; line-height: 1.1;">
+                            <span style="font-size: 6px; font-weight: bold; text-transform: uppercase;">${(settings.companyNameEn || 'AL-SUDAIRI').split(' ')[0]}</span>
+                            <span style="font-size: 7px; font-weight: 900; margin: 1px 0;">APPROVED</span>
+                            <span style="font-size: 6px;">${reportProject.completionDate || new Date().toISOString().split('T')[0]}</span>
+                          </div>
+                          <span style="color: #10b981; font-weight: bold; font-size: 7.5px;">${isRtl ? 'التوقيع الرقمي معتمد' : 'Digitally Signed'}</span>
+                          <span style="font-size: 6px; color: #94a3b8; margin-top: 2px; font-family: monospace;">ID: SU-CIV-${reportProject.projectNumber}</span>
                         </div>
                       </td>
                       <td>
@@ -1881,7 +1886,7 @@ export default function ProjectList({
                         <div class="digital-seal-box" style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
                           ${settings.officialStampUrl && (settings.officialStampUrl.startsWith('data:') || settings.officialStampUrl.startsWith('http'))
                             ? `<img src="${settings.officialStampUrl}" style="max-height: 35px; width: auto; object-fit: contain; margin: 0 auto 3px auto; filter: hue-rotate(140deg);" referrerPolicy="no-referrer" />`
-                            : `<span style="font-size: 20px; margin-bottom: 2px;">💠</span>`
+                            : `<span style="font-size: 20px; margin-bottom: 2px;">${settings.officialStampUrl || '💠'}</span>`
                           }
                           <span class="pmo-verified-stamp" style="font-size: 6.5px; padding: 1px 3px; border-color: #0080FF; color: #0080FF; font-weight: bold;">
                             ${isRtl ? 'تدقيق ومطابقة الـ PMO' : 'PMO AUDITED & VERIFIED'}
@@ -1901,7 +1906,7 @@ export default function ProjectList({
                         <div class="digital-seal-box" style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
                           ${settings.officialStampUrl && (settings.officialStampUrl.startsWith('data:') || settings.officialStampUrl.startsWith('http'))
                             ? `<img src="${settings.officialStampUrl}" style="max-height: 35px; width: auto; object-fit: contain; margin: 0 auto 3px auto;" referrerPolicy="no-referrer" />`
-                            : `<span style="font-size: 20px; margin-bottom: 2px;">💮</span>`
+                            : `<span style="font-size: 20px; margin-bottom: 2px;">${settings.officialStampUrl || '💮'}</span>`
                           }
                           <span style="font-weight: bold; font-size: 7px; color: #040957; text-align: center;">${isRtl ? settings.companyNameAr : settings.companyNameEn}</span>
                           <span style="font-size: 6px; color: #94a3b8; font-family: monospace; margin-top: 1px;">CR: ${settings.commercialRegistration || '1010349102'}</span>
@@ -2088,16 +2093,21 @@ export default function ProjectList({
             if (isGeneratingPDF) return;
             setIsGeneratingPDF(true);
 
-            // Create off-screen container for rendering (safely positioned within visible coordinate space but hidden behind)
+            // Create off-screen container for rendering (safely positioned far offscreen but in the DOM)
             const container = document.createElement('div');
-            container.style.position = 'absolute';
-            container.style.left = '0';
-            container.style.top = `${window.scrollY}px`; // Place in current visible viewport to avoid scroll offsets
-            container.style.width = '210mm'; // Standard A4 A-series width
-            container.style.zIndex = '-9999'; // Render behind the active application UI
-            container.style.pointerEvents = 'none'; // Ensure no interference with user interactions
-            container.style.opacity = '1'; // Must be fully visible for html2canvas to capture it
+            container.className = 'pdf-render-container';
             container.dir = isRtl ? 'rtl' : 'ltr';
+            container.style.position = 'absolute';
+            container.style.left = '-9999px';
+            container.style.top = '0';
+            container.style.width = '210mm'; // Standard A4 series width
+            container.style.backgroundColor = '#ffffff'; // Prevent transparency black/blank bug
+            container.style.color = '#0f172a';
+            container.style.zIndex = '99999'; // Render above but offscreen
+            container.style.pointerEvents = 'none'; // Ensure no interference with user interactions
+            container.style.opacity = '1'; // Must be fully visible for html2canvas
+            container.style.display = 'block';
+            container.style.visibility = 'visible';
             container.innerHTML = printHtml;
             document.body.appendChild(container);
 
@@ -2109,47 +2119,82 @@ export default function ProjectList({
                 scale: 2, 
                 useCORS: true, 
                 logging: false,
-                letterRendering: true
+                letterRendering: true,
+                scrollX: 0,
+                scrollY: 0,
+                backgroundColor: '#ffffff' // Ensure solid white background
               },
               jsPDF:        { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const },
               pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] }
             };
 
-            // Generate and download PDF
-            html2pdf()
-              .set(opt)
-              .from(container)
-              .save()
-              .then(() => {
-                document.body.removeChild(container);
-                setIsGeneratingPDF(false);
-              })
-              .catch((err: any) => {
-                console.error('PDF generation error, falling back to print mode:', err);
-                document.body.removeChild(container);
-                setIsGeneratingPDF(false);
-                // Fallback to print
-                const iframe = document.createElement('iframe');
-                iframe.style.position = 'absolute';
-                iframe.style.width = '0px';
-                iframe.style.height = '0px';
-                iframe.style.border = 'none';
-                document.body.appendChild(iframe);
-                
-                const iframeDoc = iframe.contentWindow?.document || iframe.contentDocument;
-                if (iframeDoc) {
-                  iframeDoc.open();
-                  iframeDoc.write(printHtml);
-                  iframeDoc.close();
-                  setTimeout(() => {
-                    iframe.contentWindow?.focus();
-                    iframe.contentWindow?.print();
-                    setTimeout(() => {
-                      document.body.removeChild(iframe);
-                    }, 1000);
-                  }, 500);
-                }
+            // Wait for all images to fully load inside the container
+            const imgs = container.querySelectorAll('img');
+            const loadPromises = Array.from(imgs).map((img) => {
+              if (img.complete) return Promise.resolve();
+              return new Promise<void>((resolve) => {
+                img.onload = () => resolve();
+                img.onerror = () => resolve(); // Resolve even on error to avoid blocking PDF generation
               });
+            });
+
+            Promise.all(loadPromises).then(() => {
+              // Tiny timeout to guarantee rendering paint has taken effect
+              setTimeout(() => {
+                html2pdf()
+                  .set(opt)
+                  .from(container)
+                  .save()
+                  .then(() => {
+                    document.body.removeChild(container);
+                    setIsGeneratingPDF(false);
+                  })
+                  .catch((err: any) => {
+                    console.error('PDF generation error, falling back to print mode:', err);
+                    if (document.body.contains(container)) {
+                      document.body.removeChild(container);
+                    }
+                    setIsGeneratingPDF(false);
+                    // Fallback to print
+                    const iframe = document.createElement('iframe');
+                    iframe.style.position = 'absolute';
+                    iframe.style.width = '0px';
+                    iframe.style.height = '0px';
+                    iframe.style.border = 'none';
+                    document.body.appendChild(iframe);
+                    
+                    const iframeDoc = iframe.contentWindow?.document || iframe.contentDocument;
+                    if (iframeDoc) {
+                      iframeDoc.open();
+                      iframeDoc.write(printHtml);
+                      iframeDoc.close();
+                      setTimeout(() => {
+                        iframe.contentWindow?.focus();
+                        iframe.contentWindow?.print();
+                        setTimeout(() => {
+                          document.body.removeChild(iframe);
+                        }, 1000);
+                      }, 500);
+                    }
+                  });
+              }, 300);
+            }).catch(() => {
+              // Safety fallback if image promises fail
+              html2pdf()
+                .set(opt)
+                .from(container)
+                .save()
+                .then(() => {
+                  document.body.removeChild(container);
+                  setIsGeneratingPDF(false);
+                })
+                .catch(() => {
+                  if (document.body.contains(container)) {
+                    document.body.removeChild(container);
+                  }
+                  setIsGeneratingPDF(false);
+                });
+            });
           }
         };
 

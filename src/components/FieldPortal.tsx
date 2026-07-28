@@ -101,8 +101,11 @@ export default function FieldPortal({
 }: FieldPortalProps) {
   const isRtl = lang === 'ar';
   
+  // Filter out completed/closed projects
+  const activeProjects = projects.filter(p => !p.isCompleted);
+  
   // Choose project
-  const [selectedProjectId, setSelectedProjectId] = useState<string>(projects[0]?.id || '');
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(activeProjects[0]?.id || '');
   const [reportDate, setReportDate] = useState<string>(getSystemToday().toISOString().split('T')[0]);
   const [morningPlanSearchDate, setMorningPlanSearchDate] = useState<string>(getSystemToday().toISOString().split('T')[0]);
 
@@ -1950,7 +1953,7 @@ export default function FieldPortal({
                       onChange={(e) => setSelectedProjectId(e.target.value)}
                       className="w-full border border-gray-200 rounded-xl p-3 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white text-gray-800 font-bold"
                     >
-                      {projects.map(p => (
+                      {activeProjects.map(p => (
                         <option key={p.id} value={p.id}>
                           {p.projectNumber} - {isRtl ? p.nameAr : p.nameEn}
                         </option>
