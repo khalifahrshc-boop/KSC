@@ -1271,7 +1271,28 @@ export default function Dashboard({
       </div>
 
       {/* Grid of Main KPIs */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="flex gap-4 pb-4 overflow-x-auto md:hidden">
+        {[
+          { label: t.totalProjects, val: totalProjCount, sub: projectsSub, icon: Briefcase, color: 'text-blue-600', bg: 'bg-blue-50' },
+          { label: t.totalWorkItems, val: totalWiCount, sub: workItemsSub, icon: Layers, color: 'text-teal-600', bg: 'bg-teal-50' },
+          { label: t.totalActivities, val: totalActCount, sub: activitiesSub, icon: Workflow, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+          { label: t.dailyProd, val: finalDailyProd, sub: dailyProdSub, icon: TrendingUp, color: 'text-amber-600', bg: 'bg-amber-50', trend: true },
+        ].map((kpi, i) => (
+          <div
+            key={i}
+            className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 min-w-[220px] flex items-center justify-between"
+          >
+            <div className="space-y-2">
+              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{kpi.label}</p>
+              <h3 className="text-2xl font-black text-[#040957] font-sans">{kpi.val}</h3>
+            </div>
+            <div className={`p-3 rounded-xl ${kpi.bg}`}>
+              <kpi.icon className={`w-6 h-6 ${kpi.color}`} />
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { label: t.totalProjects, val: totalProjCount, sub: projectsSub, icon: Briefcase, color: 'text-blue-600', bg: 'bg-blue-50' },
           { label: t.totalWorkItems, val: totalWiCount, sub: workItemsSub, icon: Layers, color: 'text-teal-600', bg: 'bg-teal-50' },
