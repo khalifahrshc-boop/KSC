@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Activity, Worker, WarehouseMaterial, EquipmentItem, Project, WorkItem } from '../types';
+import { Activity, Worker, WarehouseMaterial, EquipmentItem, Project, WorkItem, User } from '../types';
 import { 
   X, Check, ChevronRight, ChevronLeft, Calendar, 
   Sparkles, UserCheck, Package, Wrench, HelpCircle, 
@@ -18,6 +18,7 @@ interface ActivityWizardModalProps {
   activity: Activity | null; // null if adding
   workItemId: string;
   workers: Worker[];
+  users: User[];
   materials: WarehouseMaterial[];
   equipment: EquipmentItem[];
   activities: Activity[];
@@ -37,6 +38,7 @@ export default function ActivityWizardModal({
   activity,
   workItemId,
   workers,
+  users,
   materials,
   equipment,
   activities,
@@ -54,6 +56,7 @@ export default function ActivityWizardModal({
   const [currentStep, setCurrentStep] = useState(1);
   const [actNameAr, setActNameAr] = useState('');
   const [actNameEn, setActNameEn] = useState('');
+  const [supervisorId, setSupervisorId] = useState('');
   const [actQty, setActQty] = useState(100);
   const [actUnit, setActUnit] = useState('m³');
   const [actDescAr, setActDescAr] = useState('');
@@ -85,6 +88,7 @@ export default function ActivityWizardModal({
       if (activity) {
         setActNameAr(activity.nameAr || '');
         setActNameEn(activity.nameEn || '');
+        setSupervisorId(activity.supervisorId || '');
         setActQty(activity.totalQuantity || 100);
         setActUnit(activity.unit || 'm³');
         setActDescAr(activity.descriptionAr || '');
@@ -186,6 +190,7 @@ export default function ActivityWizardModal({
       workItemId,
       nameAr: actNameAr,
       nameEn: actNameEn,
+      supervisorId: supervisorId,
       totalQuantity: Number(actQty),
       unit: actUnit,
       descriptionAr: actDescAr,
@@ -207,6 +212,7 @@ export default function ActivityWizardModal({
   const resetFormValues = () => {
     setActNameAr('');
     setActNameEn('');
+    setSupervisorId('');
     setActQty(100);
     setActUnit('m³');
     setActDescAr('');
@@ -359,6 +365,20 @@ export default function ActivityWizardModal({
                         />
                       </div>
                     </div>
+
+                      <div className="space-y-1">
+                        <label className="block text-xs font-bold text-slate-700">{isRtl ? 'المشرف المسؤول:' : 'Responsible Supervisor:'}</label>
+                        <select
+                          value={supervisorId}
+                          onChange={(e) => { setSupervisorId(e.target.value); triggerAutoSaveTimeUpdate(); }}
+                          className="w-full border border-slate-200 rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-[#0080FF] font-semibold bg-slate-50/50"
+                        >
+                          <option value="">{isRtl ? 'اختر مشرفاً...' : 'Select a supervisor...'}</option>
+                          {users.filter(u => u.role === 'Site Supervisor').map(u => (
+                            <option key={u.id} value={u.id}>{u.name}</option>
+                          ))}
+                        </select>
+                      </div>
 
                     {/* NEW FIELDS: WORK ZONE, ROLE, AND LOCATION */}
                     <div className="border-t border-slate-100 pt-4 mt-4 space-y-3">

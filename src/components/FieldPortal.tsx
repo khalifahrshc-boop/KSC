@@ -309,7 +309,10 @@ export default function FieldPortal({
   const selectedProject = projects.find(p => p.id === selectedProjectId);
   const projectWorkItems = workItems.filter(wi => wi.projectId === selectedProjectId);
   const currentWorkItem = workItems.find(wi => wi.id === prodWiId) || projectWorkItems[0];
-  const itemActivities = activities.filter(act => act.workItemId === (currentWorkItem?.id || ''));
+  const itemActivities = activities.filter(act => 
+    act.workItemId === (currentWorkItem?.id || '') &&
+    (!supBadge || act.supervisorId === supBadge)
+  );
 
   // Copy shareable portal link
   const handleCopyLink = () => {

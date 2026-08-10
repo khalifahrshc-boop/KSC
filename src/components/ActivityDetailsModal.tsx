@@ -17,6 +17,7 @@ interface ActivityDetailsModalProps {
   materials: WarehouseMaterial[];
   equipment: EquipmentItem[];
   activities: Activity[];
+  users: User[];
   isPrinting: boolean;
   onPrint: () => void;
   lang: 'ar' | 'en';
@@ -58,6 +59,14 @@ export default function ActivityDetailsModal({
               <label className="text-[10px] text-slate-400 font-extrabold uppercase block">{isRtl ? 'الاسم (إنجليزي)' : 'Name (English)'}</label>
               <p className="font-extrabold text-sm text-[#040957]">{activity.nameEn}</p>
             </div>
+            {activity.supervisorId && (
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 font-extrabold uppercase block">{isRtl ? 'المشرف المسؤول' : 'Responsible Supervisor'}</label>
+                <p className="font-bold text-sm text-[#040957] bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100 inline-block">
+                  {users.find(u => u.id === activity.supervisorId)?.name || activity.supervisorId}
+                </p>
+              </div>
+            )}
             <div className="space-y-1">
               <label className="text-[10px] text-slate-400 font-extrabold uppercase block">{isRtl ? 'الكمية الكلية' : 'Total Quantity'}</label>
               <p className="font-mono font-extrabold text-sm text-[#040957]">{activity.totalQuantity} {activity.unit}</p>

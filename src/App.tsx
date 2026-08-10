@@ -1788,6 +1788,7 @@ export default function App() {
               materials={materials}
               equipment={equipment}
               workers={workers}
+              users={users}
               userRole={currentUser.role}
               onAddWorkItem={handleAddWorkItem}
               onDeleteWorkItem={handleDeleteWorkItem}

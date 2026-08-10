@@ -54,6 +54,7 @@ export interface Activity {
   materialIds: string[];
   equipmentIds: string[];
   workerIds: string[];
+  supervisorId?: string;
   materialAllocations?: { id: string; quantity: number }[];
   equipmentAllocations?: { id: string; quantity: number }[];
   dependsOnActivityId?: string;

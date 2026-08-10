@@ -12,6 +12,7 @@ import {
   EquipmentItem, 
   Worker, 
   UserRole,
+  User,
   ProgressUpdate,
   SystemSettings
 } from '../types';
@@ -43,6 +44,7 @@ interface WorkItemsListProps {
   materials: WarehouseMaterial[];
   equipment: EquipmentItem[];
   workers: Worker[];
+  users: User[];
   userRole: UserRole;
   onAddWorkItem: (item: WorkItem) => void;
   onDeleteWorkItem: (id: string) => void;
@@ -462,6 +464,7 @@ export default function WorkItemsList({
   materials,
   equipment,
   workers,
+  users,
   userRole,
   onAddWorkItem,
   onDeleteWorkItem,
@@ -1895,6 +1898,7 @@ export default function WorkItemsList({
         activity={editingActivityId ? (activities.find(a => a.id === editingActivityId) || null) : null}
         workItemId={selectedWiIdForActivity}
         workers={workers}
+        users={users}
         materials={materials}
         equipment={equipment}
         activities={activities}
@@ -1916,6 +1920,7 @@ export default function WorkItemsList({
         materials={materials}
         equipment={equipment}
         activities={activities}
+        users={users}
         isPrinting={isPrintingActivity === activityForDetails?.id}
         onPrint={() => activityForDetails && handlePrintActivityDetailsPDF(activityForDetails)}
         lang={lang}
