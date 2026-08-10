@@ -2213,7 +2213,16 @@ export default function FieldPortal({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 bg-white">
-                      {workers.filter(w => w.status === 'Active').map(w => {
+                      {workers.filter(w => {
+                        const isActive = w.status === 'Active';
+                        const supervisedWorkItemIds = workItems.filter(wi => wi.responsiblePerson === supName).map(wi => wi.id);
+                        const supervisedWorkerIds = new Set<string>();
+                        activities
+                          .filter(a => supervisedWorkItemIds.includes(a.workItemId))
+                          .forEach(a => a.workerIds.forEach(wid => supervisedWorkerIds.add(wid)));
+                        
+                        return isActive && supervisedWorkerIds.has(w.id);
+                      }).map(w => {
                         const state = workerAttendanceState[w.id] || {
                           isPresent: true,
                           status: 'Present',
