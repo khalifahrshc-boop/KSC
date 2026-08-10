@@ -137,9 +137,8 @@ export default function GanttChart({
   const timelineData = useMemo(() => {
     const allDates = projects.flatMap(p => [parseDateLocal(p.startDate), parseDateLocal(p.endDate)]);
     if (allDates.length === 0) {
-      const fallbackMin = new Date('2026-07-01');
-      const fallbackMax = new Date('2026-08-31');
-      return { minDate: fallbackMin, maxDate: fallbackMax, totalDays: 60 };
+      const today = new Date();
+      return { minDate: today, maxDate: today, totalDays: 0 };
     }
 
     const minDate = new Date(Math.min(...allDates.map(d => d.getTime())));
@@ -279,7 +278,7 @@ export default function GanttChart({
       if (proj) {
         const { start, end } = getActivityDates(act, proj);
         if (todayDate >= start && todayDate <= end) {
-          todayTarget += act.plannedDailyProduction || 5;
+          todayTarget += act.plannedDailyProduction || 0;
         }
       }
 
@@ -288,10 +287,10 @@ export default function GanttChart({
 
     // Workers & Equipment today
     const workersToday = attendanceRecords.filter(r => r.date === todayDateStr && r.isPresent).length || 
-      todayUpdates.reduce((acc, u) => acc + (u.numberOfWorkers || 0), 0) || 14;
+      todayUpdates.reduce((acc, u) => acc + (u.numberOfWorkers || 0), 0);
 
     const equipToday = todayUpdates.flatMap(u => u.equipmentUsed || []).length || 
-      equipment.filter(e => e.status === 'Excellent' || e.status === 'Available').length || 6;
+      equipment.filter(e => e.status === 'Excellent' || e.status === 'Available').length;
 
     return {
       overallProgress,
@@ -316,10 +315,12 @@ export default function GanttChart({
       parentWorkItemId?: string;
       wbsCode: string;
       level: number;
+      isProjectCompleted: boolean;
     }[] = [];
 
     projects.forEach((proj, pIdx) => {
       const pWbs = `${pIdx + 1}`;
+      const isProjectCompleted = !!proj.isCompleted;
       
       // Filter projects by term if matching name
       const projMatchesSearch = searchTerm === '' || 
@@ -371,7 +372,8 @@ export default function GanttChart({
               item: wi,
               parentProjectId: proj.id,
               wbsCode: wiWbs,
-              level: 1
+              level: 1,
+              isProjectCompleted
             });
             workItemsAdded = true;
           }
@@ -386,7 +388,8 @@ export default function GanttChart({
                 parentProjectId: proj.id,
                 parentWorkItemId: wi.id,
                 wbsCode: `${wiWbs}.${aIdx + 1}`,
-                level: 2
+                level: 2,
+                isProjectCompleted
               });
             });
           }
@@ -400,7 +403,8 @@ export default function GanttChart({
           id: proj.id,
           item: proj,
           wbsCode: pWbs,
-          level: 0
+          level: 0,
+          isProjectCompleted
         });
       }
     });
@@ -883,7 +887,10 @@ export default function GanttChart({
                   };
 
                   // Styling row height: standard h-14 (56px) for perfect alignment
+                  const isLocked = row.isProjectCompleted;
                   const rowClass = `flex h-14 border-b border-slate-100 group transition-colors duration-150 relative ${
+                    isLocked ? 'opacity-60 grayscale' : ''
+                  } ${
                     isProj ? 'bg-blue-50/15 hover:bg-blue-50/25' : isWi ? 'bg-slate-50/30 hover:bg-slate-50/60' : 'hover:bg-slate-50/10'
                   }`;
 

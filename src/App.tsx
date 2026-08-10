@@ -469,6 +469,59 @@ export default function App() {
       const updatedProject = { ...existing, ...updated };
       await dbApi.save('projects', updatedProject);
       setProjects(prev => prev.map(p => p.id === id ? updatedProject : p));
+
+      // Release resources if project completed
+      if (updated.isCompleted && !existing.isCompleted) {
+        const projectActivities = activities.filter(a => {
+          const wi = workItems.find(w => w.id === a.workItemId);
+          return wi?.projectId === id;
+        });
+
+        for (const act of projectActivities) {
+          // Release Materials
+          if (act.materialAllocations) {
+            for (const alloc of act.materialAllocations) {
+              const mat = materials.find(m => m.id === alloc.id);
+              if (mat) {
+                const updMat = {
+                  ...mat,
+                  quantity: mat.quantity + alloc.quantity,
+                  reservedStock: Math.max(0, (mat.reservedStock || 0) - alloc.quantity)
+                };
+                await dbApi.save('warehouseMaterials', updMat);
+                setMaterials(prev => prev.map(m => m.id === mat.id ? updMat : m));
+              }
+            }
+          }
+
+          // Release Equipment
+          if (act.equipmentAllocations) {
+            for (const alloc of act.equipmentAllocations) {
+              const eq = equipment.find(e => e.id === alloc.id);
+              if (eq) {
+                const updEq = {
+                  ...eq,
+                  totalQuantity: eq.totalQuantity + alloc.quantity,
+                  reservedQuantity: Math.max(0, (eq.reservedQuantity || 0) - alloc.quantity)
+                };
+                await dbApi.save('equipmentItems', updEq);
+                setEquipment(prev => prev.map(e => e.id === eq.id ? updEq : e));
+              }
+            }
+          }
+
+          // Clear Workers and Allocations
+          const updatedAct = {
+            ...act,
+            workerIds: [],
+            materialAllocations: [],
+            equipmentAllocations: []
+          };
+          await dbApi.save('activities', updatedAct);
+          setActivities(prev => prev.map(a => a.id === act.id ? updatedAct : a));
+        }
+      }
+
       logSystemAction('UPDATE_PROJECT', `Updated project metadata id: ${id}`);
     } catch (e) {
       alert("Error updating project");

@@ -308,9 +308,9 @@ function TimelineGanttView({
                       return (
                         <div 
                           key={act.id} 
-                          onClick={() => setInspectedActivityId(act.id)}
-                          className={`flex border-b border-slate-100 hover:bg-slate-50/40 group transition-all duration-150 items-stretch cursor-pointer ${rowAccentClass}`}
-                          onMouseEnter={() => setHoveredActivityId(act.id)}
+                          onClick={() => !currentProject?.isCompleted && setInspectedActivityId(act.id)}
+                          className={`flex border-b border-slate-100 hover:bg-slate-50/40 group transition-all duration-150 items-stretch ${currentProject?.isCompleted ? 'opacity-60 grayscale cursor-not-allowed' : 'cursor-pointer'} ${rowAccentClass}`}
+                          onMouseEnter={() => !currentProject?.isCompleted && setHoveredActivityId(act.id)}
                           onMouseLeave={() => setHoveredActivityId(null)}
                         >
                           {/* Sticky Info Panel */}
@@ -790,12 +790,14 @@ export default function WorkItemsList({
     visited.add(act.id);
 
     const activeWorkers = workers.filter(w => act.workerIds.includes(w.id));
-    const sumProductivity = activeWorkers.reduce((acc, curr) => acc + (curr.dailyProductivity || 0), 0) || 5; 
+    const sumProductivity = activeWorkers.reduce((acc, curr) => acc + (curr.dailyProductivity || 0), 0) || act.plannedDailyProduction || 5; 
 
     const actualProgress = getActivityProgress(act, progressUpdates);
     const isCompleted = actualProgress >= 100;
-
-    const expectedDurationDays = isCompleted ? 0 : Math.ceil(act.totalQuantity / sumProductivity);
+    
+    // Correct calculation: Days = Total / Daily Productivity
+    const remainingQty = Math.max(0, act.totalQuantity - (act.totalQuantity * actualProgress / 100));
+    const expectedDurationDays = isCompleted ? 0 : Math.ceil(remainingQty / sumProductivity);
     
     // Deduce exact start date based on dependencies
     let startStr = currentProject ? currentProject.startDate : '';
@@ -810,12 +812,15 @@ export default function WorkItemsList({
         }
       }
     }
-    const expectedFinishDateStr = act.expectedFinishDate || (() => {
-      const start = startStr ? new Date(startStr) : new Date();
-      const expectedFinish = new Date(start);
-      expectedFinish.setDate(expectedFinish.getDate() + (expectedDurationDays || Math.ceil(act.totalQuantity / sumProductivity)));
-      return expectedFinish.toISOString().split('T')[0];
-    })();
+    
+    // Calculate expected finish date, ensuring it doesn't exceed project end date
+    const projectEndDate = currentProject ? new Date(currentProject.endDate) : new Date('2100-01-01');
+    const start = startStr ? new Date(startStr) : new Date();
+    const expectedFinish = new Date(start);
+    expectedFinish.setDate(expectedFinish.getDate() + expectedDurationDays);
+    
+    const finalFinishDate = expectedFinish > projectEndDate ? projectEndDate : expectedFinish;
+    const expectedFinishDateStr = finalFinishDate.toISOString().split('T')[0];
 
     const actualCompleted = Math.min(act.totalQuantity, Math.round((act.totalQuantity * actualProgress) / 100));
     const remaining = isCompleted ? 0 : Math.max(0, act.totalQuantity - actualCompleted);
@@ -1893,6 +1898,8 @@ export default function WorkItemsList({
         materials={materials}
         equipment={equipment}
         activities={activities}
+        projects={projects}
+        workItems={workItems}
         projectStartDate={currentProject?.startDate || ''}
         companyName={settings.companyNameEn || 'FPMS Group'}
         lang={lang}

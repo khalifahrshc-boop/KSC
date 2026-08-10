@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Activity, Worker, WarehouseMaterial, EquipmentItem } from '../types';
+import { Activity, Worker, WarehouseMaterial, EquipmentItem, Project, WorkItem } from '../types';
 import { 
   X, Check, ChevronRight, ChevronLeft, Calendar, 
   Sparkles, UserCheck, Package, Wrench, HelpCircle, 
@@ -21,6 +21,8 @@ interface ActivityWizardModalProps {
   materials: WarehouseMaterial[];
   equipment: EquipmentItem[];
   activities: Activity[];
+  projects: Project[];
+  workItems: WorkItem[];
   projectStartDate: string;
   companyName: string;
   lang: 'ar' | 'en';
@@ -38,6 +40,8 @@ export default function ActivityWizardModal({
   materials,
   equipment,
   activities,
+  projects,
+  workItems,
   projectStartDate,
   companyName,
   lang,
@@ -136,7 +140,7 @@ export default function ActivityWizardModal({
   // Compute Smart calculations on the fly for the right sidebar (Image 1 Right widget)
   const smartStats = useMemo(() => {
     const activeWorkers = workers.filter(w => selectedWorkerIds.includes(w.id));
-    const sumProductivity = activeWorkers.reduce((acc, curr) => acc + (curr.dailyProductivity || 0), 0) || 5; 
+    const sumProductivity = activeWorkers.reduce((acc, curr) => acc + (curr.dailyProductivity || 0), 0) || activity?.plannedDailyProduction || 5; 
     const expectedDurationDays = Math.ceil(actQty / sumProductivity);
 
     const projStartDate = projectStartDate ? new Date(projectStartDate) : new Date();
@@ -482,7 +486,18 @@ export default function ActivityWizardModal({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-48 overflow-y-auto p-1 bg-slate-50/50 rounded-xl border border-slate-100">
                     {workers.map(w => {
                       const active = selectedWorkerIds.includes(w.id);
-                      const isOccupied = activities.some(a => a.id !== (activity?.id) && a.workerIds.includes(w.id));
+                      
+                      // Check if worker is in any activity belonging to an uncompleted project
+                      const isOccupied = activities.some(a => {
+                        if (a.id === (activity?.id) || !a.workerIds.includes(w.id)) return false;
+                        
+                        const wi = workItems.find(wi => wi.id === a.workItemId);
+                        if (!wi) return false;
+                        
+                        const proj = projects.find(p => p.id === wi.projectId);
+                        return proj && !proj.isCompleted;
+                      });
+                      
                       const canBeSelected = !isOccupied || w.allowMultiActivity || active;
 
                       return (

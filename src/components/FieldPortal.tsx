@@ -102,7 +102,7 @@ export default function FieldPortal({
   const isRtl = lang === 'ar';
   
   // Filter out completed/closed projects
-  const activeProjects = projects.filter(p => !p.isCompleted);
+  const activeProjects = projects.filter(p => p.isCompleted !== true);
   
   // Choose project
   const [selectedProjectId, setSelectedProjectId] = useState<string>(activeProjects[0]?.id || '');
@@ -1644,6 +1644,7 @@ export default function FieldPortal({
         setSupNationalId(found.idNumber);
         // Assuming ID number could act as badge for now, or just leave badge to be filled manually if they have a different one.
         setSupBadge(found.idNumber);
+        setSupTitle(found.role || 'Site Supervisor');
       } else {
         setAuthError(isRtl ? 'رقم الهوية أو كلمة المرور المدخلة غير صحيحة' : 'The ID Number or Password entered is incorrect');
       }
