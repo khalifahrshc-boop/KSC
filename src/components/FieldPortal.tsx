@@ -113,6 +113,7 @@ export default function FieldPortal({
   const [supName, setSupName] = useState('');
   const [supNationalId, setSupNationalId] = useState('');
   const [supBadge, setSupBadge] = useState('');
+  const [supUserId, setSupUserId] = useState('');
   const [supTitle, setSupTitle] = useState('');
   const [signatureText, setSignatureText] = useState('');
   const [isSignCanvasDrawn, setIsSignCanvasDrawn] = useState(false);
@@ -311,7 +312,7 @@ export default function FieldPortal({
   const currentWorkItem = workItems.find(wi => wi.id === prodWiId) || projectWorkItems[0];
   const itemActivities = activities.filter(act => 
     act.workItemId === (currentWorkItem?.id || '') &&
-    (!supBadge || act.supervisorId === supBadge)
+    (!supUserId || act.supervisorId === supUserId || currentWorkItem?.responsiblePerson === supName)
   );
 
   // Copy shareable portal link
@@ -1643,6 +1644,7 @@ export default function FieldPortal({
       
       if (found) {
         setIsAuthorized(true);
+        setSupUserId(found.id);
         setSupName(found.name);
         setSupNationalId(found.idNumber);
         // Assuming ID number could act as badge for now, or just leave badge to be filled manually if they have a different one.
@@ -2221,7 +2223,7 @@ export default function FieldPortal({
                         const supervisedWorkItemIds = workItems.filter(wi => wi.responsiblePerson === supName).map(wi => wi.id);
                         const supervisedWorkerIds = new Set<string>();
                         activities
-                          .filter(a => supervisedWorkItemIds.includes(a.workItemId))
+                          .filter(a => supervisedWorkItemIds.includes(a.workItemId) || a.supervisorId === supUserId)
                           .forEach(a => a.workerIds.forEach(wid => supervisedWorkerIds.add(wid)));
                         
                         return isActive && supervisedWorkerIds.has(w.id);

@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { Activity, Worker, WarehouseMaterial, EquipmentItem } from '../types';
+import { Activity, Worker, WarehouseMaterial, EquipmentItem, User } from '../types';
 import { 
   X, UserCheck, Package, Wrench, Printer, Clock, AlertTriangle, Calendar 
 } from 'lucide-react';
@@ -31,6 +31,7 @@ export default function ActivityDetailsModal({
   materials,
   equipment,
   activities,
+  users,
   isPrinting,
   onPrint,
   lang
