@@ -9,7 +9,9 @@ import {
   EquipmentItem, 
   Worker, 
   UserRole,
-  Project
+  Project,
+  AttendanceRecord,
+  SystemSettings
 } from '../types';
 import { 
   Package, 
@@ -27,8 +29,10 @@ import {
   Printer, 
   BadgePercent, 
   CheckCircle,
-  X
+  X,
+  CalendarDays
 } from 'lucide-react';
+import MonthlyAttendanceReport from './MonthlyAttendanceReport';
 
 interface InventoryModulesProps {
   lang: 'ar' | 'en';
@@ -37,6 +41,8 @@ interface InventoryModulesProps {
   projects: Project[];
   equipment: EquipmentItem[];
   workers: Worker[];
+  attendanceRecords?: AttendanceRecord[];
+  settings?: SystemSettings;
   userRole: UserRole;
   onAddMaterial: (m: WarehouseMaterial) => void;
   onUpdateMaterial: (id: string, updated: Partial<WarehouseMaterial>) => void;
@@ -58,6 +64,8 @@ export default function InventoryModules({
   projects = [],
   equipment,
   workers,
+  attendanceRecords = [],
+  settings,
   userRole,
   onAddMaterial,
   onUpdateMaterial,
@@ -75,7 +83,7 @@ export default function InventoryModules({
   const isReadOnly = userRole === 'Viewer';
 
   // Sub Module layout State
-  const [activeTab, setActiveTab] = useState<'materials' | 'equipment' | 'workers'>('materials');
+  const [activeTab, setActiveTab] = useState<'materials' | 'equipment' | 'workers' | 'attendanceReports'>('materials');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>('all');
 
@@ -377,7 +385,7 @@ export default function InventoryModules({
       )}
 
       {/* Top Selector Grid Tabs */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
         {/* Tab 1: Warehouse */}
         <button
           onClick={() => { setActiveTab('materials'); setSearchTerm(''); }}
@@ -421,6 +429,21 @@ export default function InventoryModules({
             </p>
           </div>
           <Users className={`w-10 h-10 ${activeTab === 'workers' ? 'text-blue-200' : 'text-gray-300'}`} />
+        </button>
+
+        {/* Tab 4: Attendance Reports */}
+        <button
+          onClick={() => { setActiveTab('attendanceReports'); setSearchTerm(''); }}
+          className={`p-4 rounded-2xl border text-right transition-all duration-300 flex items-center justify-between ${activeTab === 'attendanceReports' ? 'bg-[#040957] border-[#040957] text-white shadow-lg' : 'bg-white border-gray-200 text-[#040957] hover:shadow-md'}`}
+        >
+          <div className="space-y-1">
+            <span className="text-[10px] font-black uppercase text-blue-300">{isRtl ? 'تقارير الحضور الشهرية' : 'Monthly Attendance Reports'}</span>
+            <h3 className="text-lg font-black font-sans">{isRtl ? 'كشوفات الحضور' : 'Attendance'}</h3>
+            <p className={`text-[10px] ${activeTab === 'attendanceReports' ? 'text-blue-100' : 'text-gray-400'}`}>
+              {isRtl ? 'استخراج وطباعة' : 'Export & Print'}
+            </p>
+          </div>
+          <CalendarDays className={`w-10 h-10 ${activeTab === 'attendanceReports' ? 'text-blue-200' : 'text-gray-300'}`} />
         </button>
       </div>
 
@@ -895,6 +918,16 @@ export default function InventoryModules({
           </div>
         )}
 
+        {/* CONDITIONAL COMPONENT 4: ATTENDANCE REPORTS */}
+        {activeTab === 'attendanceReports' && settings && (
+          <MonthlyAttendanceReport
+            lang={lang}
+            projects={projects}
+            workers={workers}
+            attendanceRecords={attendanceRecords}
+            settings={settings}
+          />
+        )}
       </div>
 
       {/* MODAL 1: ADD MATERIAL */}

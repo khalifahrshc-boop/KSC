@@ -234,13 +234,13 @@ export default function ActivityWizardModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full border border-slate-100 flex flex-col md:flex-row overflow-hidden max-h-[92vh] animate-scaleIn">
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-2 md:p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full border border-slate-100 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden max-h-[96vh] md:max-h-[92vh] animate-scaleIn">
         
         {/* Step Navigation Sidebar (Image 1 Left Stepper) */}
-        <div className="w-full md:w-1/4 bg-slate-50 border-r border-slate-100 p-6 flex flex-col justify-between">
-          <div className="space-y-6">
-            <div className="pb-4 border-b border-slate-200">
+        <div className="w-full md:w-1/4 bg-slate-50 border-b md:border-b-0 md:border-r border-slate-100 p-4 md:p-6 flex flex-col justify-between shrink-0">
+          <div className="space-y-4 md:space-y-6">
+            <div className="pb-4 border-b border-slate-200 text-center md:text-start">
               <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
                 {isRtl ? 'خطوات تسجيل الإجراء الميداني' : 'FIELD ACTION WORKFLOW'}
               </span>
@@ -250,10 +250,11 @@ export default function ActivityWizardModal({
             </div>
 
             {/* Stepper bubbles connected with vertical dashed line */}
-            <div className="relative space-y-6">
-              {/* Vertical line indicator */}
-              <div className={`absolute ${isRtl ? 'right-[15px]' : 'left-[15px]'} top-2 bottom-2 w-[2px] border-l border-dashed border-slate-300 z-0`}></div>
-
+            <div className="relative flex flex-row md:flex-col justify-between md:justify-start space-x-2 md:space-x-0 md:space-y-6 rtl:space-x-reverse">
+              {/* Line indicator */}
+              <div className={`hidden md:block absolute ${isRtl ? 'right-[15px]' : 'left-[15px]'} top-2 bottom-2 w-[2px] border-l border-dashed border-slate-300 z-0`}></div>
+              <div className="md:hidden absolute top-[15px] left-[15px] right-[15px] h-[2px] border-t border-dashed border-slate-300 z-0"></div>
+              
               {steps.map(step => {
                 const isActive = step.number === currentStep;
                 const isCompleted = step.number < currentStep;
@@ -267,9 +268,9 @@ export default function ActivityWizardModal({
                         setCurrentStep(step.number);
                       }
                     }}
-                    className="flex items-center gap-4 text-right z-10 relative group w-full"
+                    className="flex flex-col md:flex-row items-center gap-2 md:gap-4 text-center md:text-right z-10 relative group md:w-full"
                   >
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs border transition-all ${
+                    <div className={`w-8 h-8 shrink-0 rounded-full flex items-center justify-center font-bold text-xs border transition-all ${
                       isActive 
                         ? 'bg-[#0080FF] text-white border-[#0080FF] scale-115 shadow-md shadow-[#0080FF]/25' 
                         : isCompleted
@@ -278,7 +279,7 @@ export default function ActivityWizardModal({
                     }`}>
                       {isCompleted ? <Check className="w-4 h-4 stroke-[3]" /> : step.number}
                     </div>
-                    <div className="text-right">
+                    <div className="text-center md:text-right hidden md:block">
                       <p className={`text-[11px] font-bold tracking-tight ${isActive ? 'text-[#0080FF]' : 'text-slate-500'}`}>
                         {isRtl ? step.labelAr : step.labelEn}
                       </p>
@@ -297,7 +298,7 @@ export default function ActivityWizardModal({
         </div>
 
         {/* Center Main Form Step Area (Image 1 Main Form) */}
-        <div className="flex-1 p-6 overflow-y-auto flex flex-col justify-between">
+        <div className="flex-1 shrink-0 p-4 md:p-6 overflow-y-visible md:overflow-y-auto flex flex-col justify-between">
           
           {/* Header Banner with Title & Auto-Save Indicator */}
           <div className="flex justify-between items-center pb-4 border-b border-slate-100 mb-6">
@@ -857,7 +858,7 @@ export default function ActivityWizardModal({
         </div>
 
         {/* Status Widget Sidebar (Image 1 Right Sidebar) */}
-        <div className="w-full md:w-1/4 bg-[#0B1B3D] text-white p-6 flex flex-col justify-between space-y-6">
+        <div className="w-full md:w-1/4 bg-[#0B1B3D] text-white p-4 md:p-6 flex flex-col justify-between space-y-6 shrink-0">
           <div className="space-y-5">
             <div>
               <span className="text-[9px] uppercase tracking-widest text-[#0080FF] font-black block">

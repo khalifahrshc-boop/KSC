@@ -1617,19 +1617,19 @@ export default function App() {
           </div>
         </aside>
 
-        {/* MOBILE SIDEBAR PANEL DRAWER BACKDROP */}
+                {/* MOBILE SIDEBAR PANEL DRAWER BACKDROP */}
         {isSidebarMobileOpen && (
-          <div className="fixed inset-0 bg-black/40 backdrop-blur-xs z-50 md:hidden" onClick={() => setIsSidebarMobileOpen(false)}>
+          <div className="fixed inset-0 z-[100] md:hidden">
+            <div className="fixed inset-0 bg-black/40 backdrop-blur-xs" onClick={() => setIsSidebarMobileOpen(false)}></div>
             <div 
-              className={`w-64 h-full p-5 space-y-4 absolute top-0 ${lang === 'ar' ? 'right-0' : 'left-0'} ${darkMode ? 'bg-[#FAF6F0]' : 'bg-white'} animate-slideIn`}
+              className={`fixed top-0 bottom-0 ${lang === 'ar' ? 'right-0' : 'left-0'} w-[280px] p-5 flex flex-col ${darkMode ? 'bg-[#FAF6F0]' : 'bg-white'} animate-slideIn shadow-2xl z-[101]`}
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex justify-between items-center pb-2 border-b">
+              <div className="flex justify-between items-center pb-4 mb-4 border-b shrink-0">
                 <span className="font-black text-[#040957]">{lang === 'ar' ? 'القائمة الرئيسية' : 'Quick Navigation'}</span>
-                <button onClick={() => setIsSidebarMobileOpen(false)} className="text-gray-400"><X className="w-5 h-5" /></button>
+                <button onClick={() => setIsSidebarMobileOpen(false)} className="text-gray-400 p-2 -mr-2"><X className="w-5 h-5" /></button>
               </div>
-
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-1 overflow-y-auto flex-1 pb-10">
                 {[
                   { id: 'dashboard', label: textDict.dashboard, icon: ActivityIcon },
                   { id: 'kpiDashboard', label: lang === 'ar' ? 'مؤشرات الأداء KPI' : 'KPI Analytics', icon: BarChart3 },
@@ -1845,6 +1845,8 @@ export default function App() {
               projects={projects}
               equipment={equipment}
               workers={workers}
+              attendanceRecords={attendanceRecords}
+              settings={settings}
               userRole={currentUser.role}
               onAddMaterial={handleAddMaterial}
               onUpdateMaterial={handleUpdateMaterial}

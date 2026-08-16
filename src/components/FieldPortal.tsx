@@ -308,7 +308,10 @@ export default function FieldPortal({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const selectedProject = projects.find(p => p.id === selectedProjectId);
-  const projectWorkItems = workItems.filter(wi => wi.projectId === selectedProjectId);
+  const projectWorkItems = workItems.filter(wi => 
+    wi.projectId === selectedProjectId && 
+    (wi.responsiblePerson === supName || activities.some(act => act.workItemId === wi.id && act.supervisorId === supUserId))
+  );
   const currentWorkItem = workItems.find(wi => wi.id === prodWiId) || projectWorkItems[0];
   const itemActivities = activities.filter(act => 
     act.workItemId === (currentWorkItem?.id || '') &&
@@ -2220,7 +2223,7 @@ export default function FieldPortal({
                     <tbody className="divide-y divide-gray-100 bg-white">
                       {workers.filter(w => {
                         const isActive = w.status === 'Active';
-                        const supervisedWorkItemIds = workItems.filter(wi => wi.responsiblePerson === supName).map(wi => wi.id);
+                        const supervisedWorkItemIds = workItems.filter(wi => wi.responsiblePerson === supName || activities.some(act => act.workItemId === wi.id && act.supervisorId === supUserId)).map(wi => wi.id);
                         const supervisedWorkerIds = new Set<string>();
                         activities
                           .filter(a => supervisedWorkItemIds.includes(a.workItemId) || a.supervisorId === supUserId)
