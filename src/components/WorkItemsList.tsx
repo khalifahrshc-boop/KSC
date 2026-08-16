@@ -45,7 +45,7 @@ interface WorkItemsListProps {
   equipment: EquipmentItem[];
   workers: Worker[];
   users: User[];
-  userRole: UserRole;
+  userRoles: UserRole[];
   onAddWorkItem: (item: WorkItem) => void;
   onDeleteWorkItem: (id: string) => void;
   onAddActivity: (activity: Activity) => void;
@@ -465,7 +465,7 @@ export default function WorkItemsList({
   equipment,
   workers,
   users,
-  userRole,
+  userRoles,
   onAddWorkItem,
   onDeleteWorkItem,
   onAddActivity,
@@ -475,7 +475,7 @@ export default function WorkItemsList({
   openConfirm
 }: WorkItemsListProps) {
   const isRtl = lang === 'ar';
-  const isReadOnly = userRole === 'Viewer';
+  const isReadOnly = userRoles.length === 1 && userRoles.includes('Viewer');
 
   const [isPrintingActivity, setIsPrintingActivity] = useState<string | null>(null);
 

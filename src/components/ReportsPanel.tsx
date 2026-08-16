@@ -73,7 +73,7 @@ interface ReportsPanelProps {
   progressUpdates: ProgressUpdate[];
   attendanceRecords: AttendanceRecord[];
   settings: SystemSettings;
-  userRole: UserRole;
+  userRoles: UserRole[];
   preselectedReport?: { 
     category: 'daily' | 'equipment' | 'labor' | 'inventory'; 
     id: string | string[];
@@ -95,7 +95,7 @@ export default function ReportsPanel({
   progressUpdates = [],
   attendanceRecords = [],
   settings,
-  userRole,
+  userRoles,
   preselectedReport,
   onClearPreselected,
   onReturn

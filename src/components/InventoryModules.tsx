@@ -43,7 +43,7 @@ interface InventoryModulesProps {
   workers: Worker[];
   attendanceRecords?: AttendanceRecord[];
   settings?: SystemSettings;
-  userRole: UserRole;
+  userRoles: UserRole[];
   onAddMaterial: (m: WarehouseMaterial) => void;
   onUpdateMaterial: (id: string, updated: Partial<WarehouseMaterial>) => void;
   onDeleteMaterial: (id: string) => void;
@@ -66,7 +66,7 @@ export default function InventoryModules({
   workers,
   attendanceRecords = [],
   settings,
-  userRole,
+  userRoles,
   onAddMaterial,
   onUpdateMaterial,
   onDeleteMaterial,
@@ -80,7 +80,7 @@ export default function InventoryModules({
   onPrintReport
 }: InventoryModulesProps) {
   const isRtl = lang === 'ar';
-  const isReadOnly = userRole === 'Viewer';
+  const isReadOnly = userRoles.length === 1 && userRoles.includes('Viewer');
 
   // Sub Module layout State
   const [activeTab, setActiveTab] = useState<'materials' | 'equipment' | 'workers' | 'attendanceReports'>('materials');

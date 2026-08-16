@@ -74,7 +74,7 @@ interface FieldOperationsProps {
   progressUpdates: ProgressUpdate[];
   workers: Worker[];
   attendanceRecords: AttendanceRecord[];
-  userRole: UserRole;
+  userRoles: UserRole[];
   onAddCheckIn: (checkIn: SupervisorCheckIn) => void;
   onAddAttendanceRecords: (records: AttendanceRecord[]) => void;
   onAddProgressUpdate: (update: ProgressUpdate) => void;
@@ -143,7 +143,7 @@ export default function FieldOperations({
   progressUpdates,
   workers,
   attendanceRecords,
-  userRole,
+  userRoles,
   onAddCheckIn,
   onAddAttendanceRecords,
   onAddProgressUpdate,
@@ -165,7 +165,7 @@ export default function FieldOperations({
   openConfirm
 }: FieldOperationsProps) {
   const isRtl = lang === 'ar';
-  const isReadOnly = userRole === 'Viewer';
+  const isReadOnly = userRoles.length === 1 && userRoles.includes('Viewer');
 
   // Filter out completed/closed projects
   const activeProjects = projects.filter(p => !p.isCompleted);

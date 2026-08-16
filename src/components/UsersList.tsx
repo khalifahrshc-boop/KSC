@@ -55,7 +55,7 @@ export default function UsersList({
   const [formName, setFormName] = useState('');
   const [formEmail, setFormEmail] = useState('');
   const [formBadgeNumber, setFormBadgeNumber] = useState('');
-  const [formRole, setFormRole] = useState<UserRole>('Viewer');
+  const [formRoles, setFormRoles] = useState<UserRole[]>(['Viewer']);
 
   const rolesList: UserRole[] = ['Super Admin', 'Project Manager', 'Site Supervisor', 'Warehouse Manager', 'Viewer'];
 
@@ -109,7 +109,7 @@ export default function UsersList({
     setFormName('');
     setFormEmail('');
     setFormBadgeNumber(`EMP-${Math.floor(1000 + Math.random() * 9000)}`);
-    setFormRole('Viewer');
+    setFormRoles(['Viewer']);
     setEditingUser(null);
     setIsAddOpen(true);
   };
@@ -119,7 +119,7 @@ export default function UsersList({
     setFormName(user.name);
     setFormEmail(user.email);
     setFormBadgeNumber(user.badgeNumber);
-    setFormRole(user.role);
+    setFormRoles(user.roles || ['Viewer']);
     setIsAddOpen(true);
   };
 
@@ -132,7 +132,7 @@ export default function UsersList({
         name: formName,
         email: formEmail,
         badgeNumber: formBadgeNumber,
-        role: formRole
+        roles: formRoles
       });
     } else {
       const newUser: User = {
@@ -140,7 +140,7 @@ export default function UsersList({
         name: formName,
         email: formEmail,
         badgeNumber: formBadgeNumber,
-        role: formRole
+        roles: formRoles
       };
       onAddUser(newUser);
     }
@@ -167,7 +167,7 @@ export default function UsersList({
     u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
     u.badgeNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    u.role.toLowerCase().includes(searchTerm.toLowerCase())
+    u.roles?.join(', ').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -191,7 +191,7 @@ export default function UsersList({
           </div>
         </div>
 
-        {currentUser.role === 'Super Admin' && (
+        {currentUser.roles?.includes('Super Admin') && (
           <button
             onClick={handleOpenAdd}
             className="bg-[#0080FF] hover:bg-[#040957] text-white font-bold py-2.5 px-4 rounded-xl text-xs flex items-center justify-center gap-2 transition shadow-md active:scale-95"
@@ -273,10 +273,14 @@ export default function UsersList({
                             </div>
                           </td>
                           <td className="p-3.5">
-                            <span className={`inline-block border text-[10px] px-2 py-0.5 rounded-md font-bold ${getRoleBadgeColor(user.role)}`}>
-                              {getRoleTranslation(user.role)}
-                            </span>
-                          </td>
+  <div className="flex gap-1.5 flex-wrap">
+    {(user.roles || []).map((r, i) => (
+      <span key={i} className={`inline-block border text-[10px] px-2 py-0.5 rounded-md font-bold ${getRoleBadgeColor(r)}`}>
+        {getRoleTranslation(r)}
+      </span>
+    ))}
+  </div>
+</td>
                           <td className="p-3.5">
                             <div className="flex items-center justify-center gap-1.5">
                               
@@ -303,7 +307,7 @@ export default function UsersList({
                               </button>
 
                               {/* Edit & Delete (Only Super Admin can edit other users) */}
-                              {currentUser.role === 'Super Admin' && (
+                              {currentUser.roles?.includes('Super Admin') && (
                                 <>
                                   <button
                                     onClick={() => handleOpenEdit(user)}
@@ -362,7 +366,7 @@ export default function UsersList({
               <div 
                 key={role}
                 className={`bg-white p-4 rounded-2xl border border-gray-250 space-y-2 hover:shadow-xs transition ${
-                  currentUser.role === role ? 'ring-2 ring-[#0080FF] bg-blue-50/5' : ''
+                  currentUser.roles?.includes(role) ? 'ring-2 ring-[#0080FF] bg-blue-50/5' : ''
                 }`}
               >
                 <div className="flex items-center justify-between">
@@ -375,7 +379,7 @@ export default function UsersList({
                     }`} />
                     <span className="text-xs font-black text-[#040957]">{getRoleTranslation(role)}</span>
                   </div>
-                  {currentUser.role === role && (
+                  {currentUser.roles?.includes(role) && (
                     <span className="text-[9px] bg-[#0080FF]/10 text-[#0080FF] font-black px-2 py-0.5 rounded-full uppercase">
                       {isRtl ? 'حسابك النشط' : 'Current'}
                     </span>
@@ -472,17 +476,31 @@ export default function UsersList({
                     <label className="block text-xs font-bold text-gray-700 font-sans">
                       {isRtl ? 'مستوى الصلاحية' : 'Access Role'}
                     </label>
-                    <select
-                      value={formRole}
-                      onChange={(e) => setFormRole(e.target.value as UserRole)}
-                      className="w-full text-xs p-2.5 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:outline-none transition font-bold"
-                    >
-                      {rolesList.map((r) => (
-                        <option key={r} value={r}>
-                          {isRtl ? getRoleTranslation(r) : r}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="flex flex-wrap gap-2 mt-2">
+  {rolesList.map((r) => {
+    const isSelected = formRoles.includes(r);
+    return (
+      <button
+        type="button"
+        key={r}
+        onClick={() => {
+          if (isSelected) {
+            if (formRoles.length > 1) {
+              setFormRoles(formRoles.filter(role => role !== r));
+            }
+          } else {
+            setFormRoles([...formRoles, r]);
+          }
+        }}
+        className={`text-xs px-3 py-1.5 rounded-lg border font-bold transition-all ${
+          isSelected ? getRoleBadgeColor(r) : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'
+        }`}
+      >
+        {isRtl ? getRoleTranslation(r) : r}
+      </button>
+    );
+  })}
+</div>
                   </div>
                 </div>
 

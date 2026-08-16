@@ -23,11 +23,11 @@ import {
 } from '../types';
 
 export const mockUsers: User[] = [
-  { id: 'usr-1', name: 'Mishaal Al-Sudairi', role: 'Super Admin', email: 'mishaal@sudairicorp.com', badgeNumber: 'EMP-9901' },
-  { id: 'usr-2', name: 'Khalid Bin Abdulaziz', role: 'Project Manager', email: 'khalid@sudairicorp.com', badgeNumber: 'EMP-4412' },
-  { id: 'usr-3', name: 'Yousef Al-Harbi', role: 'Site Supervisor', email: 'yousef@sudairicorp.com', badgeNumber: 'EMP-8854' },
-  { id: 'usr-4', name: 'Majed Al-Ghamdi', role: 'Warehouse Manager', email: 'majed@sudairicorp.com', badgeNumber: 'EMP-2210' },
-  { id: 'usr-5', name: 'Faisal Al-Otaibi', role: 'Viewer', email: 'faisal@sudairicorp.com', badgeNumber: 'EMP-1102' }
+  { id: 'usr-1', name: 'Mishaal Al-Sudairi', roles: ['Super Admin'], email: 'mishaal@sudairicorp.com', badgeNumber: 'EMP-9901' },
+  { id: 'usr-2', name: 'Khalid Bin Abdulaziz', roles: ['Project Manager'], email: 'khalid@sudairicorp.com', badgeNumber: 'EMP-4412' },
+  { id: 'usr-3', name: 'Yousef Al-Harbi', roles: ['Site Supervisor'], email: 'yousef@sudairicorp.com', badgeNumber: 'EMP-8854' },
+  { id: 'usr-4', name: 'Majed Al-Ghamdi', roles: ['Warehouse Manager'], email: 'majed@sudairicorp.com', badgeNumber: 'EMP-2210' },
+  { id: 'usr-5', name: 'Faisal Al-Otaibi', roles: ['Viewer'], email: 'faisal@sudairicorp.com', badgeNumber: 'EMP-1102' }
 ];
 
 export const seedProjects: Project[] = [

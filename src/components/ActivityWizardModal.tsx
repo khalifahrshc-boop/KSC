@@ -375,7 +375,7 @@ export default function ActivityWizardModal({
                           className="w-full border border-slate-200 rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-[#0080FF] font-semibold bg-slate-50/50"
                         >
                           <option value="">{isRtl ? 'اختر مشرفاً...' : 'Select a supervisor...'}</option>
-                          {users.filter(u => u.role === 'Site Supervisor').map(u => (
+                          {users.filter(u => u.roles?.includes('Site Supervisor')).map(u => (
                             <option key={u.id} value={u.id}>{u.name}</option>
                           ))}
                         </select>

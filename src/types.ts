@@ -8,7 +8,7 @@ export type UserRole = 'Super Admin' | 'Project Manager' | 'Site Supervisor' | '
 export interface User {
   id: string;
   name: string;
-  role: UserRole;
+  roles: UserRole[];
   email: string;
   badgeNumber: string;
 }
@@ -233,7 +233,7 @@ export interface AuditLog {
   id: string;
   userId: string;
   userName: string;
-  userRole: UserRole;
+  userRoles: UserRole[];
   action: string;
   timestamp: string;
   details: string;

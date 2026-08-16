@@ -130,7 +130,7 @@ export default function App() {
     const syncedUser: User = {
       id: admin.idNumber,
       name: admin.name,
-      role: 'Super Admin',
+      roles: ['Super Admin'],
       email: `${admin.idNumber}@admin.local`,
       badgeNumber: admin.idNumber
     };
@@ -314,6 +314,13 @@ export default function App() {
           return;
         }
 
+        // Migrate old user records
+        dbUsers.forEach(u => {
+          if ((u as any).role && !u.roles) {
+            u.roles = [(u as any).role];
+          }
+          if (!u.roles) u.roles = ['Viewer'];
+        });
         setUsers(dbUsers);
         setProjects(dbProjects);
         setWorkItems(dbWorkItems);
@@ -355,7 +362,7 @@ export default function App() {
         }
         setMorningMeetingPlans(finalMorningPlans);
         
-        setCurrentUser(dbUsers[0] || mockUsers[0]);
+        setCurrentUser(dbUsers.find(u => u.roles?.includes('Super Admin')) || dbUsers[0] || mockUsers[0]);
 
 
       } catch (error: any) {
@@ -394,7 +401,7 @@ export default function App() {
       id: `log-${Date.now()}`,
       userId: currentUser.id,
       userName: currentUser.name,
-      userRole: currentUser.role,
+      userRoles: currentUser.roles,
       action: actionName,
       timestamp: new Date().toISOString(),
       details: details
@@ -413,7 +420,7 @@ export default function App() {
       if (!user.id) user.id = `user-${Date.now()}`;
       const savedUser = await dbApi.save<User>('users', user);
       setUsers(prev => [savedUser, ...prev]);
-      logSystemAction('ADD_USER', `Added user card: ${user.name} with role ${user.role}`);
+      logSystemAction('ADD_USER', `Added user card: ${user.name} with role ${user.roles?.join(', ')}`);
     } catch (e) {
       alert("Error saving user");
     }
@@ -447,7 +454,7 @@ export default function App() {
 
   const handleSwitchUser = (user: User) => {
     setCurrentUser(user);
-    logSystemAction('SWITCH_USER_IDENTITY', `Assumed active sandbox role of: ${user.name} as ${user.role}`);
+    logSystemAction('SWITCH_USER_IDENTITY', `Assumed active sandbox role of: ${user.name} as ${user.roles?.join(', ')}`);
   };
 
   // --- STATE MUTATORS / API INTEGRATION ---
@@ -1488,7 +1495,7 @@ export default function App() {
             >
               <UserCircle className="w-4 h-4 text-[#0080FF]" />
               <span className="hidden md:inline">{textDict.roleLabel}:</span>
-              <span className="text-[#040957] font-black">{currentUser.role}</span>
+              <span className="text-[#040957] font-black">{currentUser.roles?.join(', ')}</span>
             </button>
 
             {showRoleSelector && (
@@ -1500,12 +1507,12 @@ export default function App() {
                     onClick={() => {
                       setCurrentUser(usr);
                       setShowRoleSelector(false);
-                      logSystemAction('ROLE_SWITCH', `Switched active credentials to ${usr.role}`);
+                      logSystemAction('ROLE_SWITCH', `Switched active credentials to ${usr.roles?.join(', ')}`);
                     }}
                     className="w-full text-right p-2.5 px-4 block hover:bg-blue-50/50 font-semibold transition text-gray-700 flex justify-between items-center"
                   >
                     <span>{usr.name}</span>
-                    <span className="text-[10px] bg-gray-100 px-2 py-0.5 rounded text-gray-500 font-bold">{usr.role}</span>
+                    <span className="text-[10px] bg-gray-100 px-2 py-0.5 rounded text-gray-500 font-bold">{usr.roles?.join(', ')}</span>
                   </button>
                 ))}
               </div>
@@ -1762,7 +1769,7 @@ export default function App() {
               attendanceRecords={attendanceRecords}
               materials={materials}
               settings={settings}
-              userRole={currentUser.role}
+              userRoles={currentUser.roles?.join(', ')}
               workers={workers}
               equipment={equipment}
               onAddProject={handleAddProject}
@@ -1789,7 +1796,7 @@ export default function App() {
               equipment={equipment}
               workers={workers}
               users={users}
-              userRole={currentUser.role}
+              userRoles={currentUser.roles?.join(', ')}
               onAddWorkItem={handleAddWorkItem}
               onDeleteWorkItem={handleDeleteWorkItem}
               onAddActivity={handleAddActivity}
@@ -1812,7 +1819,7 @@ export default function App() {
               progressUpdates={progressUpdates}
               workers={workers}
               attendanceRecords={attendanceRecords}
-              userRole={currentUser.role}
+              userRoles={currentUser.roles?.join(', ')}
               onAddCheckIn={handleAddCheckIn}
               onAddAttendanceRecords={handleAddAttendanceRecords}
               onAddProgressUpdate={handleAddProgressUpdate}
@@ -1847,7 +1854,7 @@ export default function App() {
               workers={workers}
               attendanceRecords={attendanceRecords}
               settings={settings}
-              userRole={currentUser.role}
+              userRoles={currentUser.roles?.join(', ')}
               onAddMaterial={handleAddMaterial}
               onUpdateMaterial={handleUpdateMaterial}
               onDeleteMaterial={handleDeleteMaterial}
@@ -1883,7 +1890,7 @@ export default function App() {
                 progressUpdates={progressUpdates}
                 attendanceRecords={attendanceRecords}
                 settings={settings}
-                userRole={currentUser.role}
+                userRoles={currentUser.roles?.join(', ')}
                 preselectedReport={preselectedReport}
                 onClearPreselected={() => {
                   setPreselectedReport(null);
@@ -1900,7 +1907,7 @@ export default function App() {
               lang={lang}
               t={textDict}
               settings={settings}
-              userRole={currentUser.role}
+              userRoles={currentUser.roles?.join(', ')}
               onUpdateSettings={handleUpdateSettings}
               openConfirm={openConfirm}
             />
@@ -1920,7 +1927,7 @@ export default function App() {
               progressUpdates={progressUpdates}
               attendanceRecords={attendanceRecords}
               settings={settings}
-              userRole={currentUser.role}
+              userRoles={currentUser.roles?.join(', ')}
               preselectedReport={activeModule === 'reports' ? preselectedReport : null}
               onClearPreselected={() => setPreselectedReport(null)}
               onReturn={(module) => setActiveModule(module)}
@@ -2020,7 +2027,7 @@ export default function App() {
                         </td>
                         <td className="p-3 font-bold text-gray-800">
                           {log.userName}
-                          <span className="block text-[8px] text-gray-400 uppercase font-black tracking-widest">{log.userRole}</span>
+                          <span className="block text-[8px] text-gray-400 uppercase font-black tracking-widest">{log.userRoles}</span>
                         </td>
                         <td className="p-3">
                           <span className="bg-[#040957]/15 text-[#040957] px-2 py-0.5 rounded font-bold text-[9px] font-mono">

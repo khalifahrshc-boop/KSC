@@ -56,7 +56,7 @@ interface ProjectListProps {
   attendanceRecords: AttendanceRecord[];
   materials: WarehouseMaterial[];
   settings: SystemSettings;
-  userRole: UserRole;
+  userRoles: UserRole[];
   workers?: Worker[];
   equipment?: EquipmentItem[];
   onAddProject: (project: Project) => void;
@@ -78,7 +78,7 @@ export default function ProjectList({
   attendanceRecords = [],
   materials = [],
   settings,
-  userRole,
+  userRoles,
   workers = [],
   equipment = [],
   onAddProject,
@@ -152,7 +152,7 @@ export default function ProjectList({
 
   const [notification, setNotification] = useState<string | null>(null);
 
-  const isReadOnly = userRole === 'Viewer';
+  const isReadOnly = userRoles.length === 1 && userRoles.includes('Viewer');
 
   // Sort and filter logic
   const handleSort = (field: keyof Project) => {

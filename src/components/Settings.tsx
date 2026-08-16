@@ -30,7 +30,7 @@ interface SettingsProps {
   lang: 'ar' | 'en';
   t: any;
   settings: SystemSettings;
-  userRole: UserRole;
+  userRoles: UserRole[];
   onUpdateSettings: (updated: SystemSettings) => void;
   openConfirm: (title: string, message: string, onConfirm: () => void, isDestructive?: boolean) => void;
 }
@@ -39,12 +39,12 @@ export default function Settings({
   lang,
   t,
   settings,
-  userRole,
+  userRoles,
   onUpdateSettings,
   openConfirm
 }: SettingsProps) {
   const isRtl = lang === 'ar';
-  const isReadOnly = userRole !== 'Super Admin'; // Only Super Admin can modify system identity settings!
+  const isReadOnly = !userRoles.includes('Super Admin'); // Only Super Admin can modify system identity settings!
 
   const [formNameAr, setFormNameAr] = useState(settings.companyNameAr);
   const [formNameEn, setFormNameEn] = useState(settings.companyNameEn);
