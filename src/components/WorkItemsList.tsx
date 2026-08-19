@@ -14,7 +14,9 @@ import {
   UserRole,
   User,
   ProgressUpdate,
-  SystemSettings
+  SystemSettings,
+  StartCard,
+  WorkPermit
 } from '../types';
 import { 
   getActivityProgress, 
@@ -27,7 +29,8 @@ import {
   Plus, Trash2, Layers, Workflow, Calculator, Sparkles, Clock, ChevronDown, ChevronUp, 
   HelpCircle, UserCheck, Package, Wrench, Calendar, TrendingUp, Check, X, Play, 
   AlertTriangle, Edit, Eye, Printer, Download, FileSpreadsheet, Search, CheckSquare,
-  CheckCircle2, List, ArrowRightLeft, Flag, Hourglass, AlertCircle
+  CheckCircle2, List, ArrowRightLeft, Flag, Hourglass, AlertCircle,
+  Maximize2, Minimize2, ZoomIn, ZoomOut, RotateCcw
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import ActivityWizardModal from './ActivityWizardModal';
@@ -53,6 +56,10 @@ interface WorkItemsListProps {
   onUpdateActivity: (id: string, updated: Partial<Activity>) => void;
   onUpdateWorker?: (id: string, updated: Partial<Worker>) => void;
   openConfirm: (title: string, message: string, onConfirm: () => void, isDestructive?: boolean) => void;
+  startCards?: StartCard[];
+  permits?: WorkPermit[];
+  onOpenStartCard?: (card?: StartCard | null, activityId?: string) => void;
+  onOpenPermit?: (permit?: WorkPermit | null, activityId?: string) => void;
 }
 
 interface TimelineGanttViewProps {
@@ -102,8 +109,75 @@ function TimelineGanttView({
   handleScrollToToday,
   calculateSmartPlanningValues
 }: TimelineGanttViewProps) {
+  const [zoomLevel, setZoomLevel] = useState<number>(1);
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullscreen) {
+        setIsFullscreen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFullscreen]);
+
+  useEffect(() => {
+    if (isFullscreen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isFullscreen]);
+
+  const handleToggleFullscreen = () => {
+    setIsFullscreen(prev => !prev);
+  };
+
+  const handleZoomIn = () => {
+    setZoomLevel(prev => Math.min(2.2, +(prev + 0.25).toFixed(2)));
+  };
+
+  const handleZoomOut = () => {
+    setZoomLevel(prev => Math.max(0.6, +(prev - 0.25).toFixed(2)));
+  };
+
+  const handleResetZoom = () => {
+    setZoomLevel(1);
+  };
+
+  const cellWidth = Math.round(40 * zoomLevel);
+
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+    <div 
+      className={
+        isFullscreen 
+          ? "fixed inset-0 z-[100] bg-slate-100 p-4 md:p-6 overflow-y-auto w-screen h-screen min-h-screen flex flex-col gap-4 shadow-2xl backdrop-blur-md"
+          : "bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col"
+      }
+    >
+      {/* Fullscreen top notice */}
+      {isFullscreen && (
+        <div className="bg-[#040957] text-white px-4 py-2 rounded-xl flex items-center justify-between shadow-md border border-blue-900">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span className="text-xs font-black">
+              {isRtl ? 'المخطط الزمني الموسع - وضع ملء الشاشة' : 'Expanded Schedule Timeline — Fullscreen Mode'}
+            </span>
+          </div>
+          <button
+            onClick={handleToggleFullscreen}
+            className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white px-3 py-1 rounded-lg text-xs font-black transition-all border border-white/20 active:scale-95 cursor-pointer"
+          >
+            <Minimize2 className="w-3.5 h-3.5" />
+            <span>{isRtl ? 'إنهاء التكبير (ESC)' : 'Exit Fullscreen'}</span>
+          </button>
+        </div>
+      )}
+
       {/* Header Info */}
       <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex flex-wrap justify-between items-center gap-3">
         <div className="flex items-center gap-2">
@@ -120,13 +194,74 @@ function TimelineGanttView({
           </div>
         </div>
         
-        <button
-          onClick={handleScrollToToday}
-          className="bg-[#040957] hover:bg-opacity-90 text-white font-extrabold text-[10px] px-3 py-2 rounded-xl flex items-center gap-1.5 transition-all shadow-xs"
-        >
-          <ArrowRightLeft className="w-3.5 h-3.5 text-blue-300 animate-pulse" />
-          <span>{isRtl ? 'التركيز على اليوم' : 'Focus Today'}</span>
-        </button>
+        {/* Controls: Zoom, Fullscreen, Today */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Zoom controls */}
+          <div className="bg-slate-100 p-1 rounded-xl flex items-center border border-slate-200 gap-1 select-none">
+            <button
+              onClick={handleZoomOut}
+              disabled={zoomLevel <= 0.6}
+              className={`p-1.5 rounded-lg text-slate-700 bg-white border border-slate-200 shadow-3xs flex items-center justify-center transition-all ${
+                zoomLevel <= 0.6 ? 'opacity-40 cursor-not-allowed' : 'hover:text-[#0080FF] hover:bg-slate-50 active:scale-95 cursor-pointer'
+              }`}
+              title={isRtl ? 'تصغير' : 'Zoom Out'}
+            >
+              <ZoomOut className="w-3.5 h-3.5" />
+            </button>
+
+            <button
+              onClick={handleResetZoom}
+              className="px-2 py-1 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-mono font-black text-slate-700 shadow-3xs transition-all cursor-pointer"
+              title={isRtl ? 'إعادة التعيين' : 'Reset Zoom'}
+            >
+              {Math.round(zoomLevel * 100)}%
+            </button>
+
+            <button
+              onClick={handleZoomIn}
+              disabled={zoomLevel >= 2.2}
+              className={`p-1.5 rounded-lg text-slate-700 bg-white border border-slate-200 shadow-3xs flex items-center justify-center transition-all ${
+                zoomLevel >= 2.2 ? 'opacity-40 cursor-not-allowed' : 'hover:text-[#0080FF] hover:bg-slate-50 active:scale-95 cursor-pointer'
+              }`}
+              title={isRtl ? 'تكبير' : 'Zoom In'}
+            >
+              <ZoomIn className="w-3.5 h-3.5" />
+            </button>
+
+            {zoomLevel !== 1 && (
+              <button
+                onClick={handleResetZoom}
+                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 bg-white border border-slate-200 shadow-3xs flex items-center justify-center transition-all cursor-pointer"
+                title={isRtl ? 'إعادة التعيين' : 'Reset'}
+              >
+                <RotateCcw className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+
+          {/* Fullscreen Button */}
+          <button
+            onClick={handleToggleFullscreen}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-black transition-all shadow-xs active:scale-95 cursor-pointer ${
+              isFullscreen
+                ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                : 'bg-slate-800 hover:bg-[#0080FF] text-white'
+            }`}
+            title={isRtl ? (isFullscreen ? 'إنهاء التكبير' : 'تكبير ملء الشاشة') : (isFullscreen ? 'Exit Fullscreen' : 'Fullscreen')}
+          >
+            {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+            <span>{isRtl ? (isFullscreen ? 'تصغير' : 'ملء الشاشة') : (isFullscreen ? 'Exit' : 'Fullscreen')}</span>
+          </button>
+
+          {/* Scroll to today button */}
+          <button
+            onClick={handleScrollToToday}
+            className="bg-[#040957] hover:bg-[#0080FF] text-white font-extrabold text-[10px] px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+          >
+            <ArrowRightLeft className="w-3.5 h-3.5 text-blue-300 animate-pulse" />
+            <span>{isRtl ? 'التركيز على اليوم' : 'Focus Today'}</span>
+          </button>
+        </div>
       </div>
 
       {/* Scrollable Container */}
@@ -148,7 +283,7 @@ function TimelineGanttView({
               <div
                 key={i}
                 className="border-r border-slate-200 flex items-center justify-center text-[10px] font-extrabold text-[#040957] uppercase tracking-wider bg-slate-100 flex-shrink-0"
-                style={{ width: `${m.count * 40}px` }}
+                style={{ width: `${m.count * cellWidth}px` }}
               >
                 <span className="bg-white px-2.5 py-0.5 rounded-lg border border-slate-200 shadow-2xs font-extrabold">
                   {m.monthStr}
@@ -184,7 +319,7 @@ function TimelineGanttView({
                       ? 'bg-slate-100/50 text-slate-400' 
                       : 'text-slate-500 hover:bg-slate-50/80'
                   }`}
-                  style={{ width: '40px' }}
+                  style={{ width: `${cellWidth}px` }}
                 >
                   <span className="text-[8px] opacity-75 font-bold uppercase">{dayLabel}</span>
                   <span className="text-xs font-black font-sans mt-0.5">{dayNum}</span>
@@ -203,6 +338,9 @@ function TimelineGanttView({
             const wiActivities = filteredActivities.filter(act => act.workItemId === wi.id);
             const isExpanded = expandedWorkItemIds.includes(wi.id);
 
+            const wiProg = currentProject?.isCompleted ? 100 : getWorkItemProgress(wi, activities, progressUpdates, currentProject);
+            const isWiCompleted = wiProg >= 100 || !!currentProject?.isCompleted;
+
             return (
               <React.Fragment key={wi.id}>
                 {/* WORK ITEM LEVEL HEADER ROW */}
@@ -219,9 +357,18 @@ function TimelineGanttView({
                         {isRtl ? wi.nameAr : wi.nameEn}
                       </span>
                     </div>
-                    <span className="font-mono text-[8.5px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded font-black flex-shrink-0 uppercase">
-                      {wi.itemNumber}
-                    </span>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <span className={`font-mono text-[8.5px] px-1.5 py-0.5 rounded font-black border ${
+                        isWiCompleted 
+                          ? 'bg-emerald-100 text-emerald-800 border-emerald-300' 
+                          : 'bg-blue-50 text-blue-700 border-blue-200'
+                      }`}>
+                        {isWiCompleted ? '100% ✓' : `${wiProg}%`}
+                      </span>
+                      <span className="font-mono text-[8.5px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded font-black flex-shrink-0 uppercase">
+                        {wi.itemNumber}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Empty Grid cells for Work Item Row */}
@@ -235,7 +382,7 @@ function TimelineGanttView({
                           className={`border-r border-slate-100/60 h-12 relative ${
                             isToday ? 'bg-rose-50/20' : ''
                           } ${isWeekend ? 'bg-slate-100/20' : ''}`}
-                          style={{ width: '40px' }}
+                          style={{ width: `${cellWidth}px` }}
                         ></div>
                       );
                     })}
@@ -251,13 +398,13 @@ function TimelineGanttView({
                       </div>
                       <div className="flex flex-shrink-0">
                         {daysList.map((d, i) => (
-                          <div key={i} className="border-r border-slate-100/30 h-10 bg-slate-50/5" style={{ width: '40px' }}></div>
+                          <div key={i} className="border-r border-slate-100/30 h-10 bg-slate-50/5" style={{ width: `${cellWidth}px` }}></div>
                         ))}
                       </div>
                     </div>
                   ) : (
                     wiActivities.map(act => {
-                      const progress = getActivityProgress(act, progressUpdates);
+                      const progress = currentProject?.isCompleted ? 100 : getActivityProgress(act, progressUpdates, currentProject);
                       const stats = calculateSmartPlanningValues(act);
                       const actStatus = stats.status;
 
@@ -407,7 +554,7 @@ function TimelineGanttView({
                                   className={`border-r h-13 flex flex-col items-center justify-center relative transition-all duration-100 group/cell flex-shrink-0 ${cellBgClass} ${cellBorderClass} ${
                                     isToday ? 'ring-2 ring-rose-500/40 z-10' : ''
                                   }`}
-                                  style={{ width: '40px' }}
+                                  style={{ width: `${cellWidth}px` }}
                                 >
                                   {/* Production quantity indicator inside cells */}
                                   {isPlannedOnDay && dailyPlannedQty > 0 && (
@@ -472,7 +619,11 @@ export default function WorkItemsList({
   onDeleteActivity,
   onUpdateActivity,
   onUpdateWorker,
-  openConfirm
+  openConfirm,
+  startCards = [],
+  permits = [],
+  onOpenStartCard,
+  onOpenPermit
 }: WorkItemsListProps) {
   const isRtl = lang === 'ar';
   const isReadOnly = userRoles.length === 1 && userRoles.includes('Viewer');
@@ -780,7 +931,7 @@ export default function WorkItemsList({
   const calculateSmartPlanningValues = (act: Activity, visited = new Set<string>()): any => {
     if (visited.has(act.id)) {
       return {
-        sumProductivity: 5,
+        sumProductivity: 1,
         expectedDurationDays: 0,
         expectedFinishDateStr: currentProject ? currentProject.startDate : '',
         actualCompleted: 0,
@@ -792,14 +943,14 @@ export default function WorkItemsList({
     }
     visited.add(act.id);
 
-    const activeWorkers = workers.filter(w => act.workerIds.includes(w.id));
-    const sumProductivity = activeWorkers.reduce((acc, curr) => acc + (curr.dailyProductivity || 0), 0) || act.plannedDailyProduction || 5; 
+    const activeWorkers = workers.filter(w => act.workerIds && act.workerIds.includes(w.id));
+    const sumProductivity = activeWorkers.reduce((acc, curr) => acc + (curr.dailyProductivity || 0), 0) || act.plannedDailyProduction || 1; 
 
-    const actualProgress = getActivityProgress(act, progressUpdates);
-    const isCompleted = actualProgress >= 100;
+    const actualProgress = currentProject?.isCompleted ? 100 : getActivityProgress(act, progressUpdates, currentProject);
+    const isCompleted = actualProgress >= 100 || !!currentProject?.isCompleted;
     
     // Correct calculation: Days = Total / Daily Productivity
-    const remainingQty = Math.max(0, act.totalQuantity - (act.totalQuantity * actualProgress / 100));
+    const remainingQty = isCompleted ? 0 : Math.max(0, act.totalQuantity - (act.totalQuantity * actualProgress / 100));
     const expectedDurationDays = isCompleted ? 0 : Math.ceil(remainingQty / sumProductivity);
     
     // Deduce exact start date based on dependencies
@@ -825,10 +976,12 @@ export default function WorkItemsList({
     const finalFinishDate = expectedFinish > projectEndDate ? projectEndDate : expectedFinish;
     const expectedFinishDateStr = finalFinishDate.toISOString().split('T')[0];
 
-    const actualCompleted = Math.min(act.totalQuantity, Math.round((act.totalQuantity * actualProgress) / 100));
+    const actualCompleted = isCompleted ? act.totalQuantity : Math.min(act.totalQuantity, Math.round((act.totalQuantity * actualProgress) / 100));
     const remaining = isCompleted ? 0 : Math.max(0, act.totalQuantity - actualCompleted);
 
-    const { status, reason } = getActivityStatus(act, progressUpdates, materials, currentProject, activities);
+    const { status, reason } = isCompleted 
+      ? { status: 'Completed' as const, reason: isRtl ? 'تم إنجاز كافة كميات النشاط بنجاح (100%)' : 'Activity scope 100% completed' }
+      : getActivityStatus(act, progressUpdates, materials, currentProject, activities);
 
     return {
       sumProductivity,
@@ -985,7 +1138,6 @@ export default function WorkItemsList({
     const editTarget = workItems.find(wi => wi.itemNumber === wiNumber && wi.projectId === selectedProjectId);
     if (editTarget) {
       // Editing
-      onDeleteWorkItem(editTarget.id);
       onAddWorkItem({
         id: editTarget.id,
         projectId: selectedProjectId,
@@ -1367,15 +1519,15 @@ export default function WorkItemsList({
                     {/* Progress */}
                     <div>
                       {(() => {
-                        const progress = getWorkItemProgress(wi, activities, progressUpdates);
+                        const progress = currentProject?.isCompleted ? 100 : getWorkItemProgress(wi, activities, progressUpdates, currentProject);
                         return (
                           <div className="space-y-1">
                             <div className="flex justify-between items-center text-[10px]">
-                              <span className="font-mono font-extrabold text-slate-700">{progress}%</span>
+                              <span className={`font-mono font-extrabold ${progress >= 100 ? 'text-emerald-700 font-black' : 'text-slate-700'}`}>{progress}%</span>
                               <span className="text-[9px] text-slate-400 font-bold">{isRtl ? 'منجز فعلي' : 'completed'}</span>
                             </div>
-                            <div className="w-full bg-slate-100 rounded-full h-1.5">
-                              <div className="h-1.5 rounded-full bg-emerald-500" style={{ width: `${progress}%` }}></div>
+                            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                              <div className={`h-1.5 rounded-full ${progress >= 100 ? 'bg-emerald-500' : 'bg-emerald-500'}`} style={{ width: `${progress}%` }}></div>
                             </div>
                           </div>
                         );
@@ -1397,6 +1549,17 @@ export default function WorkItemsList({
                     {/* Prediction status */}
                     <div>
                       {(() => {
+                        const wiProg = currentProject?.isCompleted ? 100 : getWorkItemProgress(wi, activities, progressUpdates, currentProject);
+                        const isWiCompleted = wiProg >= 100 || !!currentProject?.isCompleted;
+
+                        if (isWiCompleted) {
+                          return (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold border bg-emerald-50 text-emerald-700 border-emerald-200">
+                              ✓ {isRtl ? 'مكتمل' : 'Completed'}
+                            </span>
+                          );
+                        }
+
                         let hasDelayed = false;
                         let hasOnTrack = false;
                         nestedActs.forEach(act => {
@@ -1536,87 +1699,89 @@ export default function WorkItemsList({
                                   </div>
                                 </div>
 
-                                <div className="min-w-[80px]">
-                                  <div className="text-[9px] text-slate-400 font-bold">{isRtl ? 'الكمية الإجمالية' : 'Total Scope'}</div>
-                                  <div className="font-mono font-extrabold text-xs text-slate-800">{act.totalQuantity} {act.unit}</div>
-                                </div>
-
-                                <div className="min-w-[110px]">
-                                  <div className="text-[9px] text-slate-400 font-bold">{isRtl ? 'الانتهاء المتوقع' : 'Predicted Finish'}</div>
-                                  <div className="font-mono text-[11px] font-extrabold text-amber-600 flex items-center gap-1">
-                                    <Calendar className="w-3 h-3 text-amber-500" />
-                                    {plans.expectedFinishDateStr}
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:flex md:items-center gap-3 w-full md:w-auto pt-2 md:pt-0 border-t md:border-t-0 border-slate-100">
+                                  <div>
+                                    <div className="text-[9px] text-slate-400 font-bold">{isRtl ? 'الكمية الإجمالية' : 'Total Scope'}</div>
+                                    <div className="font-mono font-extrabold text-xs text-slate-800">{act.totalQuantity} {act.unit}</div>
                                   </div>
-                                </div>
 
-                                <div className="min-w-[90px]">
-                                  {(() => {
-                                    const actProgress = getActivityProgress(act, progressUpdates);
-                                    const isCompleted = actProgress >= 100;
-                                    
-                                    // Calculate ahead of schedule
-                                    let isAheadOfSchedule = false;
-                                    let savedDaysVal = 0;
-                                    let completionDate = new Date();
-                                    let actEnd = new Date();
-                                    if (isCompleted) {
-                                      const updates = progressUpdates.filter(upd => upd.activityId === act.id);
-                                      const lastUpdate = updates.length > 0
-                                        ? [...updates].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())[updates.length - 1]
-                                        : null;
-                                      completionDate = lastUpdate ? new Date(lastUpdate.timestamp) : new Date();
+                                  <div>
+                                    <div className="text-[9px] text-slate-400 font-bold">{isRtl ? 'الانتهاء المتوقع' : 'Predicted Finish'}</div>
+                                    <div className="font-mono text-[11px] font-extrabold text-amber-600 flex items-center gap-1">
+                                      <Calendar className="w-3 h-3 text-amber-500" />
+                                      {plans.expectedFinishDateStr}
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    {(() => {
+                                      const actProgress = currentProject?.isCompleted ? 100 : getActivityProgress(act, progressUpdates, currentProject);
+                                      const isCompleted = actProgress >= 100 || !!currentProject?.isCompleted;
                                       
-                                      let startStr = currentProject ? currentProject.startDate : '';
-                                      if (act.dependsOnActivityId) {
-                                        const dep = activities.find(a => a.id === act.dependsOnActivityId);
-                                        if (dep && dep.expectedFinishDate) {
-                                          startStr = dep.expectedFinishDate;
+                                      // Calculate ahead of schedule
+                                      let isAheadOfSchedule = false;
+                                      let savedDaysVal = 0;
+                                      let completionDate = new Date();
+                                      let actEnd = new Date();
+                                      if (isCompleted) {
+                                        const updates = progressUpdates.filter(upd => upd.activityId === act.id);
+                                        const lastUpdate = updates.length > 0
+                                          ? [...updates].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())[updates.length - 1]
+                                          : null;
+                                        completionDate = lastUpdate ? new Date(lastUpdate.timestamp) : new Date();
+                                        
+                                        let startStr = currentProject ? currentProject.startDate : '';
+                                        if (act.dependsOnActivityId) {
+                                          const dep = activities.find(a => a.id === act.dependsOnActivityId);
+                                          if (dep && dep.expectedFinishDate) {
+                                            startStr = dep.expectedFinishDate;
+                                          }
+                                        }
+                                        const endStr = act.expectedFinishDate || (currentProject ? currentProject.endDate : '');
+                                        if (endStr) {
+                                          actEnd = new Date(endStr);
+                                          if (completionDate < actEnd) {
+                                            isAheadOfSchedule = true;
+                                            const diffMs = actEnd.getTime() - completionDate.getTime();
+                                            savedDaysVal = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+                                          }
                                         }
                                       }
-                                      const endStr = act.expectedFinishDate || (currentProject ? currentProject.endDate : '');
-                                      if (endStr) {
-                                        actEnd = new Date(endStr);
-                                        if (completionDate < actEnd) {
-                                          isAheadOfSchedule = true;
-                                          const diffMs = actEnd.getTime() - completionDate.getTime();
-                                          savedDaysVal = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
-                                        }
-                                      }
-                                    }
 
-                                    if (isCompleted) {
-                                      return (
-                                        <div className="flex flex-col gap-1">
-                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black border bg-emerald-100 text-emerald-800 border-emerald-300">
-                                            {isRtl ? 'مكتمل' : 'Completed'}
-                                          </span>
-                                          {isAheadOfSchedule && (
-                                            <span className="inline-flex items-center gap-0.5 text-[8px] text-emerald-600 font-bold bg-emerald-50 px-1 py-0.5 rounded-md border border-emerald-200 animate-pulse">
-                                              <CheckCircle2 className="w-2.5 h-2.5" />
-                                              {savedDaysVal > 0 
-                                                ? (isRtl ? `توفير ${savedDaysVal} يومّ` : `Saved ${savedDaysVal}d`)
-                                                : (isRtl ? `توفير ساعات` : `Saved hrs`)}
+                                      if (isCompleted) {
+                                        return (
+                                          <div className="flex flex-col gap-1">
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black border bg-emerald-100 text-emerald-800 border-emerald-300">
+                                              ✓ {isRtl ? 'مكتمل (100%)' : 'Completed (100%)'}
                                             </span>
-                                          )}
-                                        </div>
-                                      );
-                                    }
+                                            {isAheadOfSchedule && (
+                                              <span className="inline-flex items-center gap-0.5 text-[8px] text-emerald-600 font-bold bg-emerald-50 px-1 py-0.5 rounded-md border border-emerald-200 animate-pulse">
+                                                <CheckCircle2 className="w-2.5 h-2.5" />
+                                                {savedDaysVal > 0 
+                                                  ? (isRtl ? `توفير ${savedDaysVal} يومّ` : `Saved ${savedDaysVal}d`)
+                                                  : (isRtl ? `توفير ساعات` : `Saved hrs`)}
+                                              </span>
+                                            )}
+                                          </div>
+                                        );
+                                      }
 
-                                    let tagColor = 'bg-emerald-50 text-emerald-700 border-emerald-200';
-                                    let tagText = isRtl ? 'على المسار' : 'On Track';
-                                    if (plans.status === 'Delayed') {
-                                      tagColor = 'bg-red-50 text-red-700 border-red-200';
-                                      tagText = isRtl ? 'متأخر' : 'Delayed';
-                                    } else if (plans.status === 'Ahead') {
-                                      tagColor = 'bg-blue-50 text-blue-700 border-blue-200';
-                                      tagText = isRtl ? 'متقدم' : 'Ahead';
-                                    }
-                                    return (
-                                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black border ${tagColor}`}>
-                                        {tagText}
-                                      </span>
-                                    );
-                                  })()}
+                                      let tagColor = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                                      let tagText = isRtl ? 'على المسار' : 'On Track';
+                                      if (plans.status === 'Delayed') {
+                                        tagColor = 'bg-red-50 text-red-700 border-red-200';
+                                        tagText = isRtl ? 'متأخر' : 'Delayed';
+                                      } else if (plans.status === 'Ahead') {
+                                        tagColor = 'bg-blue-50 text-blue-700 border-blue-200';
+                                        tagText = isRtl ? 'متقدم' : 'Ahead';
+                                      }
+                                      return (
+                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black border ${tagColor}`}>
+                                          {tagText}
+                                        </span>
+                                      );
+                                    })()}
+                                  </div>
                                 </div>
 
                                 <div className="flex items-center gap-1.5 justify-end w-full md:w-auto">
@@ -1924,6 +2089,10 @@ export default function WorkItemsList({
         isPrinting={isPrintingActivity === activityForDetails?.id}
         onPrint={() => activityForDetails && handlePrintActivityDetailsPDF(activityForDetails)}
         lang={lang}
+        startCards={startCards}
+        permits={permits}
+        onOpenStartCard={onOpenStartCard}
+        onOpenPermit={onOpenPermit}
       />
 
     </div>

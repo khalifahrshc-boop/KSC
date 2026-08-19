@@ -26,6 +26,9 @@ import {
   TrendingUp,
   Maximize2,
   Minimize2,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
   Info
 } from 'lucide-react';
 import { 
@@ -42,7 +45,8 @@ import {
   getActivityProgress, 
   getActivityStatus, 
   getSystemToday, 
-  getProjectProgress 
+  getProjectProgress,
+  getWorkItemProgress 
 } from '../utils/progressCalculations';
 
 interface GanttChartProps {
@@ -80,6 +84,49 @@ export default function GanttChart({
   const [collapsedWorkItems, setCollapsedWorkItems] = useState<Record<string, boolean>>({});
   const [hoveredActivityId, setHoveredActivityId] = useState<string | null>(null);
 
+  // Zoom & Fullscreen Magnification States
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [zoomLevel, setZoomLevel] = useState<number>(1); // 0.5x to 2.5x
+
+  // ESC key handler for Fullscreen
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullscreen) {
+        setIsFullscreen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFullscreen]);
+
+  // Lock body scroll when in fullscreen
+  useEffect(() => {
+    if (isFullscreen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isFullscreen]);
+
+  const handleToggleFullscreen = () => {
+    setIsFullscreen(prev => !prev);
+  };
+
+  const handleZoomIn = () => {
+    setZoomLevel(prev => Math.min(2.5, +(prev + 0.25).toFixed(2)));
+  };
+
+  const handleZoomOut = () => {
+    setZoomLevel(prev => Math.max(0.5, +(prev - 0.25).toFixed(2)));
+  };
+
+  const handleResetZoom = () => {
+    setZoomLevel(1);
+  };
+
   // Responsive column sizing state
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
 
@@ -94,8 +141,8 @@ export default function GanttChart({
   const leftWidth = useMemo(() => {
     if (windowWidth < 640) return 220; // Mobile
     if (windowWidth < 1024) return 340; // iPad/Tablet
-    return 480; // Desktop
-  }, [windowWidth]);
+    return isFullscreen ? 520 : 480; // Desktop / Fullscreen expanded
+  }, [windowWidth, isFullscreen]);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -187,7 +234,8 @@ export default function GanttChart({
   }, [timelineData, timeView]);
 
   // Width Constants & Coordinate Formulas
-  const colWidth = timeView === 'days' ? 48 : timeView === 'weeks' ? 120 : 200;
+  const baseColWidth = timeView === 'days' ? 48 : timeView === 'weeks' ? 120 : 200;
+  const colWidth = Math.round(baseColWidth * zoomLevel);
   const gridStart = columnsList[0] || timelineData.minDate;
 
   const getXCoordinate = (date: Date): number => {
@@ -241,8 +289,12 @@ export default function GanttChart({
       equipToday: 0
     };
 
+    // Filter only valid work items and activities that belong to active projects
+    const validWorkItems = workItems.filter(wi => projects.some(p => p.id === wi.projectId));
+    const validActivities = activities.filter(act => validWorkItems.some(wi => wi.id === act.workItemId));
+
     // Overall Progress
-    const sumProgress = projects.reduce((sum, p) => sum + getProjectProgress(p, workItems, activities, progressUpdates), 0);
+    const sumProgress = projects.reduce((sum, p) => sum + getProjectProgress(p, validWorkItems, validActivities, progressUpdates), 0);
     const overallProgress = Math.round(sumProgress / totalProjects);
 
     // Today's Progress Updates
@@ -260,37 +312,42 @@ export default function GanttChart({
     let pending = 0;
     let delayed = 0;
 
-    activities.forEach(act => {
-      const progress = getActivityProgress(act, progressUpdates);
-      if (progress >= 100) {
+    validActivities.forEach(act => {
+      const parentWi = validWorkItems.find(w => w.id === act.workItemId);
+      const proj = projects.find(p => p.id === parentWi?.projectId);
+      const isProjComp = !!proj?.isCompleted;
+      const progress = isProjComp ? 100 : getActivityProgress(act, progressUpdates, proj);
+      
+      if (progress >= 100 || isProjComp) {
         completed++;
       } else {
         pending++;
-      }
-
-      const proj = projects.find(p => workItems.find(w => w.id === act.workItemId)?.projectId === p.id);
-      const statusObj = getActivityStatus(act, progressUpdates, materials, proj, activities);
-      if (statusObj.status === 'Delayed' && progress < 100) {
-        delayed++;
+        const statusObj = getActivityStatus(act, progressUpdates, materials, proj, validActivities);
+        if (statusObj.status === 'Delayed') {
+          delayed++;
+        }
       }
 
       // Check if act is scheduled today
-      if (proj) {
+      if (proj && !isProjComp) {
         const { start, end } = getActivityDates(act, proj);
         if (todayDate >= start && todayDate <= end) {
           todayTarget += act.plannedDailyProduction || 0;
         }
       }
 
-      cumulTarget += act.totalQuantity;
+      cumulTarget += (act.totalQuantity || 0);
     });
 
-    // Workers & Equipment today
-    const workersToday = attendanceRecords.filter(r => r.date === todayDateStr && r.isPresent).length || 
-      todayUpdates.reduce((acc, u) => acc + (u.numberOfWorkers || 0), 0);
+    // Workers & Equipment today (Strictly real data)
+    const presentAttendance = attendanceRecords.filter(r => r.date === todayDateStr && r.isPresent);
+    const workersToday = presentAttendance.length > 0 
+      ? presentAttendance.length 
+      : todayUpdates.reduce((acc, u) => acc + (u.numberOfWorkers || 0), 0);
 
-    const equipToday = todayUpdates.flatMap(u => u.equipmentUsed || []).length || 
-      equipment.filter(e => e.status === 'Excellent' || e.status === 'Available').length;
+    const equipToday = todayUpdates.flatMap(u => u.equipmentUsed || []).length > 0
+      ? todayUpdates.flatMap(u => u.equipmentUsed || []).length
+      : equipment.filter(e => e.status === 'Excellent' || e.status === 'Available').length;
 
     return {
       overallProgress,
@@ -303,9 +360,9 @@ export default function GanttChart({
       workersToday,
       equipToday
     };
-  }, [projects, workItems, activities, progressUpdates, attendanceRecords, equipment, todayDateStr, todayDate, materials]);
+  }, [projects, workItems, activities, progressUpdates, attendanceRecords, equipment, todayDateStr, todayDate, materials, getActivityDates]);
 
-  // 5. Filter & Flatten Tree Rows
+  // 5. Filter & Flatten Tree Rows hierarchically
   const visibleTreeRows = useMemo(() => {
     const rows: {
       type: 'project' | 'workItem' | 'activity';
@@ -324,30 +381,39 @@ export default function GanttChart({
       
       // Filter projects by term if matching name
       const projMatchesSearch = searchTerm === '' || 
-        proj.nameEn.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        proj.nameAr.includes(searchTerm);
+        (proj.nameEn && proj.nameEn.toLowerCase().includes(searchTerm.toLowerCase())) || 
+        (proj.nameAr && proj.nameAr.includes(searchTerm));
 
       const projWorkItems = workItems.filter(wi => wi.projectId === proj.id);
-      
-      let workItemsAdded = false;
+
+      const validWiEntries: {
+        wi: WorkItem;
+        wiWbs: string;
+        filteredActs: { act: Activity; actWbs: string }[];
+      }[] = [];
 
       projWorkItems.forEach((wi, wIdx) => {
         const wiWbs = `${pWbs}.${wIdx + 1}`;
         const wiActivities = activities.filter(act => act.workItemId === wi.id);
 
-        const filteredActs = wiActivities.filter(act => {
+        const filteredActs: { act: Activity; actWbs: string }[] = [];
+
+        wiActivities.forEach((act, aIdx) => {
+          const actWbs = `${wiWbs}.${aIdx + 1}`;
+          
           // Search filter
           const matchesSearch = searchTerm === '' || 
-            act.nameEn.toLowerCase().includes(searchTerm.toLowerCase()) || 
-            act.nameAr.includes(searchTerm) ||
-            wi.nameEn.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            wi.nameAr.includes(searchTerm);
+            (act.nameEn && act.nameEn.toLowerCase().includes(searchTerm.toLowerCase())) || 
+            (act.nameAr && act.nameAr.includes(searchTerm)) ||
+            (wi.nameEn && wi.nameEn.toLowerCase().includes(searchTerm.toLowerCase())) ||
+            (wi.nameAr && wi.nameAr.includes(searchTerm)) ||
+            projMatchesSearch;
 
           // Status filter
-          const progress = getActivityProgress(act, progressUpdates);
-          const rawStatus = getActivityStatus(act, progressUpdates, materials, proj, activities).status;
+          const progress = isProjectCompleted ? 100 : getActivityProgress(act, progressUpdates, proj);
+          const rawStatus = isProjectCompleted ? 'Completed' : getActivityStatus(act, progressUpdates, materials, proj, activities).status;
           let mappedStatus = 'Not Started';
-          if (progress >= 100) mappedStatus = 'Completed';
+          if (progress >= 100 || isProjectCompleted) mappedStatus = 'Completed';
           else if (rawStatus === 'Delayed') mappedStatus = 'Delayed';
           else if (act.isCritical && progress > 0 && progress < 40) mappedStatus = 'At Risk';
           else if (progress > 0) mappedStatus = 'In Progress';
@@ -359,68 +425,67 @@ export default function GanttChart({
             (statusFilter === 'In Progress' && mappedStatus === 'In Progress') ||
             (statusFilter === 'Not Started' && mappedStatus === 'Not Started');
 
-          return matchesSearch && matchesStatus;
+          if (matchesSearch && matchesStatus) {
+            filteredActs.push({ act, actWbs });
+          }
         });
 
-        if (filteredActs.length > 0 || searchTerm === '') {
-          // If project collapsed, hide work items
-          const isProjCollapsed = collapsedProjects[proj.id];
-          if (!isProjCollapsed && (projMatchesSearch || filteredActs.length > 0)) {
-            rows.push({
-              type: 'workItem',
-              id: wi.id,
-              item: wi,
-              parentProjectId: proj.id,
-              wbsCode: wiWbs,
-              level: 1,
-              isProjectCompleted
-            });
-            workItemsAdded = true;
-          }
+        const wiMatchesSearch = searchTerm === '' ||
+          (wi.nameEn && wi.nameEn.toLowerCase().includes(searchTerm.toLowerCase())) ||
+          (wi.nameAr && wi.nameAr.includes(searchTerm));
+
+        if (filteredActs.length > 0 || (wiMatchesSearch && statusFilter === 'all') || (projMatchesSearch && statusFilter === 'all')) {
+          validWiEntries.push({ wi, wiWbs, filteredActs });
+        }
+      });
+
+      const shouldShowProj = projMatchesSearch || validWiEntries.length > 0 || searchTerm === '';
+      if (!shouldShowProj) return;
+
+      // Add Project Row
+      rows.push({
+        type: 'project',
+        id: proj.id,
+        item: proj,
+        wbsCode: pWbs,
+        level: 0,
+        isProjectCompleted
+      });
+
+      // If not collapsed, add work items and activities
+      const isProjCollapsed = collapsedProjects[proj.id];
+      if (!isProjCollapsed) {
+        validWiEntries.forEach(({ wi, wiWbs, filteredActs }) => {
+          rows.push({
+            type: 'workItem',
+            id: wi.id,
+            item: wi,
+            parentProjectId: proj.id,
+            wbsCode: wiWbs,
+            level: 1,
+            isProjectCompleted
+          });
 
           const isWiCollapsed = collapsedWorkItems[wi.id];
-          if (!isProjCollapsed && !isWiCollapsed) {
-            filteredActs.forEach((act, aIdx) => {
+          if (!isWiCollapsed) {
+            filteredActs.forEach(({ act, actWbs }) => {
               rows.push({
                 type: 'activity',
                 id: act.id,
                 item: act,
                 parentProjectId: proj.id,
                 parentWorkItemId: wi.id,
-                wbsCode: `${wiWbs}.${aIdx + 1}`,
+                wbsCode: actWbs,
                 level: 2,
                 isProjectCompleted
               });
             });
           }
-        }
-      });
-
-      // Insert project node at the top if there are children or it matches the search
-      if (projMatchesSearch || workItemsAdded || searchTerm === '') {
-        rows.splice(rows.findIndex(r => r.parentProjectId === proj.id), 0, {
-          type: 'project',
-          id: proj.id,
-          item: proj,
-          wbsCode: pWbs,
-          level: 0,
-          isProjectCompleted
         });
       }
     });
 
-    // Remove duplicates or invalid project orderings
-    const uniqueRows: typeof rows = [];
-    const seen = new Set<string>();
-    rows.forEach(r => {
-      const key = `${r.type}-${r.id}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        uniqueRows.push(r);
-      }
-    });
-
-    return uniqueRows;
+    return rows;
   }, [projects, workItems, activities, progressUpdates, materials, searchTerm, statusFilter, collapsedProjects, collapsedWorkItems]);
 
   // Calculate coordinates for Dependency curves
@@ -477,7 +542,35 @@ export default function GanttChart({
   const timelineWidth = columnsList.length * colWidth;
 
   return (
-    <div className="w-full flex flex-col gap-6" id="gantt-chart-section">
+    <div 
+      className={
+        isFullscreen 
+          ? "fixed inset-0 z-[100] bg-slate-100 p-4 md:p-6 overflow-y-auto w-screen h-screen min-h-screen flex flex-col gap-5 shadow-2xl backdrop-blur-md"
+          : "w-full flex flex-col gap-6"
+      } 
+      id="gantt-chart-section"
+    >
+      {/* Fullscreen top helper bar */}
+      {isFullscreen && (
+        <div className="bg-[#040957] text-white px-4 py-2.5 rounded-xl flex items-center justify-between shadow-lg border border-blue-900 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span className="text-xs font-black tracking-wide">
+              {isRtl ? 'وضع ملء الشاشة الموسع - مخطط غانت التنفيذي' : 'Expanded Fullscreen Mode — Executive Gantt Chart'}
+            </span>
+            <span className="text-[11px] text-blue-200 font-medium hidden sm:inline">
+              ({isRtl ? 'اضغط ESC أو زر التصغير للعودة' : 'Press ESC or Minimize to exit'})
+            </span>
+          </div>
+          <button
+            onClick={handleToggleFullscreen}
+            className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white px-3 py-1 rounded-lg text-xs font-black transition-all border border-white/20 active:scale-95 cursor-pointer"
+          >
+            <Minimize2 className="w-3.5 h-3.5" />
+            <span>{isRtl ? 'إنهاء التكبير (ESC)' : 'Exit Fullscreen'}</span>
+          </button>
+        </div>
+      )}
       
       {/* 1. Header Bar with view controllers */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-100 shadow-xs">
@@ -494,43 +587,109 @@ export default function GanttChart({
           </p>
         </div>
 
-        {/* View Switchers */}
+        {/* View Switchers & Zoom Controls */}
         <div className="flex flex-wrap items-center gap-2">
           
-          {/* Zoom Level Switchers */}
+          {/* Time View Switchers (Days / Weeks / Months) */}
           <div className="bg-slate-100/80 p-1 rounded-xl flex items-center border border-slate-200/50">
             <button 
               onClick={() => setTimeView('days')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 ${timeView === 'days' ? 'bg-white text-[#0080FF] shadow-xs' : 'text-slate-600 hover:text-slate-800'}`}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 cursor-pointer ${timeView === 'days' ? 'bg-white text-[#0080FF] shadow-xs' : 'text-slate-600 hover:text-slate-800'}`}
             >
               {isRtl ? 'أيام' : 'Days'}
             </button>
             <button 
               onClick={() => setTimeView('weeks')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 ${timeView === 'weeks' ? 'bg-white text-[#0080FF] shadow-xs' : 'text-slate-600 hover:text-slate-800'}`}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 cursor-pointer ${timeView === 'weeks' ? 'bg-white text-[#0080FF] shadow-xs' : 'text-slate-600 hover:text-slate-800'}`}
             >
               {isRtl ? 'أسابيع' : 'Weeks'}
             </button>
             <button 
               onClick={() => setTimeView('months')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 ${timeView === 'months' ? 'bg-white text-[#0080FF] shadow-xs' : 'text-slate-600 hover:text-slate-800'}`}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 cursor-pointer ${timeView === 'months' ? 'bg-white text-[#0080FF] shadow-xs' : 'text-slate-600 hover:text-slate-800'}`}
             >
               {isRtl ? 'أشهر' : 'Months'}
             </button>
           </div>
 
+          {/* Zoom Magnification Controls */}
+          <div className="bg-slate-100/80 p-1 rounded-xl flex items-center border border-slate-200/50 gap-1 select-none">
+            <button
+              onClick={handleZoomOut}
+              disabled={zoomLevel <= 0.5}
+              className={`p-1.5 rounded-lg text-slate-700 bg-white border border-slate-200/60 shadow-3xs flex items-center justify-center transition-all ${
+                zoomLevel <= 0.5 ? 'opacity-40 cursor-not-allowed' : 'hover:text-[#0080FF] hover:bg-slate-50 active:scale-95 cursor-pointer'
+              }`}
+              title={isRtl ? 'تصغير المخطط (Zoom Out)' : 'Zoom Out'}
+            >
+              <ZoomOut className="w-3.5 h-3.5" />
+            </button>
+
+            <button
+              onClick={handleResetZoom}
+              className="px-2 py-1 bg-white hover:bg-slate-50 border border-slate-200/60 rounded-lg text-[11px] font-mono font-black text-slate-700 shadow-3xs transition-all cursor-pointer"
+              title={isRtl ? 'إعادة ضبط التكبير إلى 100%' : 'Reset zoom to 100%'}
+            >
+              {Math.round(zoomLevel * 100)}%
+            </button>
+
+            <button
+              onClick={handleZoomIn}
+              disabled={zoomLevel >= 2.5}
+              className={`p-1.5 rounded-lg text-slate-700 bg-white border border-slate-200/60 shadow-3xs flex items-center justify-center transition-all ${
+                zoomLevel >= 2.5 ? 'opacity-40 cursor-not-allowed' : 'hover:text-[#0080FF] hover:bg-slate-50 active:scale-95 cursor-pointer'
+              }`}
+              title={isRtl ? 'تكبير المخطط (Zoom In)' : 'Zoom In'}
+            >
+              <ZoomIn className="w-3.5 h-3.5" />
+            </button>
+
+            {zoomLevel !== 1 && (
+              <button
+                onClick={handleResetZoom}
+                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 bg-white border border-slate-200/60 shadow-3xs flex items-center justify-center transition-all active:scale-95 cursor-pointer"
+                title={isRtl ? 'إعادة التعيين' : 'Reset Zoom'}
+              >
+                <RotateCcw className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+
+          {/* Fullscreen Expansion Toggle Button */}
+          <button
+            onClick={handleToggleFullscreen}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black transition-all shadow-xs active:scale-95 cursor-pointer ${
+              isFullscreen
+                ? 'bg-amber-500 hover:bg-amber-600 text-white ring-2 ring-amber-400/40'
+                : 'bg-[#040957] hover:bg-[#0080FF] text-white ring-1 ring-blue-900/30'
+            }`}
+            title={isRtl ? (isFullscreen ? 'إنهاء وضع ملء الشاشة (ESC)' : 'تكبير الصفحة ملء الشاشة') : (isFullscreen ? 'Exit Fullscreen (ESC)' : 'Expand Fullscreen')}
+          >
+            {isFullscreen ? (
+              <>
+                <Minimize2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">{isRtl ? 'تصغير الشاشة' : 'Exit Fullscreen'}</span>
+              </>
+            ) : (
+              <>
+                <Maximize2 className="w-3.5 h-3.5" />
+                <span>{isRtl ? 'ملء الشاشة' : 'Fullscreen'}</span>
+              </>
+            )}
+          </button>
+
           {/* Quick Scroll Shift Buttons (Handy for touch devices) */}
           <div className="bg-slate-100/80 p-1 rounded-xl flex items-center border border-slate-200/50 gap-1 select-none">
             <button 
               onClick={() => scrollTimeline('left')}
-              className="px-2.5 py-1.5 rounded-lg text-xs font-black bg-white text-slate-700 hover:text-[#0080FF] hover:bg-slate-50 border border-slate-200/60 shadow-3xs flex items-center justify-center transition-all active:scale-95"
+              className="px-2.5 py-1.5 rounded-lg text-xs font-black bg-white text-slate-700 hover:text-[#0080FF] hover:bg-slate-50 border border-slate-200/60 shadow-3xs flex items-center justify-center transition-all active:scale-95 cursor-pointer"
               title={isRtl ? 'إزاحة لليمين' : 'Scroll Left'}
             >
               &larr;
             </button>
             <button 
               onClick={() => scrollTimeline('right')}
-              className="px-2.5 py-1.5 rounded-lg text-xs font-black bg-white text-slate-700 hover:text-[#0080FF] hover:bg-slate-50 border border-slate-200/60 shadow-3xs flex items-center justify-center transition-all active:scale-95"
+              className="px-2.5 py-1.5 rounded-lg text-xs font-black bg-white text-slate-700 hover:text-[#0080FF] hover:bg-slate-50 border border-slate-200/60 shadow-3xs flex items-center justify-center transition-all active:scale-95 cursor-pointer"
               title={isRtl ? 'إزاحة لليسار' : 'Scroll Right'}
             >
               &rarr;
@@ -545,7 +704,7 @@ export default function GanttChart({
               placeholder={isRtl ? 'بحث في الأنشطة...' : 'Search activities...'}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 pr-4 py-1.5 w-44 md:w-56 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-700 placeholder-slate-400 focus:outline-hidden focus:ring-1 focus:ring-blue-500/30 focus:border-blue-500 focus:bg-white transition-all"
+              className="pl-9 pr-4 py-1.5 w-40 md:w-52 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-700 placeholder-slate-400 focus:outline-hidden focus:ring-1 focus:ring-blue-500/30 focus:border-blue-500 focus:bg-white transition-all"
             />
           </div>
 
@@ -554,7 +713,7 @@ export default function GanttChart({
             <select 
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="appearance-none pl-3 pr-8 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-hidden focus:ring-1 focus:ring-blue-500/30 focus:border-blue-500 focus:bg-white transition-all"
+              className="appearance-none pl-3 pr-8 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-hidden focus:ring-1 focus:ring-blue-500/30 focus:border-blue-500 focus:bg-white transition-all cursor-pointer"
             >
               <option value="all">{isRtl ? 'كل الحالات' : 'All Statuses'}</option>
               <option value="Completed">{isRtl ? 'مكتمل' : 'Completed'}</option>
@@ -574,7 +733,7 @@ export default function GanttChart({
                 scrollContainerRef.current.scrollTo({ left: todayScrollPos > 0 ? todayScrollPos : 0, behavior: 'smooth' });
               }
             }}
-            className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 hover:bg-rose-100/80 text-rose-700 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all duration-150 shadow-2xs"
+            className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 hover:bg-rose-100/80 text-rose-700 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all duration-150 shadow-2xs cursor-pointer"
           >
             <Clock className="w-3.5 h-3.5" />
             {isRtl ? 'اليوم' : 'Today'}
@@ -938,8 +1097,10 @@ export default function GanttChart({
                           
                           {isAct && (() => {
                             const act = row.item as Activity;
-                            const progress = getActivityProgress(act, progressUpdates);
-                            const rawStatus = getActivityStatus(act, progressUpdates, materials, projects.find(p => p.id === row.parentProjectId), activities).status;
+                            const proj = projects.find(p => p.id === row.parentProjectId);
+                            const isProjComp = !!(proj?.isCompleted || row.isProjectCompleted);
+                            const progress = isProjComp ? 100 : getActivityProgress(act, progressUpdates, proj);
+                            const rawStatus = isProjComp ? 'Completed' : getActivityStatus(act, progressUpdates, materials, proj, activities).status;
                             
                             // Map Status
                             let mappedStatus: 'Completed' | 'In Progress' | 'Delayed' | 'At Risk' | 'Not Started' = 'Not Started';
@@ -948,7 +1109,7 @@ export default function GanttChart({
                             let statusTextEn = 'Not Started';
                             let statusTextAr = 'لم يبدأ';
 
-                            if (progress >= 100) {
+                            if (progress >= 100 || isProjComp) {
                               mappedStatus = 'Completed';
                               statusColor = 'bg-emerald-50 text-emerald-700 border-emerald-200';
                               dotColor = 'bg-emerald-500';
@@ -989,7 +1150,9 @@ export default function GanttChart({
                                 )}
                                 
                                 {/* Percentage bubble */}
-                                <span className="text-[10px] font-mono font-black text-slate-700 bg-slate-100 px-1 py-0.5 rounded border border-slate-200/50 w-8 text-right block shrink-0">
+                                <span className={`text-[10px] font-mono font-black px-1 py-0.5 rounded border w-8 text-right block shrink-0 ${
+                                  progress >= 100 || isProjComp ? 'text-emerald-800 bg-emerald-50 border-emerald-200' : 'text-slate-700 bg-slate-100 border-slate-200/50'
+                                }`}>
                                   {progress}%
                                 </span>
                               </div>
@@ -998,13 +1161,16 @@ export default function GanttChart({
 
                           {isWi && (() => {
                             const wi = row.item as WorkItem;
-                            // Calculate average progress of activities inside work item
-                            const wiActivities = activities.filter(a => a.workItemId === wi.id);
-                            if (wiActivities.length === 0) return null;
-                            const totalProgress = wiActivities.reduce((acc, a) => acc + getActivityProgress(a, progressUpdates), 0);
-                            const avgProgress = Math.round(totalProgress / wiActivities.length);
+                            const proj = projects.find(p => p.id === row.parentProjectId);
+                            const isProjComp = !!(proj?.isCompleted || row.isProjectCompleted);
+                            const avgProgress = isProjComp ? 100 : getWorkItemProgress(wi, activities, progressUpdates, proj);
+
                             return (
-                              <span className="text-[10px] font-mono font-black text-[#0080FF] bg-blue-50/50 px-1.5 py-0.5 rounded border border-blue-100 w-10 text-right block shrink-0">
+                              <span className={`text-[10px] font-mono font-black px-1.5 py-0.5 rounded border w-10 text-right block shrink-0 ${
+                                avgProgress >= 100 || isProjComp 
+                                  ? 'text-emerald-700 bg-emerald-50 border-emerald-200' 
+                                  : 'text-[#0080FF] bg-blue-50/50 border-blue-100'
+                              }`}>
                                 {avgProgress}%
                               </span>
                             );
@@ -1013,8 +1179,11 @@ export default function GanttChart({
                           {isProj && (() => {
                             const proj = row.item as Project;
                             const progress = getProjectProgress(proj, workItems, activities, progressUpdates);
+                            const isCompleted = proj.isCompleted || progress >= 100;
                             return (
-                              <span className="text-[10px] font-mono font-black text-slate-800 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 w-10 text-right block shrink-0">
+                              <span className={`text-[10px] font-mono font-black px-1.5 py-0.5 rounded border w-10 text-right block shrink-0 ${
+                                isCompleted ? 'text-emerald-800 bg-emerald-50 border-emerald-300' : 'text-slate-800 bg-slate-100 border-slate-200'
+                              }`}>
                                 {progress}%
                               </span>
                             );
@@ -1042,23 +1211,119 @@ export default function GanttChart({
                           );
                         })}
 
-                        {/* 1. If row is an Activity, draw the progress timeline pill bar */}
+                        {/* 1. Project Summary Bar */}
+                        {isProj && (() => {
+                          const proj = row.item as Project;
+                          const progress = getProjectProgress(proj, workItems, activities, progressUpdates);
+                          const sDate = parseDateLocal(proj.startDate);
+                          const eDate = parseDateLocal(proj.endDate);
+                          const leftPos = getXCoordinate(sDate);
+                          const barWidth = Math.max(28, getWidth(sDate, eDate));
+                          const isCompleted = proj.isCompleted || progress >= 100;
+
+                          return (
+                            <div 
+                              className="absolute top-0 bottom-0 flex items-center z-15"
+                              style={{ left: `${leftPos}px`, width: `${barWidth}px` }}
+                            >
+                              <div className={`h-6 w-full rounded-md border flex items-center relative overflow-hidden shadow-xs select-none ${
+                                isCompleted ? 'bg-emerald-950/90 border-emerald-500 text-emerald-100' : 'bg-slate-900/90 border-slate-700 text-white'
+                              }`}>
+                                <motion.div 
+                                  className={`absolute left-0 top-0 bottom-0 ${isCompleted ? 'bg-emerald-500' : 'bg-[#0080FF]'} opacity-45`}
+                                  initial={{ width: 0 }}
+                                  animate={{ width: `${progress}%` }}
+                                  transition={{ duration: 0.5, ease: 'easeOut' }}
+                                />
+                                <div className="absolute inset-0 flex items-center justify-between px-2 z-10 pointer-events-none">
+                                  <span className="text-[9.5px] font-black drop-shadow truncate pr-1">
+                                    {isRtl ? proj.nameAr : proj.nameEn}
+                                  </span>
+                                  <span className={`text-[8.5px] font-mono font-black px-1.5 py-0.2 rounded leading-none ${
+                                    isCompleted ? 'bg-emerald-400 text-slate-950' : 'bg-white/20 text-white'
+                                  }`}>
+                                    {progress}% {isCompleted ? (isRtl ? '✓ مكتمل' : '✓ Completed') : ''}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* 2. Work Item Summary Bar */}
+                        {isWi && (() => {
+                          const wi = row.item as WorkItem;
+                          const proj = projects.find(p => p.id === row.parentProjectId);
+                          const isProjComp = !!(proj?.isCompleted || row.isProjectCompleted);
+                          const wiActivities = activities.filter(a => a.workItemId === wi.id);
+                          const progress = isProjComp ? 100 : (
+                            wiActivities.length === 0 
+                              ? 0 
+                              : Math.round(wiActivities.reduce((acc, a) => acc + getActivityProgress(a, progressUpdates, proj), 0) / wiActivities.length)
+                          );
+
+                          let sDate = proj ? parseDateLocal(proj.startDate) : new Date();
+                          let eDate = proj ? parseDateLocal(proj.endDate) : new Date();
+
+                          if (wiActivities.length > 0 && proj) {
+                            const actDateRanges = wiActivities.map(a => getActivityDates(a, proj));
+                            const minStart = Math.min(...actDateRanges.map(r => r.start.getTime()));
+                            const maxEnd = Math.max(...actDateRanges.map(r => r.end.getTime()));
+                            sDate = new Date(minStart);
+                            eDate = new Date(maxEnd);
+                          }
+
+                          const leftPos = getXCoordinate(sDate);
+                          const barWidth = Math.max(22, getWidth(sDate, eDate));
+                          const isCompleted = isProjComp || progress >= 100;
+
+                          return (
+                            <div 
+                              className="absolute top-0 bottom-0 flex items-center z-15"
+                              style={{ left: `${leftPos}px`, width: `${barWidth}px` }}
+                            >
+                              <div className={`h-5 w-full rounded-md border flex items-center relative overflow-hidden shadow-2xs select-none ${
+                                isCompleted ? 'bg-emerald-100/80 border-emerald-400' : 'bg-slate-200/90 border-slate-300'
+                              }`}>
+                                <motion.div 
+                                  className={`absolute left-0 top-0 bottom-0 ${isCompleted ? 'bg-emerald-500' : 'bg-[#0080FF]'} opacity-35`}
+                                  initial={{ width: 0 }}
+                                  animate={{ width: `${progress}%` }}
+                                  transition={{ duration: 0.5, ease: 'easeOut' }}
+                                />
+                                <div className="absolute inset-0 flex items-center justify-between px-2 z-10 pointer-events-none">
+                                  <span className="text-[9px] font-extrabold text-slate-800 truncate pr-1">
+                                    {isRtl ? wi.nameAr : wi.nameEn}
+                                  </span>
+                                  <span className={`text-[8.5px] font-mono font-black px-1 rounded leading-none ${
+                                    isCompleted ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-white'
+                                  }`}>
+                                    {progress}%
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* 3. If row is an Activity, draw the progress timeline pill bar */}
                         {isAct && (() => {
                           const act = row.item as Activity;
                           const proj = projects.find(p => p.id === row.parentProjectId);
                           if (!proj) return null;
+                          const isProjComp = !!(proj.isCompleted || row.isProjectCompleted);
 
                           const dates = getActivityDates(act, proj);
                           const leftPos = getXCoordinate(dates.start);
-                          const barWidth = getWidth(dates.start, dates.end);
-                          const progress = getActivityProgress(act, progressUpdates);
+                          const barWidth = Math.max(16, getWidth(dates.start, dates.end));
+                          const progress = isProjComp ? 100 : getActivityProgress(act, progressUpdates, proj);
 
                           // Determine status representation
-                          const rawStatus = getActivityStatus(act, progressUpdates, materials, proj, activities).status;
+                          const rawStatus = isProjComp ? 'Completed' : getActivityStatus(act, progressUpdates, materials, proj, activities).status;
                           let barColorClass = 'bg-[#0080FF]'; // In Progress (Blue)
                           let barBgClass = 'bg-blue-100/60 border-blue-200';
                           
-                          if (progress >= 100) {
+                          if (progress >= 100 || isProjComp) {
                             barColorClass = 'bg-[#22C55E]'; // Completed (Green)
                             barBgClass = 'bg-emerald-100/40 border-emerald-200';
                           } else if (rawStatus === 'Delayed') {
@@ -1074,11 +1339,11 @@ export default function GanttChart({
 
                           const isMilestone = act.unit?.toLowerCase() === 'milestone' || act.totalQuantity === 0;
 
-                          // Resources
-                          const allocatedWorkers = workers.filter(w => act.workerIds.includes(w.id));
-                          const allocatedWorkersCount = allocatedWorkers.length || 4;
+                          // Resources (Strictly from real workerIds and equipmentIds)
+                          const allocatedWorkers = workers.filter(w => act.workerIds && act.workerIds.includes(w.id));
+                          const allocatedWorkersCount = allocatedWorkers.length;
                           
-                          const allocatedEquip = equipment.filter(e => act.equipmentIds.includes(e.id));
+                          const allocatedEquip = equipment.filter(e => act.equipmentIds && act.equipmentIds.includes(e.id));
                           const allocatedEquipName = allocatedEquip.map(e => isRtl ? e.nameAr : e.nameEn).join(', ') || '';
 
                           return (
@@ -1094,7 +1359,7 @@ export default function GanttChart({
                                 <div className="relative group/ms select-none cursor-pointer flex items-center justify-center">
                                   <div 
                                     className={`w-5 h-5 rotate-45 transform border border-white shadow-md transition-all duration-200 hover:scale-125 ${
-                                      progress >= 100 ? 'bg-emerald-500' : 'bg-[#0080FF]'
+                                      progress >= 100 || isProjComp ? 'bg-emerald-500' : 'bg-[#0080FF]'
                                     }`}
                                   />
                                   <span className="absolute left-6 whitespace-nowrap text-[9px] font-black text-slate-600 bg-white px-1.5 py-0.5 rounded border border-slate-200 shadow-sm">
@@ -1171,7 +1436,7 @@ export default function GanttChart({
                                         </h4>
                                       </div>
                                       <span className={`text-[8.5px] font-black px-2 py-0.5 rounded-full border ${
-                                        progress >= 100 
+                                        progress >= 100 || isProjComp
                                           ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
                                           : rawStatus === 'Delayed'
                                           ? 'bg-rose-50 text-rose-700 border-rose-200'
@@ -1207,18 +1472,21 @@ export default function GanttChart({
                                       <div className="flex justify-between">
                                         <span className="text-slate-500 font-medium">{isRtl ? 'الكمية المنفذة فعلياً:' : 'Completed Qty:'}</span>
                                         <span className="font-bold text-slate-800">
-                                          {progressUpdates.filter(u => u.activityId === act.id).reduce((sum, u) => sum + (u.completedQuantity || 0), 0)} {act.unit}
+                                          {isProjComp 
+                                            ? act.totalQuantity 
+                                            : progressUpdates.filter(u => u.activityId === act.id).reduce((sum, u) => sum + (u.completedQuantity || 0), 0)
+                                          } {act.unit}
                                         </span>
                                       </div>
 
                                       <div className="flex justify-between border-b border-slate-50 pb-1.5">
                                         <span className="text-slate-500 font-medium">{isRtl ? 'المعدل المستهدف اليومي:' : 'Daily Target Rate:'}</span>
-                                        <span className="font-black text-slate-800">{act.plannedDailyProduction || 5} {act.unit}/day</span>
+                                        <span className="font-black text-slate-800">{act.plannedDailyProduction || 0} {act.unit}/day</span>
                                       </div>
 
                                       <div className="flex justify-between">
                                         <span className="text-slate-500 font-medium">{isRtl ? 'المهندس المسؤول:' : 'Supervisor:'}</span>
-                                        <span className="font-extrabold text-slate-700">{proj.projectManager || 'Site Supervisor'}</span>
+                                        <span className="font-extrabold text-slate-700">{proj.projectManager || (isRtl ? 'غير محدد' : 'Unassigned')}</span>
                                       </div>
 
                                       {allocatedWorkers.length > 0 && (

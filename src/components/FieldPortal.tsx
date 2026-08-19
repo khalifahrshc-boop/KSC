@@ -22,7 +22,8 @@ import {
   MaterialDelivery,
   FieldRequest,
   EquipmentItem,
-  MorningMeetingPlan
+  MorningMeetingPlan,
+  GpsLocation
 } from '../types';
 import { motion } from 'motion/react';
 import { 
@@ -58,11 +59,17 @@ import {
   Calculator,
   Truck,
   ShoppingCart,
-  Zap
+  Zap,
+  MapPin,
+  Navigation,
+  Crosshair,
+  ExternalLink,
+  RefreshCw
 } from 'lucide-react';
 import { getActivityProgress, getSystemToday } from '../utils/progressCalculations';
 import { dbApi } from '../lib/api';
 import { runWithOklchSanitizer } from '../utils/pdfSanitizer';
+import { getCurrentGpsCoordinates, getGoogleMapsUrl, GpsCaptureResult } from '../utils/geolocation';
 
 interface FieldPortalProps {
   settings: SystemSettings;
@@ -81,6 +88,42 @@ interface FieldPortalProps {
   onReturnToMain: () => void;
   onToggleLanguage: () => void;
 }
+
+const calculateActualHours = (start: string, end: string): number | null => {
+  if (!start || !end) return null;
+
+  const parseTime = (timeStr: string) => {
+    const clean = timeStr.trim().toUpperCase();
+    const match = clean.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/);
+    if (!match) {
+      const match24 = clean.match(/^(\d{1,2}):(\d{2})$/);
+      if (match24) {
+        return parseInt(match24[1], 10) * 60 + parseInt(match24[2], 10);
+      }
+      return null;
+    }
+    let hr = parseInt(match[1], 10);
+    const min = parseInt(match[2], 10);
+    const ampm = match[3];
+
+    if (ampm) {
+      if (ampm === 'PM' && hr < 12) hr += 12;
+      if (ampm === 'AM' && hr === 12) hr = 0;
+    }
+    return hr * 60 + min;
+  };
+
+  const startMin = parseTime(start);
+  const endMin = parseTime(end);
+
+  if (startMin === null || endMin === null) return null;
+
+  let diff = endMin - startMin;
+  if (diff < 0) {
+    diff += 24 * 60; // Crosses midnight
+  }
+  return Number((diff / 60).toFixed(2));
+};
 
 export default function FieldPortal({
   settings,
@@ -121,6 +164,70 @@ export default function FieldPortal({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingRef = useRef(false);
 
+  // Supervisor Shift Schedule State & Workforce Linkage
+  const [supShiftType, setSupShiftType] = useState<'Morning' | 'Evening' | 'Night' | 'Custom'>('Morning');
+  const [supShiftStartTime, setSupShiftStartTime] = useState<string>('07:30 AM');
+  const [supShiftEndTime, setSupShiftEndTime] = useState<string>('04:30 PM');
+  const [supShiftNotes, setSupShiftNotes] = useState<string>('');
+  const [autoApplyShiftToAttendance, setAutoApplyShiftToAttendance] = useState<boolean>(true);
+
+  // Helper to switch shift presets
+  const handleSelectShiftPreset = (type: 'Morning' | 'Evening' | 'Night' | 'Custom') => {
+    setSupShiftType(type);
+    if (type === 'Morning') {
+      setSupShiftStartTime('07:30 AM');
+      setSupShiftEndTime('04:30 PM');
+    } else if (type === 'Evening') {
+      setSupShiftStartTime('03:30 PM');
+      setSupShiftEndTime('11:30 PM');
+    } else if (type === 'Night') {
+      setSupShiftStartTime('11:00 PM');
+      setSupShiftEndTime('07:00 AM');
+    }
+  };
+
+  // Sync / Apply supervisor shift schedule directly to workforce attendance state
+  const handleApplyShiftToWorkers = (targetShiftType?: string, targetStart?: string, targetEnd?: string) => {
+    const shiftKind = targetShiftType || supShiftType;
+    const startT = targetStart || supShiftStartTime;
+    const endT = targetEnd || supShiftEndTime;
+
+    const parsedHrs = calculateActualHours(startT, endT);
+    const hrsSuffix = parsedHrs ? ` (${parsedHrs} ${isRtl ? 'ساعات' : 'hrs'})` : '';
+
+    let shiftLabel = '';
+    if (shiftKind === 'Morning') {
+      shiftLabel = isRtl ? `شفت صباحي${hrsSuffix || ' - ٩ ساعات'}` : `Morning Shift${hrsSuffix || ' - 9h'}`;
+    } else if (shiftKind === 'Evening') {
+      shiftLabel = isRtl ? `شفت مسائي${hrsSuffix || ' - ٩ ساعات'}` : `Evening Shift${hrsSuffix || ' - 9h'}`;
+    } else if (shiftKind === 'Night') {
+      shiftLabel = isRtl ? `شفت ليلي${hrsSuffix || ' - ٨ ساعات'}` : `Night Shift${hrsSuffix || ' - 8h'}`;
+    } else {
+      shiftLabel = isRtl ? `شفت مخصص${hrsSuffix}` : `Custom Shift${hrsSuffix}`;
+    }
+
+    setWorkerAttendanceState(prev => {
+      const updated = { ...prev };
+      Object.keys(updated).forEach(wId => {
+        if (updated[wId].isPresent) {
+          updated[wId] = {
+            ...updated[wId],
+            startTime: startT,
+            endTime: endT,
+            shiftTime: shiftLabel
+          };
+        }
+      });
+      return updated;
+    });
+
+    triggerToast(
+      isRtl
+        ? `تم تطبيق مواعيد ${shiftLabel} (${startT} - ${endT}) على كشف حضور العمالة بنجاح!`
+        : `Applied ${shiftLabel} schedule (${startT} - ${endT}) to workforce attendance sheet!`
+    );
+  };
+
   // Active steps in wizard
   // Steps: 1: Check-In & Project, 2: Attendance, 3: Production/Progress, 4: Safety & Delay & Issues, 5: Review & Submit
   const [currentStep, setCurrentStep] = useState<number>(1);
@@ -140,6 +247,46 @@ export default function FieldPortal({
     shiftTime: string;
     notes: string;
   }>>({});
+
+  // GPS Geolocation & Attendance Verification state
+  const [currentGps, setCurrentGps] = useState<GpsLocation | null>(null);
+  const [isCapturingGps, setIsCapturingGps] = useState(false);
+  const [gpsErrorMsg, setGpsErrorMsg] = useState<string | null>(null);
+  const [gpsCapturedAt, setGpsCapturedAt] = useState<string | null>(null);
+
+  const handleCaptureGps = async (silent = false): Promise<GpsLocation | null> => {
+    setIsCapturingGps(true);
+    setGpsErrorMsg(null);
+    try {
+      const res: GpsCaptureResult = await getCurrentGpsCoordinates();
+      if (res.success && res.location) {
+        setCurrentGps(res.location);
+        setGpsCapturedAt(new Date().toLocaleTimeString(lang === 'ar' ? 'ar-SA' : 'en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+        if (!silent) {
+          triggerToast(isRtl ? 'تم التقاط إحداثيات الموقع وتأكيد الحضور بنجاح!' : 'GPS site attendance captured & verified successfully!');
+        }
+        return res.location;
+      } else {
+        const err = res.errorMessage || (isRtl ? 'تعذر جلب إحداثيات الموقع بدقة' : 'Unable to acquire precise GPS coordinates');
+        setGpsErrorMsg(err);
+        if (!silent) {
+          triggerToast(`⚠️ ${err}`);
+        }
+        return null;
+      }
+    } catch (err: any) {
+      const msg = err?.message || (isRtl ? 'حدث خطأ في قراءة بيانات GPS' : 'Error reading GPS data');
+      setGpsErrorMsg(msg);
+      return null;
+    } finally {
+      setIsCapturingGps(false);
+    }
+  };
+
+  // Pre-fetch GPS coordinates on portal load / project selection
+  useEffect(() => {
+    handleCaptureGps(true);
+  }, [selectedProjectId]);
 
   // 3. Production Updates state (list of multiple updates submitted during the day)
   const [prodUpdates, setProdUpdates] = useState<Omit<ProgressUpdate, 'id' | 'projectId'>[]>([]);
@@ -309,14 +456,21 @@ export default function FieldPortal({
 
   const selectedProject = projects.find(p => p.id === selectedProjectId);
   const projectWorkItems = workItems.filter(wi => 
-    wi.projectId === selectedProjectId && 
-    (wi.responsiblePerson === supName || activities.some(act => act.workItemId === wi.id && act.supervisorId === supUserId))
+    wi.projectId === selectedProjectId
   );
   const currentWorkItem = workItems.find(wi => wi.id === prodWiId) || projectWorkItems[0];
   const itemActivities = activities.filter(act => 
-    act.workItemId === (currentWorkItem?.id || '') &&
-    (!supUserId || act.supervisorId === supUserId || currentWorkItem?.responsiblePerson === supName)
+    act.workItemId === (currentWorkItem?.id || '')
   );
+
+  const projectWorkerIds = React.useMemo(() => {
+    const pwiIds = workItems.filter(wi => wi.projectId === selectedProjectId).map(wi => wi.id);
+    const workerSet = new Set<string>();
+    activities
+      .filter(a => pwiIds.includes(a.workItemId))
+      .forEach(a => a.workerIds.forEach(wid => workerSet.add(wid)));
+    return workerSet;
+  }, [selectedProjectId, workItems, activities]);
 
   // Copy shareable portal link
   const handleCopyLink = () => {
@@ -506,7 +660,8 @@ export default function FieldPortal({
       completionPercentage: Math.round(((activityProgress + qtyToAdd) / activityObj.totalQuantity) * 100),
       notes: prodNotes,
       photos: fileList,
-      documents: []
+      documents: [],
+      gpsLocation: currentGps || undefined
     };
 
     setProdUpdates(prev => [...prev, newUpdate]);
@@ -607,6 +762,7 @@ export default function FieldPortal({
       materialConsumptions: currentConsumptions,
       completionPercentage: Math.round(((adjActivityProgress + qtyToAdd) / activityObj.totalQuantity) * 100),
       notes: prodNotes,
+      gpsLocation: currentGps || updatedUpdates[editingProdIdx].gpsLocation
     };
 
     setProdUpdates(updatedUpdates);
@@ -984,6 +1140,25 @@ export default function FieldPortal({
     try {
       setIsSubmitting(true);
 
+      // Attempt to ensure fresh GPS coordinates if not already available
+      let latestGps = currentGps;
+      if (!latestGps) {
+        try {
+          const gpsRes = await getCurrentGpsCoordinates();
+          if (gpsRes.success && gpsRes.location) {
+            latestGps = gpsRes.location;
+            setCurrentGps(latestGps);
+          }
+        } catch (gpsErr) {
+          console.warn('Silent GPS capture fallback skipped:', gpsErr);
+        }
+      }
+
+      const shiftName = supShiftType === 'Morning' ? (isRtl ? 'شفت صباحي' : 'Morning Shift') :
+                        supShiftType === 'Evening' ? (isRtl ? 'شفت مسائي' : 'Evening Shift') :
+                        supShiftType === 'Night' ? (isRtl ? 'شفت ليلي' : 'Night Shift') :
+                        (isRtl ? 'شفت مخصص' : 'Custom Shift');
+
       // Create CheckIn record
       const checkInRecord: SupervisorCheckIn = {
         id: `check-${Date.now()}`,
@@ -992,8 +1167,13 @@ export default function FieldPortal({
         nationalId: supNationalId,
         badgeNumber: supBadge,
         jobTitle: supTitle || 'Field Inspector',
+        shiftType: shiftName,
+        shiftStartTime: supShiftStartTime,
+        shiftEndTime: supShiftEndTime,
+        shiftNotes: supShiftNotes,
         signatureData: signatureDataUrl || signatureText || 'Signed in Supervisor Portal',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        gpsLocation: latestGps || undefined
       };
 
       // Compile Attendance records
@@ -1023,7 +1203,8 @@ export default function FieldPortal({
             shiftTime: state.isPresent ? state.shiftTime : '',
             supervisorName: supName,
             notes: state.notes,
-            timestamp: reportTimestamp
+            timestamp: reportTimestamp,
+            gpsLocation: latestGps || undefined
           });
         }
       });
@@ -1034,7 +1215,8 @@ export default function FieldPortal({
         id: `upd-${Date.now()}-${index}`,
         projectId: selectedProjectId,
         reporterName: supName,
-        timestamp: reportTimestamp
+        timestamp: reportTimestamp,
+        gpsLocation: p.gpsLocation || latestGps || undefined
       }));
 
       // Assemble SafetyRecord if exists
@@ -1107,7 +1289,8 @@ export default function FieldPortal({
         materialDeliveries: deliveryList,
         safetyRecord: safetyRec,
         delayRecord: delayRec,
-        issueReport: issueRec
+        issueReport: issueRec,
+        gpsLocation: latestGps || undefined
       };
 
       await onAddPendingSubmission(submission);
@@ -1493,6 +1676,23 @@ export default function FieldPortal({
                   <span class="meta-label">${isRtl ? 'رمز التحقق والتسجيل الرقمي' : 'Digital Verification Handshake'}</span>
                   <span class="meta-value" style="font-family: monospace; color: #0284c7;">${lastSubmission.signatureData}</span>
                 </div>
+                ${lastSubmission.checkIn?.shiftType ? `
+                <div class="meta-item" style="grid-column: span 2;">
+                  <span class="meta-label">${isRtl ? 'شفت ومواعيد عمل المشرف المعتمدة' : 'Supervisor Shift & Working Hours'}</span>
+                  <span class="meta-value" style="color: #040957;">
+                    ${lastSubmission.checkIn.shiftType} | ${lastSubmission.checkIn.shiftStartTime || ''} - ${lastSubmission.checkIn.shiftEndTime || ''}
+                    ${lastSubmission.checkIn.shiftNotes ? ` (${lastSubmission.checkIn.shiftNotes})` : ''}
+                  </span>
+                </div>
+                ` : ''}
+                ${lastSubmission.gpsLocation ? `
+                <div class="meta-item" style="grid-column: span 2; background-color: #eff6ff; border-color: #bfdbfe;">
+                  <span class="meta-label" style="color: #1d4ed8;">📍 ${isRtl ? 'بصمة وتوثيق الحضور الميداني (GPS Site Verification Stamp)' : 'GPS Site Attendance & Presence Verification'}</span>
+                  <span class="meta-value" style="color: #1e3a8a; font-family: monospace; font-size: 10px;">
+                    Latitude: ${lastSubmission.gpsLocation.latitude.toFixed(6)}° | Longitude: ${lastSubmission.gpsLocation.longitude.toFixed(6)}° (Accuracy: ±${Math.round(lastSubmission.gpsLocation.accuracy || 5)}m)
+                  </span>
+                </div>
+                ` : ''}
               </div>
             </div>
 
@@ -1981,6 +2181,233 @@ export default function FieldPortal({
                   </div>
                 </div>
 
+                {/* GPS SITE ATTENDANCE VERIFICATION CARD */}
+                <div className="p-4 bg-gradient-to-r from-blue-50/80 via-indigo-50/60 to-slate-50 border border-blue-150 rounded-2xl space-y-3 shadow-2xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${currentGps ? 'bg-emerald-600 text-white shadow-xs' : 'bg-[#040957] text-white shadow-xs'}`}>
+                        <MapPin className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-black text-[#040957] flex items-center gap-2 flex-wrap font-sans">
+                          <span>{isRtl ? 'بصمة الموقع الجغرافي والتحقق من الحضور الميداني (GPS)' : 'GPS Site Attendance & Presence Verification'}</span>
+                          {currentGps ? (
+                            <span className="text-[9px] bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full font-bold">
+                              ✓ {isRtl ? 'تم التحقق من الموقع' : 'Verified On-Site'}
+                            </span>
+                          ) : (
+                            <span className="text-[9px] bg-amber-100 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-full font-bold">
+                              {isCapturingGps ? (isRtl ? 'جاري التقاط الإحداثيات...' : 'Acquiring GPS...') : (isRtl ? 'بانتظار التقاط الموقع' : 'Pending Capture')}
+                            </span>
+                          )}
+                        </h4>
+                        <p className="text-[10px] text-gray-500 mt-0.5">
+                          {isRtl 
+                            ? 'يتم التقاط وتوثيق إحداثيات المشرف تلقائياً لإثبات الحضور الفعلي وربط كشف العمالة والإنجاز بالموقع.'
+                            : 'Captures and attaches supervisor GPS coordinates to authenticate physical on-site presence and progress.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 self-start sm:self-center">
+                      <button
+                        type="button"
+                        disabled={isCapturingGps}
+                        onClick={() => handleCaptureGps(false)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-blue-50 border border-blue-200 text-blue-700 text-[11px] font-extrabold rounded-xl shadow-2xs transition cursor-pointer disabled:opacity-60"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isCapturingGps ? 'animate-spin text-blue-600' : ''}`} />
+                        <span>{isCapturingGps ? (isRtl ? 'جاري التحديد...' : 'Locating...') : (isRtl ? 'التقاط / تحديث الموقع' : 'Capture / Refresh GPS')}</span>
+                      </button>
+
+                      {currentGps && (
+                        <a
+                          href={getGoogleMapsUrl(currentGps.latitude, currentGps.longitude)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1 px-3 py-1.5 bg-[#040957] hover:bg-blue-900 text-white text-[11px] font-bold rounded-xl shadow-2xs transition cursor-pointer"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>{isRtl ? 'خرائط Google' : 'Google Maps'}</span>
+                        </a>
+                      )}
+                    </div>
+                  </div>
+
+                  {currentGps ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1 text-[11px]">
+                      <div className="bg-white/90 border border-blue-100 rounded-xl p-2">
+                        <span className="text-[9px] text-gray-400 font-bold block uppercase">{isRtl ? 'خط العرض (Lat):' : 'Latitude:'}</span>
+                        <span className="font-mono font-black text-[#040957]">{currentGps.latitude.toFixed(6)}°</span>
+                      </div>
+                      <div className="bg-white/90 border border-blue-100 rounded-xl p-2">
+                        <span className="text-[9px] text-gray-400 font-bold block uppercase">{isRtl ? 'خط الطول (Lng):' : 'Longitude:'}</span>
+                        <span className="font-mono font-black text-[#040957]">{currentGps.longitude.toFixed(6)}°</span>
+                      </div>
+                      <div className="bg-white/90 border border-blue-100 rounded-xl p-2">
+                        <span className="text-[9px] text-gray-400 font-bold block uppercase">{isRtl ? 'دقة الإشارة:' : 'Accuracy Radius:'}</span>
+                        <span className="font-mono font-bold text-emerald-700">±{currentGps.accuracy ? Math.round(currentGps.accuracy) : 5} {isRtl ? 'متر' : 'meters'}</span>
+                      </div>
+                      <div className="bg-white/90 border border-blue-100 rounded-xl p-2">
+                        <span className="text-[9px] text-gray-400 font-bold block uppercase">{isRtl ? 'وقت الالتقاط:' : 'Timestamp:'}</span>
+                        <span className="font-mono font-bold text-gray-700">{gpsCapturedAt || new Date(currentGps.timestamp).toLocaleTimeString()}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-2.5 bg-white/80 border border-dashed border-amber-250 rounded-xl flex items-center justify-between text-xs">
+                      <span className="text-amber-800 text-[11px] font-bold">
+                        {gpsErrorMsg ? `⚠️ ${gpsErrorMsg}` : (isRtl ? '📍 انقر فوق "التقاط / تحديث الموقع" لتأكيد حضورك بالموقع عبر الأقمار الصناعية' : '📍 Click "Capture / Refresh GPS" to verify your on-site attendance coordinates')}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleCaptureGps(false)}
+                        className="text-[11px] text-blue-600 font-bold underline shrink-0 hover:text-blue-800 cursor-pointer"
+                      >
+                        {isRtl ? 'إعادة المحاولة' : 'Try Again'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* SUPERVISOR SHIFT & SCHEDULE SECTION */}
+                <div className="pt-4 border-t border-gray-100 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <div>
+                      <h3 className="text-xs font-black text-[#040957] uppercase tracking-wider flex items-center gap-1.5 font-sans">
+                        <span>⏰</span>
+                        {isRtl ? 'شفت ومواعيد عمل المشرف الميداني' : 'Supervisor Work Shift & Operational Schedule'}
+                      </h3>
+                      <p className="text-[10px] text-gray-400 mt-0.5">
+                        {isRtl ? 'حدد شفت العمل وساعات الحضور لربطها تلقائياً مع كشف حضور العمالة الميدانية.' : 'Specify shift schedule and work hours to link with workforce attendance records.'}
+                      </p>
+                    </div>
+
+                    {/* Quick Sync Button */}
+                    <button
+                      type="button"
+                      onClick={() => handleApplyShiftToWorkers()}
+                      className="inline-flex items-center gap-1.5 bg-blue-50 hover:bg-blue-100 text-[#0080FF] border border-blue-200 px-3 py-1.5 rounded-xl text-[10px] font-extrabold transition cursor-pointer self-start sm:self-auto shadow-2xs"
+                    >
+                      <Users className="w-3.5 h-3.5" />
+                      <span>{isRtl ? 'تطبيق على كشف العمالة الآن' : 'Apply to Labour Sheet Now'}</span>
+                    </button>
+                  </div>
+
+                  {/* Preset Shift Buttons */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    {[
+                      { key: 'Morning', labelAr: 'شفت صباحي', labelEn: 'Morning Shift', time: '07:30 AM - 04:30 PM', icon: '☀️', color: 'border-amber-200 bg-amber-50/50 text-amber-900' },
+                      { key: 'Evening', labelAr: 'شفت مسائي', labelEn: 'Evening Shift', time: '03:30 PM - 11:30 PM', icon: '🌆', color: 'border-blue-200 bg-blue-50/50 text-blue-900' },
+                      { key: 'Night', labelAr: 'شفت ليلي', labelEn: 'Night Shift', time: '11:00 PM - 07:00 AM', icon: '🌙', color: 'border-indigo-200 bg-indigo-50/50 text-indigo-900' },
+                      { key: 'Custom', labelAr: 'شفت مخصص', labelEn: 'Custom Shift', time: isRtl ? 'تحديد حر للأوقات' : 'Custom Hours', icon: '⚙️', color: 'border-slate-200 bg-slate-50 text-slate-800' }
+                    ].map((shift) => {
+                      const isSelected = supShiftType === shift.key;
+                      return (
+                        <button
+                          key={shift.key}
+                          type="button"
+                          onClick={() => handleSelectShiftPreset(shift.key as any)}
+                          className={`p-3 rounded-2xl border text-right transition-all flex flex-col justify-between cursor-pointer ${
+                            isSelected
+                              ? 'border-[#0080FF] bg-blue-50/60 ring-2 ring-[#0080FF]/20 shadow-xs'
+                              : 'border-gray-200 bg-white hover:bg-gray-50'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between w-full mb-1">
+                            <span className="text-base">{shift.icon}</span>
+                            {isSelected && (
+                              <span className="bg-[#0080FF] text-white p-0.5 rounded-full">
+                                <Check className="w-3 h-3" />
+                              </span>
+                            )}
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold text-gray-800">
+                              {isRtl ? shift.labelAr : shift.labelEn}
+                            </div>
+                            <div className="text-[10px] text-gray-500 font-mono mt-0.5">
+                              {shift.time}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Start & End Time Inputs */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50/70 p-3.5 rounded-2xl border border-gray-150">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-gray-600 block">
+                        {isRtl ? 'وقت بدء العمل:' : 'Start Time:'}
+                      </label>
+                      <input
+                        type="text"
+                        value={supShiftStartTime}
+                        onChange={(e) => setSupShiftStartTime(e.target.value)}
+                        placeholder="07:30 AM"
+                        className="w-full border border-gray-200 rounded-xl p-2.5 text-xs bg-white text-gray-800 font-bold focus:ring-2 focus:ring-[#0080FF] text-center font-mono"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-gray-600 block">
+                        {isRtl ? 'وقت انتهاء العمل:' : 'End Time:'}
+                      </label>
+                      <input
+                        type="text"
+                        value={supShiftEndTime}
+                        onChange={(e) => setSupShiftEndTime(e.target.value)}
+                        placeholder="04:30 PM"
+                        className="w-full border border-gray-200 rounded-xl p-2.5 text-xs bg-white text-gray-800 font-bold focus:ring-2 focus:ring-[#0080FF] text-center font-mono"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-gray-600 block">
+                        {isRtl ? 'إجمالي ساعات الشفت:' : 'Calculated Duration:'}
+                      </label>
+                      <div className="w-full border border-gray-200 rounded-xl p-2.5 text-xs bg-white text-[#040957] font-extrabold flex items-center justify-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-[#0080FF]" />
+                        <span>
+                          {calculateActualHours(supShiftStartTime, supShiftEndTime) !== null
+                            ? `${calculateActualHours(supShiftStartTime, supShiftEndTime)} ${isRtl ? 'ساعات عمل فعلية' : 'hours'}`
+                            : (isRtl ? 'أوقات غير مكتملة' : 'Pending times')}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Notes & Auto-apply Checkbox */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-gray-600 block">
+                        {isRtl ? 'ملاحظات الشفت والجدول الميداني (اختياري):' : 'Shift Notes & Handover Details (Optional):'}
+                      </label>
+                      <input
+                        type="text"
+                        value={supShiftNotes}
+                        onChange={(e) => setSupShiftNotes(e.target.value)}
+                        placeholder={isRtl ? 'مثال: تسليم وتسلّم الموقع، التنسيق مع مقاول الباطن' : 'e.g. Site handover, subcontractor alignment'}
+                        className="w-full border border-gray-200 rounded-xl p-2.5 text-xs bg-white text-gray-800 font-bold focus:ring-2 focus:ring-[#0080FF]"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-2.5 pt-2 sm:pt-6">
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={autoApplyShiftToAttendance}
+                          onChange={(e) => setAutoApplyShiftToAttendance(e.target.checked)}
+                          className="w-4 h-4 rounded text-[#0080FF] focus:ring-[#0080FF] border-gray-300"
+                        />
+                        <span className="text-xs font-bold text-gray-700">
+                          {isRtl ? 'مزامنة أوقات هذا الشفت تلقائياً مع كشف حضور العمالة' : 'Auto-sync shift schedule with workforce attendance'}
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
                 {/* MORNING MEETING PLAN SECTION */}
                 <div className="pt-4 border-t border-gray-100 space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-slate-50 p-4 rounded-2xl border border-gray-150">
@@ -2188,6 +2615,9 @@ export default function FieldPortal({
                           console.error("Canvas toDataURL failed:", err);
                         }
                       }
+                      if (autoApplyShiftToAttendance) {
+                        handleApplyShiftToWorkers(supShiftType, supShiftStartTime, supShiftEndTime);
+                      }
                       setCurrentStep(2);
                     }}
                     className="bg-[#040957] hover:bg-blue-800 text-white font-extrabold px-6 py-3 rounded-2xl text-xs flex items-center gap-1.5 transition"
@@ -2211,7 +2641,79 @@ export default function FieldPortal({
                   </p>
                 </div>
 
-                <div className="border border-gray-150 rounded-2xl overflow-hidden bg-gray-50/50">
+                {/* Supervisor Shift Schedule Linkage & Sync Card */}
+                <div className="bg-linear-to-r from-blue-50/70 via-slate-50 to-indigo-50/40 border border-blue-100/80 rounded-2xl p-4 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="bg-[#0080FF] text-white p-2 rounded-xl shadow-xs">
+                        <Clock className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-extrabold text-[#040957] flex items-center gap-1.5">
+                          <span>{isRtl ? 'شفت العمل الميداني المعتمد للمشرف:' : 'Active Supervisor Field Shift:'}</span>
+                          <span className="bg-blue-100 text-[#0080FF] px-2 py-0.5 rounded-md text-[10px] font-black">
+                            {supShiftType === 'Morning' ? (isRtl ? 'شفت صباحي ☀️' : 'Morning Shift ☀️') :
+                             supShiftType === 'Evening' ? (isRtl ? 'شفت مسائي 🌆' : 'Evening Shift 🌆') :
+                             supShiftType === 'Night' ? (isRtl ? 'شفت ليلي 🌙' : 'Night Shift 🌙') :
+                             (isRtl ? 'شفت مخصص ⚙️' : 'Custom Shift ⚙️')}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-gray-500 font-mono font-bold mt-0.5">
+                          {supShiftStartTime} - {supShiftEndTime}
+                          {calculateActualHours(supShiftStartTime, supShiftEndTime) !== null && ` (${calculateActualHours(supShiftStartTime, supShiftEndTime)} ${isRtl ? 'ساعات' : 'hrs'})`}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => handleApplyShiftToWorkers(supShiftType, supShiftStartTime, supShiftEndTime)}
+                        className="flex items-center gap-1.5 bg-[#0080FF] hover:bg-blue-600 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+                      >
+                        <Zap className="w-3.5 h-3.5" />
+                        <span>{isRtl ? 'مزامنة أوقات الحاضرين' : 'Sync All Present Workers'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Quick Shift Switchers for Attendance */}
+                  <div className="flex items-center gap-1.5 pt-2 border-t border-blue-100/60 overflow-x-auto text-[10px]">
+                    <span className="font-bold text-gray-500 shrink-0">{isRtl ? 'تطبيق شفت سريع للعمالة:' : 'Quick apply shift:'}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleSelectShiftPreset('Morning');
+                        handleApplyShiftToWorkers('Morning', '07:30 AM', '04:30 PM');
+                      }}
+                      className={`px-2.5 py-1 rounded-lg font-bold border transition cursor-pointer shrink-0 ${supShiftType === 'Morning' ? 'bg-amber-100 border-amber-300 text-amber-900' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'}`}
+                    >
+                      ☀️ {isRtl ? 'صباحي (07:30 ص - 04:30 م)' : 'Morning (07:30 AM - 04:30 PM)'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleSelectShiftPreset('Evening');
+                        handleApplyShiftToWorkers('Evening', '03:30 PM', '11:30 PM');
+                      }}
+                      className={`px-2.5 py-1 rounded-lg font-bold border transition cursor-pointer shrink-0 ${supShiftType === 'Evening' ? 'bg-blue-100 border-blue-300 text-blue-900' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'}`}
+                    >
+                      🌆 {isRtl ? 'مسائي (03:30 م - 11:30 م)' : 'Evening (03:30 PM - 11:30 PM)'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleSelectShiftPreset('Night');
+                        handleApplyShiftToWorkers('Night', '11:00 PM', '07:00 AM');
+                      }}
+                      className={`px-2.5 py-1 rounded-lg font-bold border transition cursor-pointer shrink-0 ${supShiftType === 'Night' ? 'bg-indigo-100 border-indigo-300 text-indigo-900' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'}`}
+                    >
+                      🌙 {isRtl ? 'ليلي (11:00 م - 07:00 ص)' : 'Night (11:00 PM - 07:00 AM)'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="border border-gray-150 rounded-2xl overflow-hidden bg-gray-50/50 overflow-x-auto">
                   <table className="w-full text-right text-xs divide-y divide-gray-100">
                     <thead className="bg-gray-100/50 text-[10px] text-gray-400 font-bold uppercase">
                       <tr>
@@ -2221,16 +2723,7 @@ export default function FieldPortal({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 bg-white">
-                      {workers.filter(w => {
-                        const isActive = w.status === 'Active';
-                        const supervisedWorkItemIds = workItems.filter(wi => wi.responsiblePerson === supName || activities.some(act => act.workItemId === wi.id && act.supervisorId === supUserId)).map(wi => wi.id);
-                        const supervisedWorkerIds = new Set<string>();
-                        activities
-                          .filter(a => supervisedWorkItemIds.includes(a.workItemId) || a.supervisorId === supUserId)
-                          .forEach(a => a.workerIds.forEach(wid => supervisedWorkerIds.add(wid)));
-                        
-                        return isActive && supervisedWorkerIds.has(w.id);
-                      }).map(w => {
+                      {workers.filter(w => w.status === 'Active' && projectWorkerIds.has(w.id)).map(w => {
                         const state = workerAttendanceState[w.id] || {
                           isPresent: true,
                           status: 'Present',
@@ -2412,11 +2905,13 @@ export default function FieldPortal({
                           className="w-full border border-gray-200 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white text-gray-850 font-bold"
                         >
                           {itemActivities.map(act => {
-                            const progress = getActivityProgress(act, progressUpdates);
+                            const project = projects.find(p => p.id === selectedProjectId);
+                            const progress = project?.isCompleted ? 100 : getActivityProgress(act, progressUpdates, project);
                             const isDelayed = act.expectedFinishDate && new Date() > new Date(act.expectedFinishDate) && progress < 100;
+                            const isCompleted = progress >= 100 || !!project?.isCompleted;
                             return (
                               <option key={act.id} value={act.id}>
-                                {isRtl ? act.nameAr : act.nameEn} ({progress}% {isRtl ? 'منجز' : 'Done'}) {isDelayed ? `⚠️ ${isRtl ? 'متأخر' : 'Delayed'}` : ''}
+                                {isRtl ? act.nameAr : act.nameEn} ({progress}% {isCompleted ? (isRtl ? '✓ منجز بالكامل' : '✓ Completed') : (isRtl ? 'منجز' : 'Done')}) {isDelayed ? `⚠️ ${isRtl ? 'متأخر' : 'Delayed'}` : ''}
                               </option>
                             );
                           })}
@@ -2510,7 +3005,7 @@ export default function FieldPortal({
                       <div className="bg-white border border-gray-200 rounded-2xl p-4 space-y-4">
                         {/* Workers marked as present in Step 2 */}
                         <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto p-1">
-                          {workers.filter(w => workerAttendanceState[w.id]?.isPresent).map(w => (
+                          {workers.filter(w => workerAttendanceState[w.id] ? workerAttendanceState[w.id].isPresent : true).map(w => (
                             <button
                               key={w.id}
                               onClick={() => toggleWorkerInProduction(w.fullName)}
@@ -2520,7 +3015,7 @@ export default function FieldPortal({
                               {w.fullName}
                             </button>
                           ))}
-                          {workers.filter(w => workerAttendanceState[w.id]?.isPresent).length === 0 && (
+                          {workers.filter(w => workerAttendanceState[w.id] ? workerAttendanceState[w.id].isPresent : true).length === 0 && (
                             <div className="w-full text-center py-4 text-[10px] text-gray-400 italic">
                               {isRtl ? 'يرجى تحضير العمال في الخطوة السابقة أولاً' : 'Please mark workers as present in Step 2 first'}
                             </div>
@@ -2933,6 +3428,19 @@ export default function FieldPortal({
                               <p className="text-[10px] text-gray-400 font-medium">
                                 {wi ? (isRtl ? wi.nameAr : wi.nameEn) : ''} | {isRtl ? 'المنجز:' : 'Completed:'} <strong className="text-emerald-600">{p.completedQuantity} {act?.unit}</strong>
                               </p>
+                              {p.gpsLocation && (
+                                <a
+                                  href={getGoogleMapsUrl(p.gpsLocation.latitude, p.gpsLocation.longitude)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-[9px] bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded font-mono font-bold transition w-fit"
+                                  title={isRtl ? 'عرض إحداثيات الموقع على الخريطة' : 'View GPS location of this log'}
+                                >
+                                  <MapPin className="w-2.5 h-2.5 text-blue-600" />
+                                  <span>{p.gpsLocation.latitude.toFixed(4)}°, {p.gpsLocation.longitude.toFixed(4)}°</span>
+                                  <ExternalLink className="w-2 h-2 opacity-70" />
+                                </a>
+                              )}
                               {p.workerNames && p.workerNames.length > 0 && (
                                 <div className="flex flex-wrap gap-1 mt-1">
                                   {p.workerNames.map((name, ni) => (
@@ -3492,6 +4000,37 @@ export default function FieldPortal({
                       <span className="text-[10px] bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded font-bold uppercase">
                         {isRtl ? 'جاهز' : 'READY'}
                       </span>
+                    </div>
+
+                    {/* GPS Site Attendance Verification summary */}
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-white border border-blue-150">
+                      <div className="flex items-center gap-2">
+                        <MapPin className="w-4.5 h-4.5 text-[#0080FF]" />
+                        <div>
+                          <span className="font-extrabold text-[#040957] block text-xs flex items-center gap-1.5">
+                            <span>{isRtl ? 'بصمة الحضور والموقع الجغرافي (GPS Site Verification)' : 'GPS Site Attendance & Geo-Stamp'}</span>
+                          </span>
+                          <span className="text-[10px] text-gray-500 font-mono">
+                            {currentGps 
+                              ? (isRtl ? `تم التوثيق: ${currentGps.latitude.toFixed(5)}°, ${currentGps.longitude.toFixed(5)}° (دقة ±${Math.round(currentGps.accuracy || 5)}م)` : `Verified: ${currentGps.latitude.toFixed(5)}°, ${currentGps.longitude.toFixed(5)}° (±${Math.round(currentGps.accuracy || 5)}m)`)
+                              : (isRtl ? 'سيتم التقاط وتثبيت الإحداثيات تلقائياً عند الضغط على إرسال' : 'Will be auto-captured and stamped upon submission')}
+                          </span>
+                        </div>
+                      </div>
+                      {currentGps ? (
+                        <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded font-bold uppercase flex items-center gap-1">
+                          <span>✓</span>
+                          <span>{isRtl ? 'موثّق بالموقع' : 'VERIFIED'}</span>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleCaptureGps(false)}
+                          className="text-[10px] bg-blue-50 hover:bg-blue-100 text-[#0080FF] border border-blue-200 px-2 py-1 rounded font-bold transition cursor-pointer"
+                        >
+                          {isRtl ? 'التقاط الآن' : 'Capture Now'}
+                        </button>
+                      )}
                     </div>
 
                     {/* Progress updates section summary */}

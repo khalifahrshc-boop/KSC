@@ -148,6 +148,32 @@
     border: none !important;
   }
 
+  /* 6. PTW / Start Card document printing mode */
+  body.printing-ptw-active aside,
+  body.printing-ptw-active header,
+  body.printing-ptw-active nav,
+  body.printing-ptw-active button,
+  body.printing-ptw-active .fixed.inset-0 > div > :not(.overflow-y-auto),
+  body.printing-ptw-active .no-print {
+    display: none !important;
+  }
+  body.printing-ptw-active .printable-document-container,
+  body.printing-ptw-active [id^="permit-preview-doc-"],
+  body.printing-ptw-active [id^="startcard-preview-doc-"],
+  body.printing-ptw-active [id^="permit-print-"],
+  body.printing-ptw-active [id^="start-card-print-"] {
+    display: block !important;
+    visibility: visible !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    background: white !important;
+    color: black !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    position: static !important;
+    box-shadow: none !important;
+  }
+
   /* Fix table display in print */
   table {
     display: table !important;
@@ -180,6 +206,28 @@
   .shadow-sm, .shadow-md, .shadow-lg, .shadow-xl, .shadow-2xl {
     box-shadow: none !important;
   }
+}
+
+/* Universal PDF & Print Layout Stability */
+.pdf-avoid-break {
+  page-break-inside: avoid !important;
+  break-inside: avoid !important;
+}
+
+.pdf-page-break {
+  page-break-before: always !important;
+  break-before: page !important;
+}
+
+/* Ensure no text clipping inside printable documents */
+[id^="permit-preview-doc-"] *,
+[id^="startcard-preview-doc-"] *,
+[id^="permit-print-"] *,
+[id^="start-card-print-"] * {
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 /* Slide and Scale transitions */

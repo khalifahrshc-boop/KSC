@@ -273,10 +273,14 @@ export default function Dashboard({
   const parsedToday = useMemo(() => sysNow, [sysNow]);
   const parsedTodayStr = todayStr;
 
-  // Process work items with calculated timelines and progress percentage
+  // Process work items with calculated timelines and progress percentage (Strictly active projects only)
   const processedWorkItems = useMemo(() => {
     return workItems
       .filter(wi => {
+        // Must belong to an active existing project
+        const proj = projects.find(p => p.id === wi.projectId);
+        if (!proj) return false;
+
         // Project filter
         if (filterProjectId !== 'all' && wi.projectId !== filterProjectId) return false;
         
@@ -292,28 +296,28 @@ export default function Dashboard({
         return matchesSearch && matchesType;
       })
       .map(wi => {
-        const proj = projects.find(p => p.id === wi.projectId);
-        const parentNameEn = proj ? proj.nameEn : '-';
-        const parentNameAr = proj ? proj.nameAr : '-';
-        const projectStatus = proj ? proj.status : 'On Track';
+        const proj = projects.find(p => p.id === wi.projectId)!;
+        const parentNameEn = proj.nameEn;
+        const parentNameAr = proj.nameAr;
+        const projectStatus = proj.status || 'On Track';
         
-        // Find child activities
+        // Find child activities that strictly exist
         const wiActivities = activities.filter(a => a.workItemId === wi.id);
         
         // Calculate start & end
-        let start = proj ? parseDateLocal(proj.startDate) : parsedToday;
-        let end = proj ? parseDateLocal(proj.endDate) : parsedToday;
+        let start = proj.startDate ? parseDateLocal(proj.startDate) : parsedToday;
+        let end = proj.endDate ? parseDateLocal(proj.endDate) : parsedToday;
         
         if (wiActivities.length > 0) {
           const dates = wiActivities.map(act => {
-            let startStr = proj?.startDate || parsedTodayStr;
+            let startStr = proj.startDate || parsedTodayStr;
             if (act.dependsOnActivityId) {
               const dep = activities.find(a => a.id === act.dependsOnActivityId);
               if (dep && dep.expectedFinishDate) {
                 startStr = dep.expectedFinishDate;
               }
             }
-            const endStr = act.expectedFinishDate || proj?.endDate || parsedTodayStr;
+            const endStr = act.expectedFinishDate || proj.endDate || parsedTodayStr;
             return {
               start: parseDateLocal(startStr),
               end: parseDateLocal(endStr)
@@ -325,7 +329,7 @@ export default function Dashboard({
         }
         
         // Calculate progress
-        const progress = Math.round(getWorkItemProgress(wi, activities, progressUpdates));
+        const progress = Math.round(getWorkItemProgress(wi, activities, progressUpdates, proj));
         
         return {
           ...wi,
@@ -338,13 +342,18 @@ export default function Dashboard({
           activities: wiActivities
         };
       });
-  }, [workItems, filterProjectId, ganttSearch, ganttTypeFilter, projects, activities, progressUpdates, parsedToday]);
+  }, [workItems, filterProjectId, ganttSearch, ganttTypeFilter, projects, activities, progressUpdates, parsedToday, parsedTodayStr]);
 
   const ganttTimelineData = useMemo(() => {
     if (processedWorkItems.length === 0) {
-      const minDate = new Date('2026-07-01');
-      const maxDate = new Date('2026-08-31');
-      return { minDate, maxDate, totalDays: 60 };
+      const minDate = new Date(parsedToday);
+      minDate.setDate(minDate.getDate() - 15);
+      const maxDate = new Date(parsedToday);
+      maxDate.setDate(maxDate.getDate() + 45);
+      minDate.setHours(0, 0, 0, 0);
+      maxDate.setHours(23, 59, 59, 999);
+      const totalDays = Math.ceil((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24));
+      return { minDate, maxDate, totalDays };
     }
     
     const startTimes = processedWorkItems.map(wi => wi.start.getTime());
@@ -1121,18 +1130,25 @@ export default function Dashboard({
     ? `${delayedCount} متأخر، ${aheadCount} متقدم`
     : `${delayedCount} Delayed, ${aheadCount} Ahead`;
 
-  const completedWiCount = workItems.filter(wi => {
-    const progress = getWorkItemProgress(wi, activities, progressUpdates);
-    return progress === 100;
+  const validWiList = workItems.filter(wi => projects.some(p => p.id === wi.projectId));
+  const validWiIds = new Set(validWiList.map(wi => wi.id));
+  const validActList = activities.filter(act => validWiIds.has(act.workItemId));
+
+  const completedWiCount = validWiList.filter(wi => {
+    const proj = projects.find(p => p.id === wi.projectId);
+    const progress = getWorkItemProgress(wi, validActList, progressUpdates, proj);
+    return progress >= 100 || !!proj?.isCompleted;
   }).length;
   
   const workItemsSub = isRtl
-    ? `${completedWiCount} مكتمل من ${totalWiCount}`
-    : `${completedWiCount} completed of ${totalWiCount}`;
+    ? `${completedWiCount} مكتمل من ${validWiList.length}`
+    : `${completedWiCount} completed of ${validWiList.length}`;
 
-  const activeActivitiesCount = activities.filter(act => {
-    const progress = getActivityProgress(act, progressUpdates);
-    return progress > 0 && progress < 100;
+  const activeActivitiesCount = validActList.filter(act => {
+    const parentWi = validWiList.find(w => w.id === act.workItemId);
+    const proj = projects.find(p => p.id === parentWi?.projectId);
+    const progress = proj?.isCompleted ? 100 : getActivityProgress(act, progressUpdates, proj);
+    return progress > 0 && progress < 100 && !proj?.isCompleted;
   }).length;
 
   const activitiesSub = isRtl
@@ -1271,28 +1287,7 @@ export default function Dashboard({
       </div>
 
       {/* Grid of Main KPIs */}
-      <div className="flex gap-4 pb-4 overflow-x-auto md:hidden">
-        {[
-          { label: t.totalProjects, val: totalProjCount, sub: projectsSub, icon: Briefcase, color: 'text-blue-600', bg: 'bg-blue-50' },
-          { label: t.totalWorkItems, val: totalWiCount, sub: workItemsSub, icon: Layers, color: 'text-teal-600', bg: 'bg-teal-50' },
-          { label: t.totalActivities, val: totalActCount, sub: activitiesSub, icon: Workflow, color: 'text-indigo-600', bg: 'bg-indigo-50' },
-          { label: t.dailyProd, val: finalDailyProd, sub: dailyProdSub, icon: TrendingUp, color: 'text-amber-600', bg: 'bg-amber-50', trend: true },
-        ].map((kpi, i) => (
-          <div
-            key={i}
-            className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 min-w-[220px] flex items-center justify-between"
-          >
-            <div className="space-y-2">
-              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{kpi.label}</p>
-              <h3 className="text-2xl font-black text-[#040957] font-sans">{kpi.val}</h3>
-            </div>
-            <div className={`p-3 rounded-xl ${kpi.bg}`}>
-              <kpi.icon className={`w-6 h-6 ${kpi.color}`} />
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         {[
           { label: t.totalProjects, val: totalProjCount, sub: projectsSub, icon: Briefcase, color: 'text-blue-600', bg: 'bg-blue-50' },
           { label: t.totalWorkItems, val: totalWiCount, sub: workItemsSub, icon: Layers, color: 'text-teal-600', bg: 'bg-teal-50' },
@@ -1303,18 +1298,18 @@ export default function Dashboard({
             key={i}
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: i * 0.1 }}
-            className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex items-center justify-between hover:shadow-md transition-all duration-300 group cursor-default"
+            transition={{ delay: i * 0.05 }}
+            className="bg-white p-3.5 sm:p-5 rounded-2xl shadow-sm border border-gray-200 flex items-center justify-between hover:shadow-md transition-all duration-300 group cursor-default"
           >
-            <div className="space-y-2">
-              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{kpi.label}</p>
-              <h3 className="text-3xl font-black text-[#040957] font-sans group-hover:scale-105 transition-transform origin-left">{kpi.val}</h3>
-              <p className={`text-[10px] font-bold ${kpi.trend ? 'text-emerald-600' : 'text-gray-400'}`}>
+            <div className="space-y-1 sm:space-y-2">
+              <p className="text-[9px] sm:text-[10px] font-black text-gray-400 uppercase tracking-wider truncate">{kpi.label}</p>
+              <h3 className="text-xl sm:text-3xl font-black text-[#040957] font-sans group-hover:scale-105 transition-transform origin-left">{kpi.val}</h3>
+              <p className={`text-[9px] sm:text-[10px] font-bold ${kpi.trend ? 'text-emerald-600' : 'text-gray-400'} truncate`}>
                 {kpi.sub}
               </p>
             </div>
-            <div className={`p-3 ${kpi.bg} ${kpi.color} rounded-xl group-hover:rotate-12 transition-transform`}>
-              <kpi.icon className="w-8 h-8" />
+            <div className={`p-2.5 sm:p-3 ${kpi.bg} ${kpi.color} rounded-xl group-hover:rotate-12 transition-transform shrink-0`}>
+              <kpi.icon className="w-5 h-5 sm:w-8 sm:h-8" />
             </div>
           </motion.div>
         ))}

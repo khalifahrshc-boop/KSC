@@ -8,10 +8,18 @@ import { Activity, WorkItem, Project, ProgressUpdate, WarehouseMaterial, Attenda
 /**
  * Calculates the actual progress percentage of a single Activity based on its Progress Updates.
  */
-export function getActivityProgress(activity: Activity, progressUpdates: ProgressUpdate[]): number {
+export function getActivityProgress(
+  activity: Activity, 
+  progressUpdates: ProgressUpdate[],
+  project?: Project
+): number {
+  if (project?.isCompleted) return 100;
   const updates = progressUpdates.filter(upd => upd.activityId === activity.id);
   const totalCompleted = updates.reduce((sum, upd) => sum + (upd.completedQuantity || 0), 0);
-  if (!activity.totalQuantity || activity.totalQuantity <= 0) return 0;
+  if (!activity.totalQuantity || activity.totalQuantity <= 0) {
+    if (activity.unit?.toLowerCase() === 'milestone' && totalCompleted > 0) return 100;
+    return totalCompleted > 0 ? 100 : 0;
+  }
   const percentage = (totalCompleted / activity.totalQuantity) * 100;
   return Math.min(100, Math.round(percentage));
 }
@@ -19,7 +27,12 @@ export function getActivityProgress(activity: Activity, progressUpdates: Progres
 /**
  * Calculates the actual completed quantity of a single Activity based on its Progress Updates.
  */
-export function getActivityCompletedQuantity(activity: Activity, progressUpdates: ProgressUpdate[]): number {
+export function getActivityCompletedQuantity(
+  activity: Activity, 
+  progressUpdates: ProgressUpdate[],
+  project?: Project
+): number {
+  if (project?.isCompleted) return activity.totalQuantity || 0;
   const updates = progressUpdates.filter(upd => upd.activityId === activity.id);
   return updates.reduce((sum, upd) => sum + (upd.completedQuantity || 0), 0);
 }
@@ -30,11 +43,13 @@ export function getActivityCompletedQuantity(activity: Activity, progressUpdates
 export function getWorkItemProgress(
   workItem: WorkItem, 
   activities: Activity[], 
-  progressUpdates: ProgressUpdate[]
+  progressUpdates: ProgressUpdate[],
+  project?: Project
 ): number {
+  if (project?.isCompleted) return 100;
   const wiActivities = activities.filter(act => act.workItemId === workItem.id);
   if (wiActivities.length === 0) return 0;
-  const totalActProgress = wiActivities.reduce((sum, act) => sum + getActivityProgress(act, progressUpdates), 0);
+  const totalActProgress = wiActivities.reduce((sum, act) => sum + getActivityProgress(act, progressUpdates, project), 0);
   return Math.round(totalActProgress / wiActivities.length);
 }
 
@@ -47,9 +62,10 @@ export function getProjectProgress(
   activities: Activity[], 
   progressUpdates: ProgressUpdate[]
 ): number {
+  if (project.isCompleted) return 100;
   const projWorkItems = workItems.filter(wi => wi.projectId === project.id);
   if (projWorkItems.length === 0) return 0;
-  const totalWiProgress = projWorkItems.reduce((sum, wi) => sum + getWorkItemProgress(wi, activities, progressUpdates), 0);
+  const totalWiProgress = projWorkItems.reduce((sum, wi) => sum + getWorkItemProgress(wi, activities, progressUpdates, project), 0);
   return Math.round(totalWiProgress / projWorkItems.length);
 }
 
@@ -87,7 +103,8 @@ export function getActivityStatus(
   project?: Project,
   allActivities?: Activity[]
 ): { status: 'On Track' | 'Delayed' | 'Completed' | 'Ahead'; reason?: string } {
-  const progress = getActivityProgress(activity, progressUpdates);
+  if (project?.isCompleted) return { status: 'Completed' };
+  const progress = getActivityProgress(activity, progressUpdates, project);
   if (progress >= 100) return { status: 'Completed' };
 
   const now = new Date();

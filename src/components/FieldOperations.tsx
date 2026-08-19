@@ -60,8 +60,11 @@ import {
   Archive,
   PlusCircle,
   Search,
-  Trash2
+  Trash2,
+  MapPin,
+  ExternalLink
 } from 'lucide-react';
+import { getGoogleMapsUrl } from '../utils/geolocation';
 import { getSystemToday } from '../utils/progressCalculations';
 
 interface FieldOperationsProps {
@@ -316,6 +319,64 @@ export default function FieldOperations({
     }
   };
 
+  // Submission Approval & Rejection Modal States
+  const [approveModalSub, setApproveModalSub] = useState<FieldWorkSubmission | null>(null);
+  const [rejectModalSub, setRejectModalSub] = useState<FieldWorkSubmission | null>(null);
+  const [approvingManagerName, setApprovingManagerName] = useState<string>('');
+  const [rejectionReasonText, setRejectionReasonText] = useState<string>('');
+  const [isProcessingAction, setIsProcessingAction] = useState<boolean>(false);
+
+  const handleOpenApproveModal = (sub: FieldWorkSubmission) => {
+    setApproveModalSub(sub);
+    setApprovingManagerName(currentUser?.name || (isRtl ? 'المهندس المسؤول' : 'Project Manager'));
+  };
+
+  const handleConfirmApprove = async () => {
+    if (!approveModalSub) return;
+    if (!onApproveSubmission) {
+      triggerToast(isRtl ? 'دالة الاعتماد غير معرفة' : 'Approval function not configured');
+      return;
+    }
+    try {
+      setIsProcessingAction(true);
+      const manager = approvingManagerName.trim() || currentUser?.name || (isRtl ? 'المهندس المسؤول' : 'Authorized Manager');
+      await onApproveSubmission(approveModalSub.id, manager);
+      triggerToast(isRtl ? 'تم اعتماد التقرير الميداني ودمج كافة بياناته بنجاح!' : 'Field Work approved and integrated successfully!');
+      setApproveModalSub(null);
+    } catch (err: any) {
+      console.error("Error approving submission:", err);
+      triggerToast(isRtl ? 'حدث خطأ أثناء اعتماد التقرير' : 'Failed to approve report');
+    } finally {
+      setIsProcessingAction(false);
+    }
+  };
+
+  const handleOpenRejectModal = (sub: FieldWorkSubmission, initialReason: string = '') => {
+    setRejectModalSub(sub);
+    setRejectionReasonText(initialReason || '');
+  };
+
+  const handleConfirmReject = async () => {
+    if (!rejectModalSub) return;
+    if (!onRejectSubmission) {
+      triggerToast(isRtl ? 'دالة الرفض غير معرفة' : 'Rejection function not configured');
+      return;
+    }
+    try {
+      setIsProcessingAction(true);
+      const reason = rejectionReasonText.trim() || (isRtl ? 'بيانات غير مكتملة أو ملاحظات على الإنجاز الميداني' : 'Incomplete or unverified field data');
+      await onRejectSubmission(rejectModalSub.id, reason);
+      triggerToast(isRtl ? 'تم رفض التقرير وإعادته للمشرف للتعديل' : 'Field Work rejected and sent back to supervisor');
+      setRejectModalSub(null);
+      setRejectionReasonText('');
+    } catch (err: any) {
+      console.error("Error rejecting submission:", err);
+      triggerToast(isRtl ? 'حدث خطأ أثناء رفض التقرير' : 'Failed to reject report');
+    } finally {
+      setIsProcessingAction(false);
+    }
+  };
+
   // Material tracking state
   const [materialDeliveries, setMaterialDeliveries] = useState<Omit<MaterialDelivery, 'id'>[]>([]);
   const [currentConsumptions, setCurrentConsumptions] = useState<MaterialConsumption[]>([]);
@@ -387,6 +448,70 @@ export default function FieldOperations({
   const [signatureText, setSignatureText] = useState('');
   const [isSignCanvasDrawn, setIsSignCanvasDrawn] = useState(false);
   const [checkInDone, setCheckInDone] = useState(false);
+
+  // Supervisor Shift Schedule State & Workforce Linkage
+  const [supShiftType, setSupShiftType] = useState<'Morning' | 'Evening' | 'Night' | 'Custom'>('Morning');
+  const [supShiftStartTime, setSupShiftStartTime] = useState<string>('07:30 AM');
+  const [supShiftEndTime, setSupShiftEndTime] = useState<string>('04:30 PM');
+  const [supShiftNotes, setSupShiftNotes] = useState<string>('');
+  const [autoApplyShiftToAttendance, setAutoApplyShiftToAttendance] = useState<boolean>(true);
+
+  // Quick helper to switch shift presets
+  const handleSelectShiftPreset = (type: 'Morning' | 'Evening' | 'Night' | 'Custom') => {
+    setSupShiftType(type);
+    if (type === 'Morning') {
+      setSupShiftStartTime('07:30 AM');
+      setSupShiftEndTime('04:30 PM');
+    } else if (type === 'Evening') {
+      setSupShiftStartTime('03:30 PM');
+      setSupShiftEndTime('11:30 PM');
+    } else if (type === 'Night') {
+      setSupShiftStartTime('11:00 PM');
+      setSupShiftEndTime('07:00 AM');
+    }
+  };
+
+  // Sync / Apply supervisor shift schedule directly to workforce attendance state
+  const handleApplyShiftToWorkers = (targetShiftType?: string, targetStart?: string, targetEnd?: string) => {
+    const shiftKind = targetShiftType || supShiftType;
+    const startT = targetStart || supShiftStartTime;
+    const endT = targetEnd || supShiftEndTime;
+
+    const parsedHrs = calculateActualHours(startT, endT);
+    const hrsSuffix = parsedHrs ? ` (${parsedHrs} ${isRtl ? 'ساعات' : 'hrs'})` : '';
+
+    let shiftLabel = '';
+    if (shiftKind === 'Morning') {
+      shiftLabel = isRtl ? `شفت صباحي${hrsSuffix || ' - ٩ ساعات'}` : `Morning Shift${hrsSuffix || ' - 9h'}`;
+    } else if (shiftKind === 'Evening') {
+      shiftLabel = isRtl ? `شفت مسائي${hrsSuffix || ' - ٩ ساعات'}` : `Evening Shift${hrsSuffix || ' - 9h'}`;
+    } else if (shiftKind === 'Night') {
+      shiftLabel = isRtl ? `شفت ليلي${hrsSuffix || ' - ٨ ساعات'}` : `Night Shift${hrsSuffix || ' - 8h'}`;
+    } else {
+      shiftLabel = isRtl ? `شفت مخصص${hrsSuffix}` : `Custom Shift${hrsSuffix}`;
+    }
+
+    setWorkerAttendanceState(prev => {
+      const updated = { ...prev };
+      Object.keys(updated).forEach(wId => {
+        if (updated[wId].isPresent) {
+          updated[wId] = {
+            ...updated[wId],
+            startTime: startT,
+            endTime: endT,
+            shiftTime: shiftLabel
+          };
+        }
+      });
+      return updated;
+    });
+
+    triggerToast(
+      isRtl
+        ? `تم تطبيق مواعيد ${shiftLabel} (${startT} - ${endT}) على كشف الحضور بنجاح!`
+        : `Applied ${shiftLabel} schedule (${startT} - ${endT}) to attendance sheet!`
+    );
+  };
 
   // --- 2. Progress Update (Every 2 hr) Form State ---
   const [prodWiId, setProdWiId] = useState('');
@@ -549,6 +674,11 @@ export default function FieldOperations({
       return;
     }
 
+    const shiftName = supShiftType === 'Morning' ? (isRtl ? 'شفت صباحي' : 'Morning Shift') :
+                      supShiftType === 'Evening' ? (isRtl ? 'شفت مسائي' : 'Evening Shift') :
+                      supShiftType === 'Night' ? (isRtl ? 'شفت ليلي' : 'Night Shift') :
+                      (isRtl ? 'شفت مخصص' : 'Custom Shift');
+
     const checkInRecord: SupervisorCheckIn = {
       id: `check-${Date.now()}`,
       projectId: selectedProjectId,
@@ -556,13 +686,26 @@ export default function FieldOperations({
       nationalId: supNationalId,
       badgeNumber: supBadge,
       jobTitle: supTitle,
+      shiftType: shiftName,
+      shiftStartTime: supShiftStartTime,
+      shiftEndTime: supShiftEndTime,
+      shiftNotes: supShiftNotes,
       signatureData: signatureText || 'Hand-drawn Ink authorized',
       timestamp: new Date().toISOString()
     };
 
     onAddCheckIn(checkInRecord);
     setCheckInDone(true);
-    triggerToast(t.checkinSuccess);
+
+    if (autoApplyShiftToAttendance) {
+      handleApplyShiftToWorkers(supShiftType, supShiftStartTime, supShiftEndTime);
+    }
+
+    triggerToast(
+      isRtl 
+        ? `تم تسجيل حضور المشرف بنجاح وتثبيت مواعيد ${shiftName} (${supShiftStartTime} - ${supShiftEndTime})!`
+        : `Supervisor check-in confirmed with ${shiftName} (${supShiftStartTime} - ${supShiftEndTime})!`
+    );
   };
 
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
@@ -697,6 +840,14 @@ export default function FieldOperations({
               <div style="font-size: 8px; color: #64748b; font-weight: bold; text-transform: uppercase; margin-bottom: 4px;">${isRtl ? 'المشرف المسؤول' : 'Responsible Supervisor'}</div>
               <div style="font-size: 11px; font-weight: bold; color: #1e293b;">${submission.supervisorName} (${submission.badgeNumber})</div>
             </div>
+            ${submission.gpsLocation ? `
+            <div style="grid-column: span 2; background-color: #eff6ff; padding: 10px 12px; border-radius: 10px; border: 1px solid #bfdbfe;">
+              <div style="font-size: 8px; color: #1d4ed8; font-weight: bold; text-transform: uppercase; margin-bottom: 3px;">📍 ${isRtl ? 'بصمة وتوثيق الحضور الجغرافي للموقع (GPS Site Verification)' : 'GPS Site Attendance & Presence Verification'}</div>
+              <div style="font-size: 10px; font-family: monospace; font-weight: bold; color: #1e3a8a;">
+                Lat: ${submission.gpsLocation.latitude.toFixed(6)}° | Lng: ${submission.gpsLocation.longitude.toFixed(6)}° (Accuracy: ±${Math.round(submission.gpsLocation.accuracy || 5)}m)
+              </div>
+            </div>
+            ` : ''}
           </div>
 
           <div style="background-color: ${submission.status === 'Approved' ? '#f0fdf4' : submission.status === 'Rejected' ? '#fef2f2' : '#fffbeb'}; border: 1px solid ${submission.status === 'Approved' ? '#bbf7d0' : submission.status === 'Rejected' ? '#fecaca' : '#fef08a'}; border-radius: 10px; padding: 12px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
@@ -1403,24 +1554,45 @@ export default function FieldOperations({
                   <PenTool className="w-5 h-5 text-[#0080FF]" />
                   {t.supervisorCheckin}
                 </h3>
-                <p className="text-xs text-gray-400 mt-0.5">{isRtl ? 'إقرار الحضور والمطابقة للتصنيفات الهندسية والامتثال المهني يومياً' : 'Formal certification of site readiness and safety compliance'}</p>
+                <p className="text-xs text-gray-400 mt-0.5">{isRtl ? 'إقرار الحضور وتحديد شفت العمل وساعات الدوام ومطابقة الامتثال المهني يومياً' : 'Formal certification of supervisor attendance, shift hours, and safety compliance'}</p>
               </div>
 
               {checkInDone ? (
-                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-5 text-center space-y-3">
+                <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-6 text-center space-y-4 shadow-xs">
                   <CheckCircle className="w-12 h-12 text-emerald-500 mx-auto animate-bounce" />
-                  <h4 className="font-bold text-emerald-800 text-sm">{isRtl ? 'تم توقيع حضورك بنجاح!' : 'Attendance Authenticated successfully'}</h4>
-                  <p className="text-xs text-emerald-600">{isRtl ? `الاسم: ${supName} | الشارة: ${supBadge}` : `Name: ${supName} | Badge ID: ${supBadge}`}</p>
-                  <button 
-                    type="button" 
-                    onClick={() => setCheckInDone(false)}
-                    className="text-xs text-[#040957] font-bold underline hover:text-[#0080FF]"
-                  >
-                    {isRtl ? 'إعادة التوقيع مجدداً' : 'Re-verify Signature'}
-                  </button>
+                  <div>
+                    <h4 className="font-extrabold text-emerald-900 text-base">{isRtl ? 'تم توقيع حضورك واعتماد شفت العمل بنجاح!' : 'Supervisor Check-in & Shift Confirmed Successfully!'}</h4>
+                    <p className="text-xs text-emerald-700 mt-1 font-medium">
+                      {isRtl 
+                        ? `المشرف: ${supName} | الشارة: ${supBadge} | الشفت: ${supShiftType === 'Morning' ? 'شفت صباحي' : supShiftType === 'Evening' ? 'شفت مسائي' : supShiftType === 'Night' ? 'شفت ليلي' : 'شفت مخصص'} (${supShiftStartTime} - ${supShiftEndTime})`
+                        : `Supervisor: ${supName} | Badge: ${supBadge} | Shift: ${supShiftType} (${supShiftStartTime} - ${supShiftEndTime})`}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        handleApplyShiftToWorkers();
+                        setActiveTab('attendance');
+                      }}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Users className="w-4 h-4" />
+                      <span>{isRtl ? 'الانتقال لكشف حضور العمال ومزامنته' : 'Go to Workforce Attendance & Sync'}</span>
+                    </button>
+                    <button 
+                      type="button" 
+                      onClick={() => setCheckInDone(false)}
+                      className="text-xs text-emerald-800 bg-white border border-emerald-200 hover:bg-emerald-100 font-bold px-4 py-2 rounded-xl transition shadow-xs cursor-pointer"
+                    >
+                      {isRtl ? 'تعديل الشفت أو إعادة التوقيع' : 'Edit Shift / Re-sign'}
+                    </button>
+                  </div>
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-5">
+                  {/* Supervisor Personal Details */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-1">
                       <label className="block text-xs font-bold text-gray-500">{t.supervisorName}</label>
@@ -1428,7 +1600,7 @@ export default function FieldOperations({
                         type="text" 
                         value={supName}
                         onChange={(e) => setSupName(e.target.value)}
-                        className="w-full border border-gray-200 rounded-xl p-2 text-xs"
+                        className="w-full border border-gray-200 rounded-xl p-2.5 text-xs font-bold text-gray-800 focus:ring-2 focus:ring-[#0080FF] focus:outline-none"
                       />
                     </div>
                     <div className="space-y-1">
@@ -1437,7 +1609,7 @@ export default function FieldOperations({
                         type="text" 
                         value={supNationalId}
                         onChange={(e) => setSupNationalId(e.target.value)}
-                        className="w-full border border-gray-200 rounded-xl p-2 text-xs"
+                        className="w-full border border-gray-200 rounded-xl p-2.5 text-xs font-bold text-gray-800 focus:ring-2 focus:ring-[#0080FF] focus:outline-none"
                       />
                     </div>
                   </div>
@@ -1449,7 +1621,7 @@ export default function FieldOperations({
                         type="text" 
                         value={supBadge}
                         onChange={(e) => setSupBadge(e.target.value)}
-                        className="w-full border border-gray-200 rounded-xl p-2 text-xs"
+                        className="w-full border border-gray-200 rounded-xl p-2.5 text-xs font-bold text-gray-800 focus:ring-2 focus:ring-[#0080FF] focus:outline-none"
                       />
                     </div>
                     <div className="space-y-1">
@@ -1458,8 +1630,124 @@ export default function FieldOperations({
                         type="text" 
                         value={supTitle}
                         onChange={(e) => setSupTitle(e.target.value)}
-                        className="w-full border border-gray-200 rounded-xl p-2 text-xs"
+                        className="w-full border border-gray-200 rounded-xl p-2.5 text-xs font-bold text-gray-800 focus:ring-2 focus:ring-[#0080FF] focus:outline-none"
                       />
+                    </div>
+                  </div>
+
+                  {/* SUPERVISOR SHIFT & OPERATIONAL TIMINGS (NEW FEATURE) */}
+                  <div className="bg-gradient-to-br from-blue-50/70 via-indigo-50/40 to-slate-50 border border-blue-150 rounded-2xl p-4.5 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-blue-100/80 pb-2.5">
+                      <div>
+                        <h4 className="font-black text-xs text-[#040957] uppercase tracking-wider flex items-center gap-1.5">
+                          <Clock className="w-4 h-4 text-[#0080FF]" />
+                          <span>{isRtl ? 'شفت العمل الميداني ومواعيد الدوام' : 'Field Work Shift & Timings'}</span>
+                        </h4>
+                        <p className="text-[11px] text-gray-500 mt-0.5">
+                          {isRtl ? 'حدد نوع شفت عمل المشرف وساعات البدء والانتهاء لمزامنتها مع الحضور' : 'Configure supervisor shift schedule, start/end hours and link to attendance'}
+                        </p>
+                      </div>
+                      {(() => {
+                        const calculatedHrs = calculateActualHours(supShiftStartTime, supShiftEndTime);
+                        return calculatedHrs !== null ? (
+                          <div className="bg-blue-600 text-white font-extrabold text-[10px] px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-xs w-fit">
+                            <span>⏱️</span>
+                            <span>{isRtl ? `إجمالي ساعات الشفت: ${calculatedHrs} س` : `Total Duration: ${calculatedHrs} hrs`}</span>
+                          </div>
+                        ) : null;
+                      })()}
+                    </div>
+
+                    {/* Shift Presets Buttons */}
+                    <div className="space-y-1.5">
+                      <label className="block text-[11px] font-bold text-gray-600">
+                        {isRtl ? 'اختر نوع الشفت الميداني:' : 'Select Shift Type:'}
+                      </label>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {[
+                          { id: 'Morning', labelAr: '☀️ شفت صباحي', labelEn: '☀️ Morning Shift', defaultTime: '07:30 AM - 04:30 PM' },
+                          { id: 'Evening', labelAr: '🌅 شفت مسائي', labelEn: '🌅 Evening Shift', defaultTime: '03:30 PM - 11:30 PM' },
+                          { id: 'Night', labelAr: '🌙 شفت ليلي', labelEn: '🌙 Night Shift', defaultTime: '11:00 PM - 07:00 AM' },
+                          { id: 'Custom', labelAr: '⚙️ شفت مخصص', labelEn: '⚙️ Custom Shift', defaultTime: isRtl ? 'تحديد حر' : 'Custom Hours' }
+                        ].map((preset) => (
+                          <button
+                            key={preset.id}
+                            type="button"
+                            onClick={() => handleSelectShiftPreset(preset.id as any)}
+                            className={`p-2.5 rounded-xl border text-right transition-all flex flex-col justify-between cursor-pointer ${
+                              supShiftType === preset.id
+                                ? 'bg-white border-[#0080FF] ring-2 ring-[#0080FF]/30 text-[#040957] shadow-xs font-black'
+                                : 'bg-white/70 hover:bg-white border-gray-200 text-gray-600 font-semibold'
+                            }`}
+                          >
+                            <span className="text-xs">{isRtl ? preset.labelAr : preset.labelEn}</span>
+                            <span className="text-[9px] text-gray-400 font-mono mt-1 font-normal">{preset.defaultTime}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Start & End Times Inputs */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      <div className="space-y-1">
+                        <label className="block text-[11px] font-bold text-gray-600">
+                          {isRtl ? 'وقت بدء العمل (Clock-In):' : 'Work Start Time:'}
+                        </label>
+                        <input
+                          type="text"
+                          value={supShiftStartTime}
+                          onChange={(e) => setSupShiftStartTime(e.target.value)}
+                          placeholder="07:30 AM"
+                          className="w-full border border-gray-200 bg-white rounded-xl p-2 text-xs font-bold text-[#040957] font-mono focus:ring-2 focus:ring-[#0080FF] focus:outline-none"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="block text-[11px] font-bold text-gray-600">
+                          {isRtl ? 'وقت انتهاء العمل (Clock-Out):' : 'Work End Time:'}
+                        </label>
+                        <input
+                          type="text"
+                          value={supShiftEndTime}
+                          onChange={(e) => setSupShiftEndTime(e.target.value)}
+                          placeholder="04:30 PM"
+                          className="w-full border border-gray-200 bg-white rounded-xl p-2 text-xs font-bold text-[#040957] font-mono focus:ring-2 focus:ring-[#0080FF] focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Shift Notes & Attendance Link Actions */}
+                    <div className="space-y-2 pt-1 border-t border-blue-100/60">
+                      <input
+                        type="text"
+                        value={supShiftNotes}
+                        onChange={(e) => setSupShiftNotes(e.target.value)}
+                        placeholder={isRtl ? 'ملاحظات وتوجيهات الشفت (مثل: مناوبة طارئة، صب خرسانة ليلي، تبديل ورديات)' : 'Shift notes (e.g. emergency shift, night concrete pouring)'}
+                        className="w-full border border-gray-200 bg-white rounded-xl p-2 text-[11px] text-gray-700 focus:ring-2 focus:ring-[#0080FF] focus:outline-none"
+                      />
+
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={autoApplyShiftToAttendance}
+                            onChange={(e) => setAutoApplyShiftToAttendance(e.target.checked)}
+                            className="rounded border-gray-300 text-[#0080FF] focus:ring-[#0080FF] w-4 h-4"
+                          />
+                          <span className="text-[11px] font-bold text-gray-700">
+                            {isRtl ? 'تطبيق وربط مواعيد هذا الشفت تلقائياً مع كشف حضور العمال' : 'Auto-link shift timings to workforce attendance sheet'}
+                          </span>
+                        </label>
+
+                        <button
+                          type="button"
+                          onClick={() => handleApplyShiftToWorkers()}
+                          className="bg-white hover:bg-blue-50 text-[#0080FF] border border-blue-200 text-[10px] font-bold px-3 py-1.5 rounded-lg transition-all shadow-2xs flex items-center gap-1 self-end sm:self-auto cursor-pointer"
+                        >
+                          <span>⚡</span>
+                          <span>{isRtl ? 'تطبيق على كشف الحضور الآن' : 'Apply to Attendance Now'}</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -1486,7 +1774,7 @@ export default function FieldOperations({
                           {isRtl ? 'تنظيف التوقيع ممسوحاً' : 'Clear drawing'}
                         </button>
                         <span className="text-gray-400 text-[10px] italic">
-                          {isRtl ? '* حرك الفأرة/الإصبع للرقم في المربع أعلاه للتوقيع الرقمي.' : '* Use mouse/touch screen to draw digital ink signature.'}
+                          {isRtl ? '* حرك الفأرة/الإصبع للرسم في المربع أعلاه للتوقيع الرقمي.' : '* Use mouse/touch screen to draw digital ink signature.'}
                         </span>
                       </div>
                     </div>
@@ -1507,9 +1795,10 @@ export default function FieldOperations({
                     <button
                       type="submit"
                       disabled={isReadOnly}
-                      className="w-full bg-[#040957] hover:bg-[#0080FF] text-white py-2.5 rounded-xl font-bold text-xs transition shadow-sm"
+                      className="w-full bg-[#040957] hover:bg-[#0080FF] text-white py-3 rounded-xl font-bold text-xs transition shadow-sm flex items-center justify-center gap-2 cursor-pointer"
                     >
-                      {t.checkinBtn}
+                      <Check className="w-4 h-4" />
+                      <span>{isRtl ? 'تأكيد حضور المشرف واعتماد الشفت' : 'Confirm Check-In & Authenticate Shift'}</span>
                     </button>
                   </div>
                 </div>
@@ -1527,7 +1816,7 @@ export default function FieldOperations({
                     {isRtl ? 'كشف تحضير الموظفين والعمالة اليومية' : 'Daily Employee Attendance Sheet'}
                   </h3>
                   <p className="text-xs text-gray-400 mt-0.5">
-                    {isRtl ? 'تحضير العمال والموظفين الميدانيين وإدخال ساعات العمل والاستراحات والشفتات' : 'Roster tracking, clock-in, breaks, clock-out and shift logs'}
+                    {isRtl ? 'تحضير العمال والموظفين الميدانيين وإدخال ساعات العمل والاستراحات ومزامنة الشفتات' : 'Roster tracking, clock-in, breaks, clock-out and shift synchronization'}
                   </p>
                 </div>
                 {/* Actions & Date Picker */}
@@ -1568,15 +1857,79 @@ export default function FieldOperations({
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {/* Supervisor Indicator */}
-                  <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-3 flex items-center justify-between text-xs font-sans">
-                    <span className="text-gray-500">
-                      👤 {isRtl ? 'المشرف المسؤول عن التحضير:' : 'Responsible Supervisor:'}{' '}
-                      <strong className="text-[#040957]">{supName}</strong>
-                    </span>
-                    <span className="text-gray-400 font-mono text-[10px]">
-                      {attendanceDate}
-                    </span>
+                  {/* Supervisor Active Shift Sync Banner (NEW FEATURE) */}
+                  <div className="bg-gradient-to-r from-blue-50 via-indigo-50/60 to-blue-50 border border-blue-150 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs font-sans shadow-xs">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-[#0080FF]/10 text-[#0080FF] flex items-center justify-center shrink-0">
+                        <Clock className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-extrabold text-[#040957] text-xs">
+                            {isRtl ? 'الشفت النشط للمشرف:' : 'Supervisor Active Shift:'}
+                          </span>
+                          <span className="bg-[#0080FF] text-white text-[10px] font-black px-2 py-0.5 rounded-full">
+                            {supShiftType === 'Morning' ? (isRtl ? 'شفت صباحي' : 'Morning Shift') :
+                             supShiftType === 'Evening' ? (isRtl ? 'شفت مسائي' : 'Evening Shift') :
+                             supShiftType === 'Night' ? (isRtl ? 'شفت ليلي' : 'Night Shift') :
+                             (isRtl ? 'شفت مخصص' : 'Custom Shift')}
+                          </span>
+                        </div>
+                        <div className="text-gray-500 text-[11px] mt-0.5 flex items-center gap-2">
+                          <span>⏱️ {supShiftStartTime} - {supShiftEndTime}</span>
+                          <span className="text-gray-300">|</span>
+                          <span>👤 {supName}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleApplyShiftToWorkers()}
+                        className="bg-[#040957] hover:bg-[#0080FF] text-white text-xs font-bold px-3.5 py-2 rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <span>🔄</span>
+                        <span>{isRtl ? 'مزامنة جميع الحاضرين مع شفت المشرف' : 'Sync All Present with Supervisor Shift'}</span>
+                      </button>
+
+                      {/* Quick Shift Swatch Buttons */}
+                      <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-gray-200">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleSelectShiftPreset('Morning');
+                            handleApplyShiftToWorkers('Morning', '07:30 AM', '04:30 PM');
+                          }}
+                          className="px-2 py-1 text-[10px] font-bold rounded-lg hover:bg-blue-50 text-gray-700 transition"
+                          title="Apply Morning Shift"
+                        >
+                          {isRtl ? 'صباحي' : 'Morning'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleSelectShiftPreset('Evening');
+                            handleApplyShiftToWorkers('Evening', '03:30 PM', '11:30 PM');
+                          }}
+                          className="px-2 py-1 text-[10px] font-bold rounded-lg hover:bg-blue-50 text-gray-700 transition"
+                          title="Apply Evening Shift"
+                        >
+                          {isRtl ? 'مسائي' : 'Evening'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleSelectShiftPreset('Night');
+                            handleApplyShiftToWorkers('Night', '11:00 PM', '07:00 AM');
+                          }}
+                          className="px-2 py-1 text-[10px] font-bold rounded-lg hover:bg-blue-50 text-gray-700 transition"
+                          title="Apply Night Shift"
+                        >
+                          {isRtl ? 'ليلي' : 'Night'}
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Workers Table/List */}
@@ -2148,8 +2501,26 @@ export default function FieldOperations({
                                     : sub.status}
                                 </span>
                               </div>
-                              <div className="text-[10px] text-gray-400 mt-1">
-                                🏢 {isRtl ? targetProj?.nameAr : targetProj?.nameEn} | 📆 {new Date(sub.timestamp).toLocaleDateString(lang === 'ar' ? 'ar-SA' : 'en-US', { hour: '2-digit', minute: '2-digit' })}
+                              <div className="text-[10px] text-gray-400 mt-1 flex flex-wrap items-center gap-2">
+                                <span>🏢 {isRtl ? targetProj?.nameAr : targetProj?.nameEn}</span>
+                                <span>|</span>
+                                <span>📆 {new Date(sub.timestamp).toLocaleDateString(lang === 'ar' ? 'ar-SA' : 'en-US', { hour: '2-digit', minute: '2-digit' })}</span>
+                                {sub.gpsLocation && (
+                                  <>
+                                    <span>|</span>
+                                    <a
+                                      href={getGoogleMapsUrl(sub.gpsLocation.latitude, sub.gpsLocation.longitude)}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1 text-[9px] bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full font-bold font-mono transition"
+                                      title={isRtl ? 'فتح موقع المشرف الميداني على خرائط Google' : 'Open supervisor GPS site location in Google Maps'}
+                                    >
+                                      <MapPin className="w-2.5 h-2.5 text-blue-600" />
+                                      <span>{sub.gpsLocation.latitude.toFixed(4)}°, {sub.gpsLocation.longitude.toFixed(4)}° (±{Math.round(sub.gpsLocation.accuracy || 5)}m)</span>
+                                      <ExternalLink className="w-2 h-2 opacity-70" />
+                                    </a>
+                                  </>
+                                )}
                               </div>
                             </div>
 
@@ -2170,31 +2541,18 @@ export default function FieldOperations({
                                 <>
                                   <button
                                     type="button"
-                                    onClick={async () => {
-                                      if (onApproveSubmission) {
-                                        if (confirm(isRtl ? 'هل أنت متأكد من مراجعة واعتماد هذا التقرير اليومي بالكامل ودمجه بقاعدة البيانات؟' : 'Are you sure you want to approve this field report and merge its data?')) {
-                                          await onApproveSubmission(sub.id, currentUser?.name || 'Authorized Manager');
-                                          triggerToast(isRtl ? 'تم اعتماد التقرير الميداني ودمجه بنجاح!' : 'Field Work approved and integrated successfully!');
-                                        }
-                                      }
-                                    }}
-                                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] py-1.5 px-3 rounded-lg shadow-xs flex items-center gap-1 transition cursor-pointer"
+                                    onClick={() => handleOpenApproveModal(sub)}
+                                    className="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-extrabold text-[11px] py-1.5 px-3 rounded-lg shadow-xs flex items-center gap-1 transition cursor-pointer"
+                                    title={isRtl ? 'اعتماد ومزامنة التقرير الميداني' : 'Approve & Sync Field Report'}
                                   >
                                     <Check className="w-3.5 h-3.5" />
                                     <span>{isRtl ? 'اعتماد ودمج' : 'Approve & Sync'}</span>
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={async () => {
-                                      if (onRejectSubmission) {
-                                        const reason = prompt(isRtl ? 'أدخل سبب رفض التقرير والاعتراض الميداني:' : 'Enter reason for rejecting this log submission:');
-                                        if (reason !== null) {
-                                          await onRejectSubmission(sub.id, reason || 'Incomplete data');
-                                          triggerToast(isRtl ? 'تم رفض التقرير وإعادته للمشرف للتعديل' : 'Field Work rejected and sent back to supervisor');
-                                        }
-                                      }
-                                    }}
-                                    className="bg-red-600 hover:bg-red-700 text-white font-extrabold text-[11px] py-1.5 px-3 rounded-lg shadow-xs flex items-center gap-1 transition cursor-pointer"
+                                    onClick={() => handleOpenRejectModal(sub)}
+                                    className="bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-extrabold text-[11px] py-1.5 px-3 rounded-lg shadow-xs flex items-center gap-1 transition cursor-pointer"
+                                    title={isRtl ? 'رفض التقرير وإعادته للمشرف' : 'Reject Report'}
                                   >
                                     <X className="w-3.5 h-3.5" />
                                     <span>{isRtl ? 'رفض' : 'Reject'}</span>
@@ -2306,11 +2664,7 @@ export default function FieldOperations({
                                               const prefill = isRtl 
                                                 ? `ملاحظات التدقيق الذكي: ${auditResults[sub.id].verificationSummaryAr}` 
                                                 : `AI Audit: ${auditResults[sub.id].verificationSummaryEn}`;
-                                              const reason = prompt(isRtl ? 'تعديل سبب الرفض الموجه للمشرف مسبقاً:' : 'Edit the rejection feedback for the supervisor:', prefill);
-                                              if (reason !== null) {
-                                                onRejectSubmission && onRejectSubmission(sub.id, reason || 'Incomplete/bloated data');
-                                                triggerToast(isRtl ? 'تم رفض التقرير وإرساله لإعادة التدقيق مسبقاً' : 'Report rejected and supervisor requested to revise.');
-                                              }
+                                              handleOpenRejectModal(sub, prefill);
                                             }}
                                             className="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-extrabold text-[10px] py-1 px-2.5 rounded-lg transition flex items-center gap-1 cursor-pointer"
                                           >
@@ -2915,11 +3269,17 @@ export default function FieldOperations({
                         onChange={(e) => setProdActId(e.target.value)}
                         className="w-full border border-gray-200 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#0080FF] bg-white text-gray-700 font-bold"
                       >
-                        {itemActivities.map(act => (
-                          <option key={act.id} value={act.id}>
-                            {isRtl ? act.nameAr : act.nameEn} ({act.totalQuantity} {act.unit})
-                          </option>
-                        ))}
+                        {itemActivities.map(act => {
+                          const targetProj = projects.find(p => p.id === selectedProjectId);
+                          const actDone = targetProj?.isCompleted ? act.totalQuantity : progressUpdates.filter(upd => upd.activityId === act.id).reduce((sum, upd) => sum + upd.completedQuantity, 0);
+                          const actPercent = targetProj?.isCompleted ? 100 : Math.min(100, Math.round((actDone / (act.totalQuantity || 1)) * 100));
+                          const isActComplete = actPercent >= 100 || !!targetProj?.isCompleted;
+                          return (
+                            <option key={act.id} value={act.id}>
+                              {isRtl ? act.nameAr : act.nameEn} ({actPercent}% {isActComplete ? (isRtl ? '✓ مكتمل' : '✓ Completed') : `${actDone}/${act.totalQuantity} ${act.unit}`})
+                            </option>
+                          );
+                        })}
                         {itemActivities.length === 0 && (
                           <option value="">{isRtl ? 'لا توجد أنشطة نشطة للربط' : 'No activities linked to category'}</option>
                         )}
@@ -3705,6 +4065,272 @@ export default function FieldOperations({
                       className="px-8 py-3 bg-[#040957] text-white rounded-2xl text-xs font-black hover:bg-blue-900 transition shadow-lg shadow-blue-900/20"
                     >
                       {isRtl ? 'إغلاق النافذة' : 'Close Details'}
+                    </button>
+                  </div>
+                </motion.div>
+              </div>
+            )}
+
+            {/* SUBMISSION APPROVE & MERGE MODAL */}
+            {approveModalSub && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                  className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden text-slate-800"
+                >
+                  {/* Header */}
+                  <div className="p-5 bg-gradient-to-r from-emerald-600 to-teal-700 text-white flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-xs flex items-center justify-center font-bold text-white shadow-xs">
+                        <Check className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-black">
+                          {isRtl ? 'اعتماد التقرير الميداني ودمج البيانات' : 'Approve Field Report & Merge'}
+                        </h3>
+                        <p className="text-xs text-emerald-100 font-medium">
+                          {isRtl ? 'سيتم نقل كافة البيانات الميدانية للسجلات الرسمية' : 'All field records will be merged into master ledger'}
+                        </p>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => !isProcessingAction && setApproveModalSub(null)}
+                      disabled={isProcessingAction}
+                      className="text-white/80 hover:text-white p-1 rounded-lg hover:bg-white/10 transition cursor-pointer"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {/* Body */}
+                  <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                    {/* Submission Metadata */}
+                    <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 space-y-2 text-xs">
+                      <div className="flex justify-between items-center text-slate-500">
+                        <span>{isRtl ? 'المشرف الميداني:' : 'Supervisor:'}</span>
+                        <span className="font-bold text-slate-800">{approveModalSub.supervisorName} ({approveModalSub.badgeNumber})</span>
+                      </div>
+                      <div className="flex justify-between items-center text-slate-500">
+                        <span>{isRtl ? 'المشروع:' : 'Project:'}</span>
+                        <span className="font-bold text-slate-800">
+                          {projects.find(p => p.id === approveModalSub.projectId)?.[isRtl ? 'nameAr' : 'nameEn'] || approveModalSub.projectId}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-slate-500">
+                        <span>{isRtl ? 'تاريخ التقرير:' : 'Report Date:'}</span>
+                        <span className="font-mono font-bold text-slate-800">{approveModalSub.submissionDate}</span>
+                      </div>
+                    </div>
+
+                    {/* Records to merge breakdown */}
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider">
+                        {isRtl ? 'محتويات التقرير المعتمدة للدمج السحابي:' : 'Data Items to be Merged:'}
+                      </h4>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="bg-emerald-50/70 border border-emerald-100 p-2.5 rounded-xl flex items-center gap-2">
+                          <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <div>
+                            <p className="font-bold text-slate-800">{isRtl ? 'كشف الحضور' : 'Attendance'}</p>
+                            <p className="text-[10px] text-slate-500">{approveModalSub.attendanceRecords?.length || 0} {isRtl ? 'عامل' : 'workers'}</p>
+                          </div>
+                        </div>
+                        <div className="bg-emerald-50/70 border border-emerald-100 p-2.5 rounded-xl flex items-center gap-2">
+                          <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <div>
+                            <p className="font-bold text-slate-800">{isRtl ? 'الإنتاجية والإنجاز' : 'Production'}</p>
+                            <p className="text-[10px] text-slate-500">{approveModalSub.progressUpdates?.length || 0} {isRtl ? 'بنود منجزة' : 'items'}</p>
+                          </div>
+                        </div>
+                        <div className="bg-emerald-50/70 border border-emerald-100 p-2.5 rounded-xl flex items-center gap-2">
+                          <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <div>
+                            <p className="font-bold text-slate-800">{isRtl ? 'المواد المستهلكة' : 'Materials'}</p>
+                            <p className="text-[10px] text-slate-500">{approveModalSub.materialDeliveries?.length || 0} {isRtl ? 'توريدات' : 'deliveries'}</p>
+                          </div>
+                        </div>
+                        <div className="bg-emerald-50/70 border border-emerald-100 p-2.5 rounded-xl flex items-center gap-2">
+                          <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <div>
+                            <p className="font-bold text-slate-800">{isRtl ? 'السلامة والمعوقات' : 'Safety & Delays'}</p>
+                            <p className="text-[10px] text-slate-500">{approveModalSub.safetyRecord ? (isRtl ? 'سجل سلامة' : 'Safety log') : (isRtl ? 'بدون ملاحظات' : 'Clear')}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Manager Name / Approver Title */}
+                    <div className="space-y-1.5 pt-2">
+                      <label className="block text-xs font-bold text-slate-700">
+                        {isRtl ? 'اسم المعتمد / المنصب:' : 'Approver Name / Title:'}
+                      </label>
+                      <input 
+                        type="text"
+                        value={approvingManagerName}
+                        onChange={(e) => setApprovingManagerName(e.target.value)}
+                        placeholder={isRtl ? 'أدخل اسمك أو منصبك...' : 'Enter your name or role...'}
+                        className="w-full text-xs font-bold px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Footer */}
+                  <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setApproveModalSub(null)}
+                      disabled={isProcessingAction}
+                      className="px-4 py-2.5 rounded-xl text-xs font-extrabold text-slate-600 hover:bg-slate-200/70 transition cursor-pointer"
+                    >
+                      {isRtl ? 'إلغاء' : 'Cancel'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleConfirmApprove}
+                      disabled={isProcessingAction}
+                      className="px-5 py-2.5 rounded-xl text-xs font-extrabold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 transition shadow-md shadow-emerald-600/20 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                    >
+                      {isProcessingAction ? (
+                        <>
+                          <Clock className="w-4 h-4 animate-spin" />
+                          <span>{isRtl ? 'جاري الاعتماد والدمج...' : 'Merging Records...'}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-4 h-4" />
+                          <span>{isRtl ? 'تأكيد الاعتماد والدمج السحابي' : 'Confirm Approval & Sync'}</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </motion.div>
+              </div>
+            )}
+
+            {/* SUBMISSION REJECTION MODAL */}
+            {rejectModalSub && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                  className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden text-slate-800"
+                >
+                  {/* Header */}
+                  <div className="p-5 bg-gradient-to-r from-red-600 to-rose-700 text-white flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-xs flex items-center justify-center font-bold text-white shadow-xs">
+                        <AlertTriangle className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-black">
+                          {isRtl ? 'رفض التقرير الميداني وإعادته للتعديل' : 'Reject Field Work Submission'}
+                        </h3>
+                        <p className="text-xs text-red-100 font-medium">
+                          {isRtl ? 'سيتم إشعار المشرف مع توضيح أسباب الملاحظات والرفض' : 'Supervisor will be notified with your feedback'}
+                        </p>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => !isProcessingAction && setRejectModalSub(null)}
+                      disabled={isProcessingAction}
+                      className="text-white/80 hover:text-white p-1 rounded-lg hover:bg-white/10 transition cursor-pointer"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {/* Body */}
+                  <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                    {/* Submission Metadata */}
+                    <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3.5 space-y-1.5 text-xs">
+                      <div className="flex justify-between items-center text-slate-500">
+                        <span>{isRtl ? 'المشرف الميداني:' : 'Supervisor:'}</span>
+                        <span className="font-bold text-slate-800">{rejectModalSub.supervisorName} ({rejectModalSub.badgeNumber})</span>
+                      </div>
+                      <div className="flex justify-between items-center text-slate-500">
+                        <span>{isRtl ? 'المشروع:' : 'Project:'}</span>
+                        <span className="font-bold text-slate-800">
+                          {projects.find(p => p.id === rejectModalSub.projectId)?.[isRtl ? 'nameAr' : 'nameEn'] || rejectModalSub.projectId}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Quick Preset Rejection Reasons */}
+                    <div className="space-y-2">
+                      <label className="block text-xs font-bold text-slate-700">
+                        {isRtl ? 'أسباب شائعة للاعتراض (اضغط للاختيار السريع):' : 'Quick Feedback Presets:'}
+                      </label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          isRtl ? 'بيانات الحضور غير مكتملة' : 'Incomplete attendance records',
+                          isRtl ? 'تناقض في كميات الإنجاز المسجلة' : 'Discrepancy in reported progress',
+                          isRtl ? 'عدم مطابقة كميات المواد المستهلكة' : 'Material consumption mismatch',
+                          isRtl ? 'ملاحظات على تدقيق السلامة الميدانية' : 'Safety inspection concerns',
+                          isRtl ? 'يرجى إرفاق صور ومستندات الإنجاز' : 'Please attach verification photos'
+                        ].map((preset, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => {
+                              if (rejectionReasonText) {
+                                setRejectionReasonText(prev => `${prev} - ${preset}`);
+                              } else {
+                                setRejectionReasonText(preset);
+                              }
+                            }}
+                            className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 transition cursor-pointer"
+                          >
+                            + {preset}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Detailed Reason Textarea */}
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold text-slate-700">
+                        {isRtl ? 'ملاحظات وتوجيهات الرفض للمشرف:' : 'Rejection Reason & Instructions:'}
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={rejectionReasonText}
+                        onChange={(e) => setRejectionReasonText(e.target.value)}
+                        placeholder={isRtl ? 'اكتب بالتفصيل سبب الرفض أو التعديلات المطلوبة من المشرف...' : 'Provide details on what needs correction...'}
+                        className="w-full text-xs font-medium p-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:bg-white transition leading-relaxed"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Footer */}
+                  <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setRejectModalSub(null)}
+                      disabled={isProcessingAction}
+                      className="px-4 py-2.5 rounded-xl text-xs font-extrabold text-slate-600 hover:bg-slate-200/70 transition cursor-pointer"
+                    >
+                      {isRtl ? 'إلغاء' : 'Cancel'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleConfirmReject}
+                      disabled={isProcessingAction}
+                      className="px-5 py-2.5 rounded-xl text-xs font-extrabold text-white bg-red-600 hover:bg-red-700 active:bg-red-800 transition shadow-md shadow-red-600/20 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                    >
+                      {isProcessingAction ? (
+                        <>
+                          <Clock className="w-4 h-4 animate-spin" />
+                          <span>{isRtl ? 'جاري الإرسال...' : 'Sending...'}</span>
+                        </>
+                      ) : (
+                        <>
+                          <X className="w-4 h-4" />
+                          <span>{isRtl ? 'تأكيد الرفض وإعادة التقرير' : 'Confirm Rejection'}</span>
+                        </>
+                      )}
                     </button>
                   </div>
                 </motion.div>

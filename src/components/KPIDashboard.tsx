@@ -248,29 +248,41 @@ export default function KPIDashboard({
     });
   }, [savedKpiReports, savedSearchQuery]);
 
-  // 1. Filtered data lists based on selected project
+  // 1. Filtered data lists based on selected project (strictly validated against existing active projects and work items)
+  const validProjectIds = useMemo(() => {
+    return new Set(projects.map(p => p.id));
+  }, [projects]);
+
+  const validWorkItems = useMemo(() => {
+    return workItems.filter(wi => validProjectIds.has(wi.projectId));
+  }, [workItems, validProjectIds]);
+
   const filteredWorkItems = useMemo(() => {
-    if (selectedProjectId === 'all') return workItems;
-    return workItems.filter(wi => wi.projectId === selectedProjectId);
-  }, [workItems, selectedProjectId]);
+    if (selectedProjectId === 'all') return validWorkItems;
+    return validWorkItems.filter(wi => wi.projectId === selectedProjectId);
+  }, [validWorkItems, selectedProjectId]);
 
   const filteredWorkItemIds = useMemo(() => {
     return new Set(filteredWorkItems.map(wi => wi.id));
   }, [filteredWorkItems]);
 
+  const validActivities = useMemo(() => {
+    const validWiIds = new Set(validWorkItems.map(wi => wi.id));
+    return activities.filter(act => validWiIds.has(act.workItemId));
+  }, [activities, validWorkItems]);
+
   const filteredActivities = useMemo(() => {
-    if (selectedProjectId === 'all') return activities;
-    return activities.filter(act => filteredWorkItemIds.has(act.workItemId));
-  }, [activities, filteredWorkItemIds, selectedProjectId]);
+    if (selectedProjectId === 'all') return validActivities;
+    return validActivities.filter(act => filteredWorkItemIds.has(act.workItemId));
+  }, [validActivities, filteredWorkItemIds, selectedProjectId]);
 
   const filteredActivityIds = useMemo(() => {
     return new Set(filteredActivities.map(act => act.id));
   }, [filteredActivities]);
 
   const filteredUpdates = useMemo(() => {
-    if (selectedProjectId === 'all') return progressUpdates;
     return progressUpdates.filter(upd => filteredActivityIds.has(upd.activityId));
-  }, [progressUpdates, filteredActivityIds, selectedProjectId]);
+  }, [progressUpdates, filteredActivityIds]);
 
   const filteredAttendance = useMemo(() => {
     let list = selectedProjectId === 'all' ? attendanceRecords : attendanceRecords.filter(r => r.projectId === selectedProjectId);
@@ -390,8 +402,11 @@ export default function KPIDashboard({
     let notStarted = 0;
 
     filteredActivities.forEach(act => {
-      const prog = getActivityProgress(act, progressUpdates);
-      if (prog === 100) completed++;
+      const parentWi = workItems.find(w => w.id === act.workItemId);
+      const proj = projects.find(p => p.id === parentWi?.projectId);
+      const isProjComp = !!proj?.isCompleted;
+      const prog = isProjComp ? 100 : getActivityProgress(act, progressUpdates, proj);
+      if (prog >= 100 || isProjComp) completed++;
       else if (prog > 0) inProgress++;
       else notStarted++;
     });
@@ -1136,7 +1151,7 @@ export default function KPIDashboard({
               <h4 className="text-xs font-extrabold uppercase tracking-wider mb-4 text-[#9E1B1B]">
                 {isRtl ? 'بيانات ومعلومات المشروع وفترة الأساس' : 'PROJECT REFERENCE & BAESLINE DATE'}
               </h4>
-              <div className="grid grid-cols-2 gap-y-4 gap-x-12 text-left">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-y-4 gap-x-12 text-left">
                 <div>
                   <span className="block text-[9px] text-gray-500 font-extrabold uppercase tracking-wider mb-0.5">
                     {isRtl ? 'تصفية النطاق' : 'SCOP FILTER'}
@@ -1283,7 +1298,7 @@ export default function KPIDashboard({
                 <h3 className="text-xs font-extrabold uppercase pb-1.5 mb-4 border-b border-[#9E1B1B] text-[#9E1B1B]">
                   {isRtl ? 'تحليل مخاطر سلاسل التوريد والجاهزية' : 'RISK & SUPPLY CHAIN ANALYSIS'}
                 </h3>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="p-5 bg-[#F4F5F7] rounded-lg">
                     <div className="text-[9px] font-extrabold text-gray-500 uppercase tracking-wider mb-1">
                       {isRtl ? 'كثافة العمالة والموظفين' : 'LABOR CAPACITY'}

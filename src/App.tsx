@@ -44,8 +44,18 @@ import {
   FieldRequest,
   FieldWorkSubmission,
   QuickNote,
-  MorningMeetingPlan
+  MorningMeetingPlan,
+  StartCard,
+  WorkPermit,
+  PermitTypeConfig,
+  PermitAuditLog
 } from './types';
+import { 
+  seedStartCards, 
+  seedPermits, 
+  seedPermitTypes, 
+  seedPermitAuditLogs 
+} from './data/ptwSeedData';
 import { translations } from './utils/translation';
 import { dbApi } from './lib/api';
 import { backfillActivities } from './utils/progressCalculations';
@@ -62,6 +72,9 @@ import UsersList from './components/UsersList';
 import FieldPortal from './components/FieldPortal';
 import AdminPanel from './components/AdminPanel';
 import MainLogin from './components/MainLogin';
+import PTWManagementPanel from './components/ptw/PTWManagementPanel';
+import StartCardModal from './components/ptw/StartCardModal';
+import PermitModal from './components/ptw/PermitModal';
 
 import { 
   Briefcase, 
@@ -75,6 +88,7 @@ import {
   FileText, 
   ShieldAlert, 
   Shield, 
+  ShieldCheck,
   Sun, 
   Moon, 
   Globe, 
@@ -87,9 +101,14 @@ import {
   Printer,
   BarChart3,
   ChevronRight,
+  ChevronUp,
   Trash2,
   Square,
-  CheckSquare
+  CheckSquare,
+  LayoutGrid,
+  MoreHorizontal,
+  Smartphone,
+  Sparkles
 } from 'lucide-react';
 
 export default function App() {
@@ -212,6 +231,23 @@ export default function App() {
   const [fieldSubmissions, setFieldSubmissions] = useState<FieldWorkSubmission[]>([]);
   const [quickNotes, setQuickNotes] = useState<QuickNote[]>([]);
   const [morningMeetingPlans, setMorningMeetingPlans] = useState<MorningMeetingPlan[]>([]);
+
+  // Start Card & Permit to Work (PTW) Module State
+  const [startCards, setStartCards] = useState<StartCard[]>([]);
+  const [permits, setPermits] = useState<WorkPermit[]>([]);
+  const [permitTypes, setPermitTypes] = useState<PermitTypeConfig[]>([]);
+  const [permitAuditLogs, setPermitAuditLogs] = useState<PermitAuditLog[]>([]);
+
+  // Start Card & PTW Modals state
+  const [isStartCardModalOpen, setIsStartCardModalOpen] = useState(false);
+  const [selectedStartCard, setSelectedStartCard] = useState<StartCard | null>(null);
+  const [initialActivityIdForStartCard, setInitialActivityIdForStartCard] = useState<string | undefined>(undefined);
+
+  const [isPermitModalOpen, setIsPermitModalOpen] = useState(false);
+  const [selectedPermit, setSelectedPermit] = useState<WorkPermit | null>(null);
+  const [initialActivityIdForPermit, setInitialActivityIdForPermit] = useState<string | undefined>(undefined);
+  const [initialStartCardIdForPermit, setInitialStartCardIdForPermit] = useState<string | undefined>(undefined);
+
   const [isFieldPortal, setIsFieldPortal] = useState<boolean>(() => {
     return window.location.search.includes('portal=field') || window.location.hash.includes('portal=field');
   });
@@ -264,7 +300,8 @@ export default function App() {
           dbMaterials, dbEquipment, dbWorkers, dbNotifications, 
           dbAuditLogs, dbSettings, dbCheckIns, dbAttendance, dbProgress, 
           dbSafety, dbDelays, dbIssues, dbSavedKpiReports, dbFieldSubmissions,
-          dbQuickNotes, dbMorningMeetingPlans
+          dbQuickNotes, dbMorningMeetingPlans,
+          dbStartCards, dbWorkPermits, dbPermitTypes, dbPermitAuditLogs
         ] = await Promise.all([
           dbApi.getAll<User>('users'),
           dbApi.getAll<Project>('projects'),
@@ -285,7 +322,11 @@ export default function App() {
           dbApi.getAll<SavedKpiReport>('savedKpiReports').catch(() => []),
           dbApi.getAll<FieldWorkSubmission>('fieldSubmissions').catch(() => []),
           dbApi.getAll<QuickNote>('quickNotes').catch(() => []),
-          dbApi.getAll<MorningMeetingPlan>('morningMeetingPlans').catch(() => [])
+          dbApi.getAll<MorningMeetingPlan>('morningMeetingPlans').catch(() => []),
+          dbApi.getAll<StartCard>('startCards').catch(() => []),
+          dbApi.getAll<WorkPermit>('workPermits').catch(() => []),
+          dbApi.getAll<PermitTypeConfig>('permitTypes').catch(() => []),
+          dbApi.getAll<PermitAuditLog>('permitAuditLogs').catch(() => [])
         ]);
 
 
@@ -321,10 +362,34 @@ export default function App() {
           }
           if (!u.roles) u.roles = ['Viewer'];
         });
+
+        // Strictly sanitize and purge orphaned records to ensure only authentic active data is loaded
+        const currentProjectIds = new Set(dbProjects.map(p => p.id));
+        const validWorkItems = dbWorkItems.filter(wi => currentProjectIds.has(wi.projectId));
+        const validWorkItemIds = new Set(validWorkItems.map(wi => wi.id));
+        const validActivities = dbActivities.filter(act => validWorkItemIds.has(act.workItemId));
+        const validActivityIds = new Set(validActivities.map(act => act.id));
+        const validProgressUpdates = (dbProgress || []).filter(upd => 
+          validActivityIds.has(upd.activityId) && (!upd.projectId || currentProjectIds.has(upd.projectId))
+        );
+
+        // Permanently prune any ghost or previously orphaned records from the persistence store
+        const orphanWorkItemIds = dbWorkItems.filter(wi => !currentProjectIds.has(wi.projectId)).map(w => w.id);
+        const orphanActivityIds = dbActivities.filter(act => !validWorkItemIds.has(act.workItemId)).map(a => a.id);
+        const orphanProgressIds = (dbProgress || []).filter(upd => !validActivityIds.has(upd.activityId)).map(u => u.id);
+
+        if (orphanWorkItemIds.length > 0 || orphanActivityIds.length > 0 || orphanProgressIds.length > 0) {
+          Promise.all([
+            ...orphanWorkItemIds.map(id => dbApi.delete('workItems', id)),
+            ...orphanActivityIds.map(id => dbApi.delete('activities', id)),
+            ...orphanProgressIds.map(id => dbApi.delete('progressUpdates', id)),
+          ]).catch(err => console.warn("Cleanup of orphaned records:", err));
+        }
+
         setUsers(dbUsers);
         setProjects(dbProjects);
-        setWorkItems(dbWorkItems);
-        const backfilled = backfillActivities(dbActivities, dbWorkers, dbWorkItems, dbProjects);
+        setWorkItems(validWorkItems);
+        const backfilled = backfillActivities(validActivities, dbWorkers, validWorkItems, dbProjects);
         setActivities(backfilled);
         setMaterials(dbMaterials);
         setEquipment(dbEquipment);
@@ -361,6 +426,69 @@ export default function App() {
           await dbApi.bulkSave('morningMeetingPlans', seedMorningMeetingPlans).catch(console.error);
         }
         setMorningMeetingPlans(finalMorningPlans);
+
+        // Start Cards & PTW Initialization
+        let finalStartCards = dbStartCards || [];
+        if (finalStartCards.length === 0 && seedStartCards.length > 0) {
+          finalStartCards = seedStartCards;
+          await dbApi.bulkSave('startCards', seedStartCards).catch(console.error);
+        }
+
+        let finalPermits = dbWorkPermits || [];
+        if (finalPermits.length === 0 && seedPermits.length > 0) {
+          finalPermits = seedPermits;
+          await dbApi.bulkSave('workPermits', seedPermits).catch(console.error);
+        }
+
+        let finalPermitTypes = dbPermitTypes || [];
+        if (finalPermitTypes.length === 0 && seedPermitTypes.length > 0) {
+          finalPermitTypes = seedPermitTypes;
+          await dbApi.bulkSave('permitTypes', seedPermitTypes).catch(console.error);
+        }
+        setPermitTypes(finalPermitTypes);
+
+        let finalPermitAuditLogs = dbPermitAuditLogs || [];
+        if (finalPermitAuditLogs.length === 0 && seedPermitAuditLogs.length > 0) {
+          finalPermitAuditLogs = seedPermitAuditLogs;
+          await dbApi.bulkSave('permitAuditLogs', seedPermitAuditLogs).catch(console.error);
+        }
+
+        // Strictly sanitize and purge orphaned PTW records (Fake / Deleted Data Cleanup)
+        const validStartCards = finalStartCards.filter(sc => 
+          (!sc.activityId || validActivityIds.has(sc.activityId)) &&
+          (!sc.workItemId || validWorkItemIds.has(sc.workItemId)) &&
+          currentProjectIds.has(sc.projectId)
+        );
+        const validStartCardIds = new Set(validStartCards.map(sc => sc.id));
+
+        const validWorkPermits = finalPermits.filter(ptw => 
+          (!ptw.activityId || validActivityIds.has(ptw.activityId)) &&
+          (!ptw.startCardId || validStartCardIds.has(ptw.startCardId)) &&
+          currentProjectIds.has(ptw.projectId)
+        );
+        const validPermitIds = new Set(validWorkPermits.map(p => p.id));
+        
+        const validAuditLogs = finalPermitAuditLogs.filter(log =>
+          (log.recordType === 'StartCard' && validStartCardIds.has(log.recordId)) ||
+          (log.recordType === 'WorkPermit' && validPermitIds.has(log.recordId)) ||
+          (log.recordType === 'WorkExecution' && validActivityIds.has(log.recordId))
+        );
+
+        const orphanStartCardIds = finalStartCards.filter(sc => !validStartCardIds.has(sc.id)).map(sc => sc.id);
+        const orphanPermitIds = finalPermits.filter(p => !validPermitIds.has(p.id)).map(p => p.id);
+        const orphanAuditLogIds = finalPermitAuditLogs.filter(l => !validAuditLogs.includes(l)).map(l => l.id);
+
+        if (orphanStartCardIds.length > 0 || orphanPermitIds.length > 0 || orphanAuditLogIds.length > 0) {
+          Promise.all([
+            ...orphanStartCardIds.map(id => dbApi.delete('startCards', id)),
+            ...orphanPermitIds.map(id => dbApi.delete('workPermits', id)),
+            ...orphanAuditLogIds.map(id => dbApi.delete('permitAuditLogs', id)),
+          ]).catch(err => console.warn("Cleanup of orphaned PTW records:", err));
+        }
+
+        setStartCards(validStartCards);
+        setPermits(validWorkPermits);
+        setPermitAuditLogs(validAuditLogs);
         
         setCurrentUser(dbUsers.find(u => u.roles?.includes('Super Admin')) || dbUsers[0] || mockUsers[0]);
 
@@ -579,23 +707,32 @@ export default function App() {
 
   const handleDeleteProject = async (id: string) => {
     try {
-      await dbApi.delete('projects', id);
+      // Find all associated work items and activities to purge
+      const targetWorkItems = workItems.filter(wi => wi.projectId === id);
+      const targetWorkItemIds = new Set(targetWorkItems.map(wi => wi.id));
+      const targetActivities = activities.filter(act => targetWorkItemIds.has(act.workItemId));
+      const targetActivityIds = new Set(targetActivities.map(act => act.id));
+
+      await Promise.all([
+        dbApi.delete('projects', id),
+        ...targetWorkItems.map(wi => dbApi.delete('workItems', wi.id)),
+        ...targetActivities.map(act => dbApi.delete('activities', act.id)),
+      ]);
+
       setProjects(prev => prev.filter(p => p.id !== id));
 
       // Cascade delete related entities locally
       setWorkItems(prev => prev.filter(wi => wi.projectId !== id));
-      setActivities(prev => prev.filter(a => {
-        const wi = workItems.find(w => w.id === a.workItemId);
-        return wi?.projectId !== id;
-      }));
-      setProgressUpdates(prev => prev.filter(p => p.projectId !== id));
+      setActivities(prev => prev.filter(a => !targetWorkItemIds.has(a.workItemId)));
+      setProgressUpdates(prev => prev.filter(p => p.projectId !== id && !targetActivityIds.has(p.activityId)));
       setAttendanceRecords(prev => prev.filter(a => a.projectId !== id));
       setCheckIns(prev => prev.filter(c => c.projectId !== id));
       setIssues(prev => prev.filter(i => i.projectId !== id));
       setDelays(prev => prev.filter(d => d.projectId !== id));
       setSafetyRecords(prev => prev.filter(s => s.projectId !== id));
+      setMorningMeetingPlans(prev => prev.filter(m => m.projectId !== id));
 
-      logSystemAction('DELETE_PROJECT', `Ejected project id: ${id}`);
+      logSystemAction('DELETE_PROJECT', `Ejected project id: ${id} and all cascaded work items, activities, and logs.`);
     } catch (e) {
       alert("Error deleting project");
     }
@@ -649,9 +786,44 @@ export default function App() {
 
   const handleDeleteProjects = async (ids: string[]) => {
     try {
-      await Promise.all(ids.map(id => dbApi.delete('projects', id)));
-      setProjects(prev => prev.filter(p => !ids.includes(p.id)));
-      logSystemAction('BULK_DELETE_PROJECTS', `Deleted ${ids.length} projects successfully.`);
+      const idSet = new Set(ids);
+      const targetWorkItems = workItems.filter(wi => idSet.has(wi.projectId));
+      const targetWorkItemIds = new Set(targetWorkItems.map(wi => wi.id));
+      const targetActivities = activities.filter(act => targetWorkItemIds.has(act.workItemId));
+      const targetActivityIds = new Set(targetActivities.map(act => act.id));
+
+      const targetStartCards = startCards.filter(sc => idSet.has(sc.projectId) || (sc.workItemId && targetWorkItemIds.has(sc.workItemId)) || (sc.activityId && targetActivityIds.has(sc.activityId)));
+      const targetStartCardIds = new Set(targetStartCards.map(sc => sc.id));
+
+      const targetWorkPermits = permits.filter(p => idSet.has(p.projectId) || (p.workItemId && targetWorkItemIds.has(p.workItemId)) || (p.activityId && targetActivityIds.has(p.activityId)) || (p.startCardId && targetStartCardIds.has(p.startCardId)));
+      const targetPermitIds = new Set(targetWorkPermits.map(p => p.id));
+
+      const targetPermitAuditLogs = permitAuditLogs.filter(log => idSet.has(log.projectId) || (log.recordType === 'StartCard' && targetStartCardIds.has(log.recordId)) || (log.recordType === 'WorkPermit' && targetPermitIds.has(log.recordId)) || (log.recordType === 'WorkExecution' && targetActivityIds.has(log.recordId)));
+
+      await Promise.all([
+        ...ids.map(id => dbApi.delete('projects', id)),
+        ...targetWorkItems.map(wi => dbApi.delete('workItems', wi.id)),
+        ...targetActivities.map(act => dbApi.delete('activities', act.id)),
+        ...targetStartCards.map(sc => dbApi.delete('startCards', sc.id)),
+        ...targetWorkPermits.map(p => dbApi.delete('workPermits', p.id)),
+        ...targetPermitAuditLogs.map(log => dbApi.delete('permitAuditLogs', log.id)),
+      ]);
+
+      setProjects(prev => prev.filter(p => !idSet.has(p.id)));
+      setWorkItems(prev => prev.filter(wi => !idSet.has(wi.projectId)));
+      setActivities(prev => prev.filter(a => !targetWorkItemIds.has(a.workItemId)));
+      setProgressUpdates(prev => prev.filter(p => (!p.projectId || !idSet.has(p.projectId)) && !targetActivityIds.has(p.activityId)));
+      setAttendanceRecords(prev => prev.filter(a => !idSet.has(a.projectId)));
+      setCheckIns(prev => prev.filter(c => !idSet.has(c.projectId)));
+      setIssues(prev => prev.filter(i => !idSet.has(i.projectId)));
+      setDelays(prev => prev.filter(d => !idSet.has(d.projectId)));
+      setSafetyRecords(prev => prev.filter(s => !idSet.has(s.projectId)));
+      setMorningMeetingPlans(prev => prev.filter(m => !idSet.has(m.projectId)));
+      setStartCards(prev => prev.filter(sc => !idSet.has(sc.projectId) && (!sc.workItemId || !targetWorkItemIds.has(sc.workItemId)) && (!sc.activityId || !targetActivityIds.has(sc.activityId))));
+      setPermits(prev => prev.filter(p => !idSet.has(p.projectId) && (!p.workItemId || !targetWorkItemIds.has(p.workItemId)) && (!p.activityId || !targetActivityIds.has(p.activityId))));
+      setPermitAuditLogs(prev => prev.filter(log => !targetPermitAuditLogs.includes(log)));
+
+      logSystemAction('BULK_DELETE_PROJECTS', `Deleted ${ids.length} projects and cascaded child work items/activities.`);
     } catch (e) {
       alert("Error during bulk delete");
     }
@@ -732,14 +904,80 @@ export default function App() {
   const handleAddWorkItem = async (wi: WorkItem) => {
     if (!wi.id) wi.id = `wi-${Date.now()}`;
     const saved = await dbApi.save('workItems', wi);
-    setWorkItems(prev => [...prev, saved]);
-    logSystemAction('ADD_WORK_ITEM', `Added work item category: ${wi.itemNumber}`);
+    setWorkItems(prev => {
+      const idx = prev.findIndex(item => item.id === saved.id);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = saved;
+        return copy;
+      }
+      return [...prev, saved];
+    });
+    logSystemAction('ADD_WORK_ITEM', `Saved work item category: ${wi.itemNumber}`);
   };
 
   const handleDeleteWorkItem = async (id: string) => {
-    await dbApi.delete('workItems', id);
-    setWorkItems(prev => prev.filter(wi => wi.id !== id));
-    logSystemAction('DELETE_WORK_ITEM', `Removed categoric sector id: ${id}`);
+    try {
+      const childActivities = activities.filter(act => act.workItemId === id);
+      const childActivityIds = new Set(childActivities.map(a => a.id));
+
+      const targetStartCards = startCards.filter(sc => sc.workItemId === id || (sc.activityId && childActivityIds.has(sc.activityId)));
+      const targetStartCardIds = new Set(targetStartCards.map(sc => sc.id));
+
+      const targetWorkPermits = permits.filter(p => p.workItemId === id || (p.activityId && childActivityIds.has(p.activityId)) || (p.startCardId && targetStartCardIds.has(p.startCardId)));
+      const targetPermitIds = new Set(targetWorkPermits.map(p => p.id));
+
+      const targetPermitAuditLogs = permitAuditLogs.filter(log => (log.recordType === 'StartCard' && targetStartCardIds.has(log.recordId)) || (log.recordType === 'WorkPermit' && targetPermitIds.has(log.recordId)) || (log.recordType === 'WorkExecution' && childActivityIds.has(log.recordId)));
+
+      await Promise.all([
+        dbApi.delete('workItems', id),
+        ...childActivities.map(act => dbApi.delete('activities', act.id)),
+        ...targetStartCards.map(sc => dbApi.delete('startCards', sc.id)),
+        ...targetWorkPermits.map(p => dbApi.delete('workPermits', p.id)),
+        ...targetPermitAuditLogs.map(log => dbApi.delete('permitAuditLogs', log.id)),
+      ]);
+
+      // Release any material/equipment allocated to child activities
+      for (const act of childActivities) {
+        if (act.materialAllocations) {
+          for (const alloc of act.materialAllocations) {
+            const mat = materials.find(m => m.id === alloc.id);
+            if (mat) {
+              const updMat = {
+                ...mat,
+                quantity: mat.quantity + alloc.quantity,
+                reservedStock: Math.max(0, (mat.reservedStock || 0) - alloc.quantity)
+              };
+              await dbApi.save('warehouseMaterials', updMat);
+              setMaterials(prev => prev.map(m => m.id === mat.id ? updMat : m));
+            }
+          }
+        }
+        if (act.equipmentAllocations) {
+          for (const alloc of act.equipmentAllocations) {
+            const eq = equipment.find(e => e.id === alloc.id);
+            if (eq) {
+              const updEq = {
+                ...eq,
+                totalQuantity: eq.totalQuantity + alloc.quantity,
+                reservedQuantity: Math.max(0, (eq.reservedQuantity || 0) - alloc.quantity)
+              };
+              await dbApi.save('equipmentItems', updEq);
+              setEquipment(prev => prev.map(e => e.id === eq.id ? updEq : e));
+            }
+          }
+        }
+      }
+
+      setWorkItems(prev => prev.filter(wi => wi.id !== id));
+      setActivities(prev => prev.filter(act => act.workItemId !== id));
+      setProgressUpdates(prev => prev.filter(upd => !childActivityIds.has(upd.activityId)));
+
+      logSystemAction('DELETE_WORK_ITEM', `Removed categoric sector id: ${id} and cascaded its nested activities.`);
+    } catch (e) {
+      console.error(e);
+      alert("Error deleting work item");
+    }
   };
 
   const handleAddActivity = async (act: Activity) => {
@@ -782,9 +1020,66 @@ export default function App() {
   };
 
   const handleDeleteActivity = async (id: string) => {
-    await dbApi.delete('activities', id);
-    setActivities(prev => prev.filter(act => act.id !== id));
-    logSystemAction('DELETE_ACTIVITY', `Removed sub-activity: ${id}`);
+    try {
+      const act = activities.find(a => a.id === id);
+      if (act) {
+        // Return allocated materials to warehouse
+        if (act.materialAllocations) {
+          for (const alloc of act.materialAllocations) {
+            const mat = materials.find(m => m.id === alloc.id);
+            if (mat) {
+              const updMat = {
+                ...mat,
+                quantity: mat.quantity + alloc.quantity,
+                reservedStock: Math.max(0, (mat.reservedStock || 0) - alloc.quantity)
+              };
+              await dbApi.save('warehouseMaterials', updMat);
+              setMaterials(prev => prev.map(m => m.id === mat.id ? updMat : m));
+            }
+          }
+        }
+        // Return allocated equipment
+        if (act.equipmentAllocations) {
+          for (const alloc of act.equipmentAllocations) {
+            const eq = equipment.find(e => e.id === alloc.id);
+            if (eq) {
+              const updEq = {
+                ...eq,
+                totalQuantity: eq.totalQuantity + alloc.quantity,
+                reservedQuantity: Math.max(0, (eq.reservedQuantity || 0) - alloc.quantity)
+              };
+              await dbApi.save('equipmentItems', updEq);
+              setEquipment(prev => prev.map(e => e.id === eq.id ? updEq : e));
+            }
+          }
+        }
+      }
+
+      const targetStartCards = startCards.filter(sc => sc.activityId === id || (sc.targetActivityIds && sc.targetActivityIds.includes(id)));
+      const targetStartCardIds = new Set(targetStartCards.map(sc => sc.id));
+
+      const targetWorkPermits = permits.filter(p => p.activityId === id || (p.startCardId && targetStartCardIds.has(p.startCardId)));
+      const targetPermitIds = new Set(targetWorkPermits.map(p => p.id));
+
+      const targetPermitAuditLogs = permitAuditLogs.filter(log => (log.recordType === 'StartCard' && targetStartCardIds.has(log.recordId)) || (log.recordType === 'WorkPermit' && targetPermitIds.has(log.recordId)) || (log.recordType === 'WorkExecution' && log.recordId === id));
+
+      await Promise.all([
+        dbApi.delete('activities', id),
+        ...targetStartCards.map(sc => dbApi.delete('startCards', sc.id)),
+        ...targetWorkPermits.map(p => dbApi.delete('workPermits', p.id)),
+        ...targetPermitAuditLogs.map(log => dbApi.delete('permitAuditLogs', log.id)),
+      ]);
+
+      setActivities(prev => prev.filter(a => a.id !== id));
+      setProgressUpdates(prev => prev.filter(upd => upd.activityId !== id));
+      setStartCards(prev => prev.filter(sc => !targetStartCardIds.has(sc.id)));
+      setPermits(prev => prev.filter(p => !targetPermitIds.has(p.id)));
+      setPermitAuditLogs(prev => prev.filter(log => !targetPermitAuditLogs.includes(log)));
+      logSystemAction('DELETE_ACTIVITY', `Removed sub-activity: ${id}`);
+    } catch (e) {
+      console.error(e);
+      alert("Error deleting activity");
+    }
   };
 
   const handleUpdateActivity = async (id: string, updated: Partial<Activity>) => {
@@ -1063,6 +1358,169 @@ export default function App() {
       console.error("Failed to reject field submission", e);
       alert(lang === 'ar' ? "فشل رفض التقرير" : "Failed to reject report");
     }
+  };
+
+  // --- START CARD & PERMIT TO WORK (PTW) HANDLERS ---
+  const handleSaveStartCard = async (card: StartCard) => {
+    try {
+      if (!card.id) card.id = `sc-${Date.now()}`;
+      await dbApi.save<StartCard>('startCards', card);
+      setStartCards(prev => {
+        const idx = prev.findIndex(c => c.id === card.id);
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = card;
+          return updated;
+        }
+        return [card, ...prev];
+      });
+
+      const log: PermitAuditLog = {
+        id: `pal-${Date.now()}`,
+        recordType: 'StartCard',
+        recordId: card.id,
+        recordNumber: card.cardNumber,
+        projectId: card.projectId,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userRoles: currentUser.roles,
+        action: card.status === 'Approved' ? 'Approved' : (card.status === 'Submitted' ? 'Submitted' : 'Saved'),
+        newStatus: card.status,
+        comments: `Start Card ${card.cardNumber} updated (${card.status})`,
+        timestamp: new Date().toISOString()
+      };
+      await dbApi.save('permitAuditLogs', log);
+      setPermitAuditLogs(prev => [log, ...prev]);
+
+      logSystemAction('SAVE_START_CARD', `Start Card ${card.cardNumber} saved with status ${card.status}`);
+    } catch (e) {
+      console.error('Failed to save Start Card:', e);
+    }
+  };
+
+  const handleDeleteStartCard = async (id: string) => {
+    try {
+      await dbApi.delete('startCards', id);
+      setStartCards(prev => prev.filter(c => c.id !== id));
+      logSystemAction('DELETE_START_CARD', `Start Card ${id} deleted`);
+    } catch (e) {
+      console.error('Failed to delete Start Card:', e);
+    }
+  };
+
+  const handleSavePermit = async (permit: WorkPermit) => {
+    try {
+      if (!permit.id) permit.id = `ptw-${Date.now()}`;
+      await dbApi.save<WorkPermit>('workPermits', permit);
+      setPermits(prev => {
+        const idx = prev.findIndex(p => p.id === permit.id);
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = permit;
+          return updated;
+        }
+        return [permit, ...prev];
+      });
+
+      const log: PermitAuditLog = {
+        id: `pal-${Date.now()}`,
+        recordType: 'WorkPermit',
+        recordId: permit.id,
+        recordNumber: permit.permitNumber,
+        projectId: permit.projectId,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userRoles: currentUser.roles,
+        action: permit.status === 'Approved' || permit.status === 'Active' ? 'Approved' : (permit.status === 'Submitted' ? 'Submitted' : 'Saved'),
+        newStatus: permit.status,
+        comments: `Permit ${permit.permitNumber} updated (${permit.status})`,
+        timestamp: new Date().toISOString()
+      };
+      await dbApi.save('permitAuditLogs', log);
+      setPermitAuditLogs(prev => [log, ...prev]);
+
+      logSystemAction('SAVE_WORK_PERMIT', `Work Permit ${permit.permitNumber} saved with status ${permit.status}`);
+    } catch (e) {
+      console.error('Failed to save Work Permit:', e);
+    }
+  };
+
+  const handleDeletePermit = async (id: string) => {
+    try {
+      await dbApi.delete('workPermits', id);
+      setPermits(prev => prev.filter(p => p.id !== id));
+      logSystemAction('DELETE_WORK_PERMIT', `Work Permit ${id} deleted`);
+    } catch (e) {
+      console.error('Failed to delete Work Permit:', e);
+    }
+  };
+
+  const handleSavePermitType = async (typeConfig: PermitTypeConfig) => {
+    try {
+      await dbApi.save<PermitTypeConfig>('permitTypes', typeConfig);
+      setPermitTypes(prev => {
+        const idx = prev.findIndex(t => t.id === typeConfig.id);
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = typeConfig;
+          return updated;
+        }
+        return [...prev, typeConfig];
+      });
+      logSystemAction('SAVE_PERMIT_TYPE', `Permit Type ${typeConfig.nameEn} updated`);
+    } catch (e) {
+      console.error('Failed to save Permit Type:', e);
+    }
+  };
+
+  const handleOverrideAuthorization = async (activityId: string, reason: string) => {
+    try {
+      const act = activities.find(a => a.id === activityId);
+      if (!act) return;
+      const updated: Activity = {
+        ...act,
+        overrideUsed: true,
+        overrideReason: reason,
+        overrideBy: currentUser.name || 'Super Admin',
+        overrideAt: new Date().toISOString()
+      };
+      await dbApi.save('activities', updated);
+      setActivities(prev => prev.map(a => a.id === activityId ? updated : a));
+
+      const log: PermitAuditLog = {
+        id: `pal-${Date.now()}`,
+        recordType: 'WorkExecution',
+        recordId: activityId,
+        recordNumber: act.code || act.id,
+        projectId: act.projectId || '',
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userRoles: currentUser.roles,
+        action: 'Override Applied',
+        newStatus: 'Authorized to Start',
+        comments: `Emergency administrative override applied: ${reason}`,
+        timestamp: new Date().toISOString()
+      };
+      await dbApi.save('permitAuditLogs', log);
+      setPermitAuditLogs(prev => [log, ...prev]);
+
+      logSystemAction('OVERRIDE_AUTHORIZATION', `Emergency override applied to activity ${act.nameAr} (${activityId}): ${reason}`);
+    } catch (e) {
+      console.error('Failed to apply authorization override:', e);
+    }
+  };
+
+  const handleOpenStartCardModal = (card?: StartCard | null, activityId?: string) => {
+    setSelectedStartCard(card || null);
+    setInitialActivityIdForStartCard(activityId);
+    setIsStartCardModalOpen(true);
+  };
+
+  const handleOpenPermitModal = (permit?: WorkPermit | null, activityId?: string, startCardId?: string) => {
+    setSelectedPermit(permit || null);
+    setInitialActivityIdForPermit(activityId);
+    setInitialStartCardIdForPermit(startCardId);
+    setIsPermitModalOpen(true);
   };
 
   const handleAddProgressUpdate = async (upd: ProgressUpdate) => {
@@ -1439,67 +1897,83 @@ export default function App() {
       )}
 
       {/* Universal Enterprise Corporate Top-Header */}
-      <header className={`sticky top-0 z-40 px-6 py-4 flex items-center justify-between border-b ${darkMode ? 'bg-[#F5EFEB] border-[#E8DCD3]' : 'bg-white border-slate-200'} shadow-sm`}>
-        <div className="flex items-center gap-4">
-          {/* Mobile Sidebar open button */}
-          <button 
-            onClick={() => setIsSidebarMobileOpen(true)}
-            className="md:hidden text-gray-500 hover:text-[#0080FF] transition"
-          >
-            <Menu className="w-6 h-6" />
-          </button>
-
+      <header className={`sticky top-0 z-40 px-3 py-2.5 md:px-6 md:py-4 flex items-center justify-between border-b ${darkMode ? 'bg-[#F5EFEB] border-[#E8DCD3]' : 'bg-white border-slate-200'} shadow-xs`}>
+        <div className="flex items-center gap-2.5 sm:gap-4">
           {/* Logo brand */}
           <div className="flex items-center gap-2.5">
             {settings.companyLogoUrl && (settings.companyLogoUrl.startsWith('data:') || settings.companyLogoUrl.startsWith('http')) ? (
-              <img src={settings.companyLogoUrl} alt="Logo" className="h-10 w-auto object-contain shrink-0 rounded-lg shadow-sm" referrerPolicy="no-referrer" />
+              <img src={settings.companyLogoUrl} alt="Logo" className="h-9 md:h-10 w-auto object-contain shrink-0 rounded-lg shadow-xs" referrerPolicy="no-referrer" />
             ) : (
-              <div className="w-10 h-10 bg-[#0080FF] text-white flex items-center justify-center rounded-xl text-2xl font-bold shadow-md overflow-hidden shrink-0">
+              <div className="w-9 h-9 md:w-10 md:h-10 bg-[#0080FF] text-white flex items-center justify-center rounded-xl text-xl md:text-2xl font-bold shadow-xs overflow-hidden shrink-0">
                 {settings.companyLogoUrl || '🏢'}
               </div>
             )}
             <div>
-              <h1 className="text-sm font-black text-[#040957] hover:text-[#0080FF] transition tracking-tight">
+              <h1 className="text-xs sm:text-sm font-black text-[#040957] hover:text-[#0080FF] transition tracking-tight truncate max-w-[140px] sm:max-w-none">
                 {lang === 'ar' ? settings.companyNameAr : settings.companyNameEn}
               </h1>
-              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">
+              <p className="text-[9px] sm:text-[10px] text-gray-400 font-bold uppercase tracking-wider hidden sm:block">
                 {textDict.subtitle}
               </p>
+              {/* Mobile Active Section Tag */}
+              <div className="flex items-center gap-1 text-[10px] text-[#0080FF] font-black sm:hidden">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#0080FF] animate-pulse" />
+                <span className="truncate">
+                  {(() => {
+                    switch (activeModule) {
+                      case 'dashboard': return lang === 'ar' ? 'الرئيسية' : 'Dashboard';
+                      case 'kpiDashboard': return lang === 'ar' ? 'مؤشرات KPI' : 'KPIs';
+                      case 'projects': return lang === 'ar' ? 'المشاريع' : 'Projects';
+                      case 'workItems': return lang === 'ar' ? 'التخطيط الذكي' : 'Planning';
+                      case 'ptw': return lang === 'ar' ? 'تصاريح العمل وبطاقات البدء (PTW)' : 'Start Cards & PTW';
+                      case 'fieldOps': return lang === 'ar' ? 'العمليات الميدانية' : 'Field';
+                      case 'warehouse': return lang === 'ar' ? 'المستودع والمواد' : 'Warehouse';
+                      case 'users': return lang === 'ar' ? 'المستخدمين' : 'Users';
+                      case 'settings': return lang === 'ar' ? 'الإعدادات' : 'Settings';
+                      case 'reports': return lang === 'ar' ? 'التقارير' : 'Reports';
+                      case 'logs': return lang === 'ar' ? 'سجلات الأمان' : 'Security Logs';
+                      case 'adminPanel': return lang === 'ar' ? 'لوحة المسؤول' : 'Admin Panel';
+                      default: return '';
+                    }
+                  })()}
+                </span>
+              </div>
             </div>
           </div>
         </div>
 
         {/* Action controllers navbar */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 md:gap-3">
           
-          {/* Dedicated Field Portal Quick Access */}
+          {/* Dedicated Field Portal Quick Access (Desktop only, mobile has dedicated card in bottom sheet) */}
           <button 
             onClick={() => {
               const portalUrl = `${window.location.origin}${window.location.pathname}?portal=field#portal=field`;
               window.history.replaceState({}, document.title, portalUrl);
               setIsFieldPortal(true);
             }}
-            className="bg-amber-400 hover:bg-amber-500 text-slate-950 py-1.5 px-3 rounded-lg text-xs font-black transition flex items-center gap-1.5 shadow-sm"
+            className="hidden md:flex bg-amber-400 hover:bg-amber-500 text-slate-950 py-1.5 px-3 rounded-lg text-xs font-black transition items-center gap-1.5 shadow-xs"
             title={lang === 'ar' ? 'فتح البوابة الميدانية للمشرفين' : 'Open Field Portal for Supervisors'}
           >
             <span>📱</span>
-            <span className="hidden sm:inline">{lang === 'ar' ? 'بوابة المشرف الميداني' : 'Field Portal'}</span>
+            <span>{lang === 'ar' ? 'بوابة المشرف الميداني' : 'Field Portal'}</span>
           </button>
 
-          {/* Direct Role Access Sandbox selector */}
-
+          {/* Direct Role Access Sandbox selector (Both Desktop & Mobile) */}
           <div className="relative">
             <button 
               onClick={() => setShowRoleSelector(!showRoleSelector)}
-              className="bg-gray-100 hover:bg-[#0080FF]/15 border border-gray-200 py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-gray-700"
+              className="bg-gray-100/90 hover:bg-[#0080FF]/15 border border-gray-200/90 py-1.5 px-2.5 sm:px-3 rounded-xl text-xs font-bold transition flex items-center gap-1.5 text-gray-700"
             >
-              <UserCircle className="w-4 h-4 text-[#0080FF]" />
+              <div className="w-5 h-5 rounded-full bg-blue-50 text-[#0080FF] flex items-center justify-center font-black text-[10px]">
+                <UserCircle className="w-4 h-4" />
+              </div>
               <span className="hidden md:inline">{textDict.roleLabel}:</span>
-              <span className="text-[#040957] font-black">{currentUser.roles?.join(', ')}</span>
+              <span className="text-[#040957] font-black text-[11px] sm:text-xs">{currentUser.roles?.[0] || 'User'}</span>
             </button>
 
             {showRoleSelector && (
-              <div className={`absolute top-full mt-2 ${lang === 'ar' ? 'left-0' : 'right-0'} z-50 bg-white border border-gray-200 shadow-2xl rounded-xl w-60 py-2 text-xs divide-y divide-gray-100`}>
+              <div className={`absolute top-full mt-2 ${lang === 'ar' ? 'left-0' : 'right-0'} z-50 bg-white border border-gray-200 shadow-2xl rounded-2xl w-60 py-2 text-xs divide-y divide-gray-100`}>
                 <div className="px-4 py-2 font-black text-[#040957] uppercase tracking-wider">{lang === 'ar' ? 'مسح واختبار الهويات' : 'Test strict RBAC Access'}</div>
                 {mockUsers.map(usr => (
                   <button
@@ -1519,19 +1993,19 @@ export default function App() {
             )}
           </div>
 
-          {/* Lang switcher */}
+          {/* Lang switcher (Desktop only, mobile has it inside the bottom sheet) */}
           <button 
             onClick={handleToggleLanguage}
-            className="p-2 bg-gray-100 hover:bg-[#0080FF]/15 border border-gray-200 rounded-lg text-gray-700 hover:text-[#0080FF] transition"
+            className="hidden md:flex p-2 bg-gray-100 hover:bg-[#0080FF]/15 border border-gray-200 rounded-lg text-gray-700 hover:text-[#0080FF] transition"
             title={textDict.langToggle}
           >
             <Globe className="w-4.5 h-4.5" />
           </button>
 
-          {/* Light/Warm comfort mode toggle */}
+          {/* Light/Warm comfort mode toggle (Desktop only, mobile has it inside the bottom sheet) */}
           <button 
             onClick={handleToggleDarkMode}
-            className="p-2 bg-gray-100 hover:bg-[#0080FF]/15 border border-gray-200 rounded-lg text-gray-700 hover:text-[#0080FF] transition flex items-center gap-1.5"
+            className="hidden md:flex p-2 bg-gray-100 hover:bg-[#0080FF]/15 border border-gray-200 rounded-lg text-gray-700 hover:text-[#0080FF] transition items-center gap-1.5"
             title={lang === 'ar' ? 'تغيير المظهر الفاتح (حديث / دافئ)' : 'Toggle Light Theme (Modern Slate / Warm Sand)'}
           >
             {darkMode ? (
@@ -1564,6 +2038,7 @@ export default function App() {
               { id: 'kpiDashboard', label: lang === 'ar' ? 'مؤشرات الأداء KPI' : 'KPI Analytics', icon: BarChart3 },
               { id: 'projects', label: textDict.projects, icon: Briefcase },
               { id: 'workItems', label: textDict.smartPlanning, icon: Layers },
+              { id: 'ptw', label: lang === 'ar' ? 'تصاريح العمل وبطاقات البدء (PTW)' : 'Start Cards & PTW', icon: ShieldCheck },
               { id: 'fieldOps', label: textDict.fieldOps, icon: Clock },
               { id: 'warehouse', label: textDict.warehouse, icon: Package },
               { id: 'users', label: lang === 'ar' ? 'المستخدمين والصلاحيات' : 'Users & Permissions', icon: Users },
@@ -1624,59 +2099,250 @@ export default function App() {
           </div>
         </aside>
 
-                {/* MOBILE SIDEBAR PANEL DRAWER BACKDROP */}
+        {/* MOBILE APP-STYLE BOTTOM NAVIGATION BAR (Visible strictly on mobile screens) */}
+        <nav 
+          aria-label="Mobile Navigation" 
+          className={`fixed bottom-0 inset-x-0 z-40 md:hidden border-t shadow-[0_-4px_25px_rgba(0,0,0,0.08)] px-1 py-1.5 ${
+            darkMode 
+              ? 'bg-[#FAF6F0]/95 border-[#E8DCD3] text-slate-800' 
+              : 'bg-white/95 border-slate-200 text-slate-700'
+          } backdrop-blur-md pb-[max(0.375rem,env(safe-area-inset-bottom))]`}
+        >
+          <div className="flex items-center justify-around max-w-md mx-auto">
+            {[
+              { id: 'dashboard', label: lang === 'ar' ? 'الرئيسية' : 'Home', icon: ActivityIcon },
+              { id: 'kpiDashboard', label: lang === 'ar' ? 'المؤشرات' : 'KPIs', icon: BarChart3 },
+              { id: 'projects', label: lang === 'ar' ? 'المشاريع' : 'Projects', icon: Briefcase },
+              { id: 'workItems', label: lang === 'ar' ? 'التخطيط' : 'Planning', icon: Layers },
+              { id: 'fieldOps', label: lang === 'ar' ? 'الميدان' : 'Field', icon: Clock }
+            ].map(tab => {
+              const active = activeModule === tab.id;
+              const Icon = tab.icon;
+
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setActiveModule(tab.id);
+                    setIsSidebarMobileOpen(false);
+                  }}
+                  className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition-all duration-200 min-w-[58px] relative ${
+                    active 
+                      ? 'text-[#0080FF] font-black' 
+                      : 'text-slate-400 hover:text-slate-600 font-medium'
+                  }`}
+                >
+                  {active && (
+                    <span className="absolute -top-1 w-6 h-1 bg-[#0080FF] rounded-full shadow-[0_0_8px_rgba(0,128,255,0.6)]" />
+                  )}
+                  <div className={`p-1 rounded-lg transition-transform ${active ? 'bg-blue-50 text-[#0080FF] scale-110' : ''}`}>
+                    <Icon className="w-5 h-5" />
+                  </div>
+                  <span className="text-[10px] tracking-tight truncate mt-0.5">{tab.label}</span>
+                </button>
+              );
+            })}
+
+            {/* "More / المزيد" Bottom Navigation Tab */}
+            {(() => {
+              const isMoreActive = ['ptw', 'warehouse', 'users', 'settings', 'reports', 'logs', 'adminPanel'].includes(activeModule);
+              return (
+                <button
+                  onClick={() => setIsSidebarMobileOpen(!isSidebarMobileOpen)}
+                  className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition-all duration-200 min-w-[58px] relative ${
+                    isMoreActive || isSidebarMobileOpen
+                      ? 'text-[#0080FF] font-black' 
+                      : 'text-slate-400 hover:text-slate-600 font-medium'
+                  }`}
+                >
+                  {(isMoreActive || isSidebarMobileOpen) && (
+                    <span className="absolute -top-1 w-6 h-1 bg-[#0080FF] rounded-full shadow-[0_0_8px_rgba(0,128,255,0.6)]" />
+                  )}
+                  <div className={`p-1 rounded-lg transition-transform relative ${isMoreActive || isSidebarMobileOpen ? 'bg-blue-50 text-[#0080FF] scale-110' : ''}`}>
+                    <LayoutGrid className="w-5 h-5" />
+                    {isMoreActive && (
+                      <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-amber-500 rounded-full ring-2 ring-white" />
+                    )}
+                  </div>
+                  <span className="text-[10px] tracking-tight truncate mt-0.5">
+                    {lang === 'ar' ? 'المزيد' : 'More'}
+                  </span>
+                </button>
+              );
+            })()}
+          </div>
+        </nav>
+
+        {/* MOBILE BOTTOM SHEET ACTION DRAWER (All Sections & Quick Services) */}
         {isSidebarMobileOpen && (
-          <div className="fixed inset-0 z-[100] md:hidden">
-            <div className="fixed inset-0 bg-black/40 backdrop-blur-xs" onClick={() => setIsSidebarMobileOpen(false)}></div>
+          <div className="fixed inset-0 z-[100] md:hidden flex flex-col justify-end">
+            {/* Backdrop with smooth blur */}
             <div 
-              className={`fixed top-0 bottom-0 ${lang === 'ar' ? 'right-0' : 'left-0'} w-[280px] p-5 flex flex-col ${darkMode ? 'bg-[#FAF6F0]' : 'bg-white'} animate-slideIn shadow-2xl z-[101]`}
+              className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity duration-300" 
+              onClick={() => setIsSidebarMobileOpen(false)}
+            />
+            
+            {/* Bottom Sheet Modal Container */}
+            <div 
+              className={`relative w-full max-h-[85vh] rounded-t-3xl border-t border-slate-200/80 shadow-2xl flex flex-col z-[101] overflow-hidden ${
+                darkMode ? 'bg-[#FAF6F0]' : 'bg-white'
+              } animate-in slide-in-from-bottom duration-300`}
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex justify-between items-center pb-4 mb-4 border-b shrink-0">
-                <span className="font-black text-[#040957]">{lang === 'ar' ? 'القائمة الرئيسية' : 'Quick Navigation'}</span>
-                <button onClick={() => setIsSidebarMobileOpen(false)} className="text-gray-400 p-2 -mr-2"><X className="w-5 h-5" /></button>
+              {/* Drag Handle Indicator */}
+              <div 
+                className="pt-3 pb-1.5 flex justify-center cursor-pointer select-none" 
+                onClick={() => setIsSidebarMobileOpen(false)}
+              >
+                <div className="w-12 h-1.5 bg-slate-300 rounded-full" />
               </div>
-              <div className="flex flex-col gap-1 overflow-y-auto flex-1 pb-10">
-                {[
-                  { id: 'dashboard', label: textDict.dashboard, icon: ActivityIcon },
-                  { id: 'kpiDashboard', label: lang === 'ar' ? 'مؤشرات الأداء KPI' : 'KPI Analytics', icon: BarChart3 },
-                  { id: 'projects', label: textDict.projects, icon: Briefcase },
-                  { id: 'workItems', label: textDict.smartPlanning, icon: Layers },
-                  { id: 'fieldOps', label: textDict.fieldOps, icon: Clock },
-                  { id: 'warehouse', label: textDict.warehouse, icon: Package },
-                  { id: 'users', label: lang === 'ar' ? 'المستخدمين والصلاحيات' : 'Users & Permissions', icon: Users },
-                  { id: 'settings', label: textDict.settings, icon: Building2 },
-                  { id: 'reports', label: textDict.reports, icon: FileText },
-                  { id: 'logs', label: textDict.logs, icon: ShieldAlert },
-                  { 
-                    id: 'adminPanel', 
-                    label: currentAdmin 
-                      ? (lang === 'ar' ? `لوحة المسؤول (${currentAdmin.name})` : `Admin Panel (${currentAdmin.name})`) 
-                      : (lang === 'ar' ? 'تسجيل دخول المسؤول' : 'Admin Login'), 
-                    icon: Shield 
-                  }
-                ].map(m => {
-                  const active = activeModule === m.id;
-                  const Icon = m.icon;
 
-                  return (
-                    <button
-                      key={m.id}
-                      onClick={() => { setActiveModule(m.id); setIsSidebarMobileOpen(false); }}
-                      className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold transition-all text-right flex items-center gap-3 ${active ? 'bg-[#0080FF] text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100 hover:text-[#0080FF]'}`}
-                    >
-                      <Icon className="w-4.5 h-4.5" />
-                      <span>{m.label}</span>
-                    </button>
-                  );
-                })}
+              {/* Sheet Header */}
+              <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-blue-50 text-[#0080FF] flex items-center justify-center font-bold">
+                    <LayoutGrid className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-[#040957]">
+                      {lang === 'ar' ? 'كافة أقسام وخدمات المنظومة' : 'All Modules & Services'}
+                    </h3>
+                    <p className="text-[10px] text-slate-400 font-medium">
+                      {lang === 'ar' ? 'اختر القسم للانتقال المباشر' : 'Tap any module to navigate directly'}
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setIsSidebarMobileOpen(false)} 
+                  className="w-8 h-8 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-800 flex items-center justify-center transition"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Scrollable Modules Content */}
+              <div className="p-4 overflow-y-auto space-y-3.5 pb-20">
+                
+                {/* Highlight Field Portal Card */}
+                <div className="bg-gradient-to-r from-amber-500 to-amber-600 rounded-2xl p-3 text-white shadow-md flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center text-lg">
+                      📱
+                    </div>
+                    <div>
+                      <div className="font-black text-xs">
+                        {lang === 'ar' ? 'بوابة المشرف الميداني' : 'Field Supervisor Portal'}
+                      </div>
+                      <div className="text-[10px] text-amber-100">
+                        {lang === 'ar' ? 'واجهة تفاعلية لتسجيل الإنجاز والمواد' : 'Direct mobile reporting interface'}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setIsSidebarMobileOpen(false);
+                      const portalUrl = `${window.location.origin}${window.location.pathname}?portal=field#portal=field`;
+                      window.history.replaceState({}, document.title, portalUrl);
+                      setIsFieldPortal(true);
+                    }}
+                    className="bg-white text-amber-950 px-3 py-1.5 rounded-xl text-xs font-black hover:bg-amber-50 transition shadow-xs flex items-center gap-1 shrink-0"
+                  >
+                    <span>{lang === 'ar' ? 'فتح البوابة' : 'Launch'}</span>
+                    <ChevronRight className={`w-3.5 h-3.5 ${lang === 'ar' ? 'rotate-180' : ''}`} />
+                  </button>
+                </div>
+
+                {/* 2-Column Responsive Grid for all 12 modules */}
+                <div className="grid grid-cols-2 gap-2.5">
+                  {[
+                    { id: 'dashboard', labelAr: 'لوحة القيادة', labelEn: 'Dashboard', icon: ActivityIcon, desc: lang === 'ar' ? 'نظرة عامة وإحصائيات' : 'Overview & statistics' },
+                    { id: 'kpiDashboard', labelAr: 'مؤشرات الأداء KPI', labelEn: 'KPI Analytics', icon: BarChart3, desc: lang === 'ar' ? 'تحليل الإنتاج والإنجاز' : 'Productivity & analytics' },
+                    { id: 'projects', labelAr: 'إدارة المشاريع', labelEn: 'Projects', icon: Briefcase, desc: lang === 'ar' ? 'عقود وبيانات المشاريع' : 'Projects & contracts' },
+                    { id: 'workItems', labelAr: 'البنود والتخطيط الذكي', labelEn: 'Smart Planning', icon: Layers, desc: lang === 'ar' ? 'حزم الأعمال والأنشطة' : 'Work packages & activities' },
+                    { id: 'ptw', labelAr: 'تصاريح العمل وبطاقات البدء (PTW)', labelEn: 'Start Cards & PTW', icon: ShieldCheck, desc: lang === 'ar' ? 'إصدار بطاقات البدء والتصاريح' : 'Permits to work & authorization' },
+                    { id: 'fieldOps', labelAr: 'العمليات الميدانية', labelEn: 'Field Operations', icon: Clock, desc: lang === 'ar' ? 'تقارير الإشراف اليومية' : 'Daily supervisor submissions' },
+                    { id: 'warehouse', labelAr: 'المستودع والمواد', labelEn: 'Warehouse', icon: Package, desc: lang === 'ar' ? 'المخزون وحركة التوريد' : 'Stock & materials ledger' },
+                    { id: 'users', labelAr: 'المستخدمين والصلاحيات', labelEn: 'Users & Roles', icon: Users, desc: lang === 'ar' ? 'إدارة الهويات والأذونات' : 'Team access & permissions' },
+                    { id: 'settings', labelAr: 'الإعدادات والشركة', labelEn: 'Settings', icon: Building2, desc: lang === 'ar' ? 'بيانات وهوية المنشأة' : 'Company & system preferences' },
+                    { id: 'reports', labelAr: 'التقارير والمطابقة', labelEn: 'Reports', icon: FileText, desc: lang === 'ar' ? 'التقارير التفصيلية والتصدير' : 'Detailed analytics & exports' },
+                    { id: 'logs', labelAr: 'سجلات الأمان والتدقيق', labelEn: 'Security Logs', icon: ShieldAlert, desc: lang === 'ar' ? 'سجل العمليات والأحداث' : 'Audit logs & safety events' },
+                    { 
+                      id: 'adminPanel', 
+                      labelAr: currentAdmin ? `لوحة المسؤول (${currentAdmin.name})` : 'تسجيل دخول المسؤول',
+                      labelEn: currentAdmin ? `Admin Panel (${currentAdmin.name})` : 'Admin Login',
+                      icon: Shield, 
+                      desc: lang === 'ar' ? 'التحكم الإداري المتقدم' : 'Advanced system administration'
+                    }
+                  ].map(m => {
+                    const active = activeModule === m.id;
+                    const Icon = m.icon;
+
+                    return (
+                      <button
+                        key={m.id}
+                        onClick={() => {
+                          setActiveModule(m.id);
+                          setIsSidebarMobileOpen(false);
+                        }}
+                        className={`p-3 rounded-2xl text-right transition-all flex flex-col gap-1.5 border text-xs font-bold relative ${
+                          active 
+                            ? 'bg-[#0080FF] text-white border-[#0080FF] shadow-md' 
+                            : darkMode 
+                              ? 'bg-white/70 border-slate-200/90 text-slate-800 hover:bg-white' 
+                              : 'bg-slate-50/80 border-slate-200/80 text-slate-800 hover:bg-blue-50/50 hover:border-blue-200'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between w-full">
+                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${active ? 'bg-white/20 text-white' : 'bg-blue-50 text-[#0080FF]'}`}>
+                            <Icon className="w-4 h-4" />
+                          </div>
+                          {active && (
+                            <span className="text-[9px] bg-white text-[#0080FF] font-black px-1.5 py-0.5 rounded-md shadow-xs">
+                              {lang === 'ar' ? 'نشط' : 'Active'}
+                            </span>
+                          )}
+                        </div>
+                        <div className="space-y-0.5 text-right w-full">
+                          <div className="font-black truncate">{lang === 'ar' ? m.labelAr : m.labelEn}</div>
+                          <div className={`text-[9.5px] truncate font-normal ${active ? 'text-blue-100' : 'text-slate-400'}`}>
+                            {m.desc}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* System Settings & User Session Bar */}
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2 text-xs">
+                  <button
+                    onClick={() => {
+                      handleToggleLanguage();
+                    }}
+                    className="flex-1 py-2 px-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 font-bold flex items-center justify-center gap-1.5 hover:bg-slate-100"
+                  >
+                    <Globe className="w-3.5 h-3.5 text-slate-500" />
+                    <span>{lang === 'ar' ? 'English' : 'عربي'}</span>
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      handleToggleDarkMode();
+                    }}
+                    className="flex-1 py-2 px-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 font-bold flex items-center justify-center gap-1.5 hover:bg-slate-100"
+                  >
+                    {darkMode ? <Sun className="w-3.5 h-3.5 text-amber-500" /> : <Moon className="w-3.5 h-3.5 text-slate-500" />}
+                    <span>{darkMode ? (lang === 'ar' ? 'الوضع الحديث' : 'Slate') : (lang === 'ar' ? 'الوضع الدافئ' : 'Warm')}</span>
+                  </button>
+                </div>
+
               </div>
             </div>
           </div>
         )}
 
         {/* MAIN BODY SCROLLABLE SPACE */}
-        <main className={`flex-1 p-6 md:p-8 overflow-y-auto transition-all duration-500 ${isSidebarCollapsed ? 'max-w-none w-full px-4 md:px-12' : 'max-w-7xl mx-auto'} space-y-6 relative`}>
+        <main className={`flex-1 p-4 md:p-8 overflow-y-auto transition-all duration-500 ${isSidebarCollapsed ? 'max-w-none w-full px-4 md:px-12' : 'max-w-7xl mx-auto'} space-y-6 relative pb-28 md:pb-8`}>
           
           {/* BACKGROUND PRINTING INDICATOR */}
           {isBackgroundPrinting && (
@@ -1804,6 +2470,43 @@ export default function App() {
               onUpdateActivity={handleUpdateActivity}
               onUpdateWorker={handleUpdateWorker}
               openConfirm={openConfirm}
+              startCards={startCards}
+              permits={permits}
+              onOpenStartCard={handleOpenStartCardModal}
+              onOpenPermit={handleOpenPermitModal}
+            />
+          )}
+
+          {/* START CARDS & PERMIT TO WORK (PTW) AUTHORIZATION MANAGEMENT */}
+          {activeModule === 'ptw' && (
+            <PTWManagementPanel
+              projects={projects}
+              workItems={workItems}
+              activities={activities}
+              workers={workers}
+              equipment={equipment}
+              materials={materials}
+              startCards={startCards}
+              permits={permits}
+              permitTypes={permitTypes}
+              auditLogs={permitAuditLogs}
+              settings={settings}
+              userRoles={currentUser.roles || ['Admin']}
+              currentUserName={currentUser.name}
+              onSaveStartCard={handleSaveStartCard}
+              onDeleteStartCard={handleDeleteStartCard}
+              onSavePermit={handleSavePermit}
+              onDeletePermit={handleDeletePermit}
+              onLogAudit={async (logData) => {
+                const log: PermitAuditLog = {
+                  ...logData,
+                  id: `pal-${Date.now()}`,
+                  timestamp: new Date().toISOString()
+                };
+                await dbApi.save('permitAuditLogs', log);
+                setPermitAuditLogs(prev => [log, ...prev]);
+              }}
+              lang={lang}
             />
           )}
 
@@ -2084,6 +2787,86 @@ export default function App() {
 
         </main>
       </div>
+
+      {/* START CARD MODAL (GLOBAL WORK ITEMS TRIGGER) */}
+      {isStartCardModalOpen && (
+        <StartCardModal 
+          isOpen={isStartCardModalOpen}
+          onClose={() => {
+            setIsStartCardModalOpen(false);
+            setSelectedStartCard(null);
+            setInitialActivityIdForStartCard(undefined);
+          }}
+          startCard={selectedStartCard}
+          initialActivityId={initialActivityIdForStartCard}
+          projects={projects}
+          workItems={workItems}
+          activities={activities}
+          settings={settings}
+          userRoles={currentUser.roles || ['Admin']}
+          currentUserName={currentUser.name}
+          onSave={async (card) => {
+            await handleSaveStartCard(card);
+            setIsStartCardModalOpen(false);
+            setSelectedStartCard(null);
+            setInitialActivityIdForStartCard(undefined);
+          }}
+          onLogAudit={async (logData) => {
+            const log: PermitAuditLog = {
+              ...logData,
+              id: `pal-${Date.now()}`,
+              timestamp: new Date().toISOString()
+            };
+            await dbApi.save('permitAuditLogs', log);
+            setPermitAuditLogs(prev => [log, ...prev]);
+          }}
+          lang={lang}
+        />
+      )}
+
+      {/* PERMIT TO WORK (PTW) MODAL (GLOBAL TRIGGER) */}
+      {isPermitModalOpen && (
+        <PermitModal 
+          isOpen={isPermitModalOpen}
+          onClose={() => {
+            setIsPermitModalOpen(false);
+            setSelectedPermit(null);
+            setInitialActivityIdForPermit(undefined);
+            setInitialStartCardIdForPermit(undefined);
+          }}
+          permit={selectedPermit}
+          initialActivityId={initialActivityIdForPermit}
+          initialStartCardId={initialStartCardIdForPermit}
+          startCards={startCards}
+          permitTypes={permitTypes}
+          projects={projects}
+          workItems={workItems}
+          activities={activities}
+          workers={workers}
+          equipment={equipment}
+          materials={materials}
+          settings={settings}
+          userRoles={currentUser.roles || ['Admin']}
+          currentUserName={currentUser.name}
+          onSave={async (permit) => {
+            await handleSavePermit(permit);
+            setIsPermitModalOpen(false);
+            setSelectedPermit(null);
+            setInitialActivityIdForPermit(undefined);
+            setInitialStartCardIdForPermit(undefined);
+          }}
+          onLogAudit={async (logData) => {
+            const log: PermitAuditLog = {
+              ...logData,
+              id: `pal-${Date.now()}`,
+              timestamp: new Date().toISOString()
+            };
+            await dbApi.save('permitAuditLogs', log);
+            setPermitAuditLogs(prev => [log, ...prev]);
+          }}
+          lang={lang}
+        />
+      )}
 
       {/* GLOBAL CONFIRMATION MODAL */}
       <ConfirmModal 

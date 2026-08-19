@@ -623,9 +623,184 @@ export default function ProjectList({
         </div>
       )}
 
-      {/* Projects Advanced Table Layout / Gantt View */}
+      {/* Projects Advanced Table Layout / Mobile Cards / Gantt View */}
       {viewMode === 'table' ? (
-        <div className="overflow-x-auto rounded-xl border border-gray-100">
+        <>
+          {/* Mobile Card List (md:hidden) */}
+          <div className="space-y-3 md:hidden">
+            {sortedProjects.map(p => {
+              const isSelected = selectedIds.includes(p.id);
+              const dynamicStatus = getProjectStatusDetails(p, workItems, activities, progressUpdates, attendanceRecords, materials);
+              
+              let statusLabel = t.onTrack;
+              let statusClass = 'bg-blue-50 text-blue-700 border-blue-100';
+              
+              if (dynamicStatus.status === 'Ahead') {
+                statusLabel = t.ahead;
+                statusClass = 'bg-emerald-50 text-emerald-700 border-emerald-100';
+              } else if (dynamicStatus.status === 'Delayed') {
+                statusLabel = t.delayed;
+                statusClass = 'bg-red-50 text-red-700 border-red-100';
+              }
+
+              const progress = getProjectProgress(p, workItems, activities, progressUpdates);
+
+              return (
+                <div 
+                  key={p.id}
+                  className={`bg-white rounded-2xl border p-4 shadow-2xs space-y-3 transition-all ${
+                    isSelected ? 'border-[#0080FF] ring-2 ring-[#0080FF]/10' : 'border-gray-200'
+                  }`}
+                >
+                  {/* Card Header: Checkbox + Project Number + Status */}
+                  <div className="flex items-center justify-between gap-2 border-b border-gray-100 pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => handleToggleSelectRow(p.id)} className="hover:opacity-85">
+                        {isSelected ? (
+                          <CheckSquare className="w-4.5 h-4.5 text-[#0080FF]" />
+                        ) : (
+                          <Square className="w-4.5 h-4.5 text-gray-300" />
+                        )}
+                      </button>
+                      <span className="font-mono font-bold text-xs text-[#040957]">{p.projectNumber}</span>
+                      <button 
+                        onClick={() => handleCopyClipboard(p.projectNumber)}
+                        title={isRtl ? 'نسخ الرمز' : 'Copy referral'}
+                        className="text-gray-300 hover:text-[#0080FF] transition"
+                      >
+                        <Copy className="w-3 h-3" />
+                      </button>
+                      {p.isCompleted && (
+                        <button
+                          onClick={() => {
+                            if (unlockedProjectIds.includes(p.id)) {
+                              setUnlockedProjectIds(prev => prev.filter(id => id !== p.id));
+                              showNotification(isRtl ? 'تم إعادة إغلاق وتأمين المشروع' : 'Project re-locked successfully');
+                            } else {
+                              checkLock(p, () => {
+                                showNotification(isRtl ? 'تم فتح تأمين المشروع للتعديل المؤقت' : 'Project unlocked temporarily for edits');
+                              });
+                            }
+                          }}
+                          className="transition shrink-0"
+                        >
+                          {unlockedProjectIds.includes(p.id) ? (
+                            <Unlock className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
+                          ) : (
+                            <Lock className="w-3.5 h-3.5 text-red-500 font-bold" />
+                          )}
+                        </button>
+                      )}
+                    </div>
+                    <span className={`px-2 py-0.5 rounded-full border text-[9px] font-bold shrink-0 ${statusClass}`}>
+                      {statusLabel}
+                    </span>
+                  </div>
+
+                  {/* Project Name & Client */}
+                  <div>
+                    <h4 className="font-bold text-sm text-[#040957]">
+                      {isRtl ? p.nameAr : p.nameEn}
+                    </h4>
+                    <div className="flex items-center justify-between text-[11px] text-gray-500 mt-1">
+                      <span>👤 {isRtl ? p.clientAr : p.clientEn}</span>
+                      <span className="truncate max-w-[140px]">📍 {isRtl ? p.locationAr : p.locationEn}</span>
+                    </div>
+                  </div>
+
+                  {/* Dates & Budget Grid */}
+                  <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-xl text-[11px]">
+                    <div>
+                      <span className="text-[9px] text-gray-400 block font-bold">{isRtl ? 'المدة الزمنية' : 'Timeline'}</span>
+                      <span className="font-mono text-gray-700 font-semibold">{p.startDate} → {p.endDate}</span>
+                    </div>
+                    <div className="text-left rtl:text-right">
+                      <span className="text-[9px] text-gray-400 block font-bold">{t.budget}</span>
+                      <span className="font-mono font-bold text-[#040957]">{p.budget ? p.budget.toLocaleString() : '---'}</span>
+                    </div>
+                  </div>
+
+                  {/* Progress Bar */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-center text-[10px] font-bold">
+                      <span className="text-gray-500">{isRtl ? 'نسبة الإنجاز الفعلي' : 'Actual Progress'}</span>
+                      <span className="font-mono text-emerald-600">{progress}%</span>
+                    </div>
+                    <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                      <div className="bg-emerald-500 h-2 rounded-full transition-all" style={{ width: `${progress}%` }}></div>
+                    </div>
+                  </div>
+
+                  {/* Card Actions Footer */}
+                  <div className="flex items-center justify-end gap-1.5 pt-2 border-t border-gray-100">
+                    <button 
+                      onClick={() => {
+                        if (p.isCompleted) {
+                          setReportProject(p);
+                          setIsReportOpen(true);
+                        } else {
+                          openConfirm(
+                            isRtl ? 'إكمال وإغلاق المشروع' : 'Complete & Lock Project',
+                            isRtl 
+                              ? 'هل أنت متأكد من رغبتك في إكمال وإغلاق هذا المشروع؟ سيتم تأمينه ومنع أي تعديل عليه لاحقاً إلا برقم هوية وكلمة مرور المدير.'
+                              : 'Are you sure you want to complete and lock this project? It will be archived and locked from further edits unless overridden by the manager.',
+                            async () => {
+                              onUpdateProject(p.id, {
+                                isCompleted: true
+                              });
+                              showNotification(isRtl ? 'تم إكمال وإغلاق المشروع بنجاح!' : 'Project completed and locked successfully!');
+                            }
+                          );
+                        }
+                      }}
+                      className={`text-[10px] font-bold px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition ${
+                        p.isCompleted 
+                          ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' 
+                          : 'bg-blue-50 text-[#0080FF] hover:bg-blue-100'
+                      }`}
+                    >
+                      {p.isCompleted ? (
+                        <>
+                          <Award className="w-3.5 h-3.5" />
+                          <span>{isRtl ? 'محضر الإغلاق' : 'Report'}</span>
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>{isRtl ? 'إغلاق المشروع' : 'Complete'}</span>
+                        </>
+                      )}
+                    </button>
+
+                    <button 
+                      onClick={() => checkLock(p, () => handleOpenEdit(p))}
+                      disabled={isReadOnly}
+                      className={`text-gray-500 hover:text-indigo-600 p-1.5 hover:bg-indigo-50 rounded-lg transition ${isReadOnly ? 'opacity-35 cursor-not-allowed' : ''}`}
+                      title={t.edit}
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={() => checkLock(p, () => handleRowDelete(p.id))}
+                      disabled={isReadOnly}
+                      className={`text-gray-500 hover:text-red-600 p-1.5 hover:bg-red-50 rounded-lg transition ${isReadOnly ? 'opacity-35 cursor-not-allowed' : ''}`}
+                      title={t.delete}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+            {sortedProjects.length === 0 && (
+              <div className="p-8 text-center text-gray-400 font-medium bg-white rounded-2xl border border-gray-100">
+                {isRtl ? 'لا توجد مشاريع مسجلة حالياً تطابق الاستعلام.' : 'No active projects catalogued matching this state query.'}
+              </div>
+            )}
+          </div>
+
+          {/* Desktop Table */}
+          <div className="hidden md:block overflow-x-auto rounded-xl border border-gray-100">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-gray-50 text-gray-500 text-[10px] font-black uppercase tracking-wider border-b border-gray-100">
@@ -884,6 +1059,7 @@ export default function ProjectList({
             </tbody>
           </table>
         </div>
+        </>
       ) : (
         <GanttChart 
           lang={lang}
@@ -1961,7 +2137,7 @@ export default function ProjectList({
                     </thead>
                     <tbody>
                       ${filteredWIs.map((wi, index) => {
-                        const wiProgress = getWorkItemProgress(wi, activities, progressUpdates);
+                        const wiProgress = getWorkItemProgress(wi, activities, progressUpdates, reportProject);
                         const linkedActs = filteredActs.filter(act => act.workItemId === wi.id);
                         
                         return `
@@ -1981,7 +2157,7 @@ export default function ProjectList({
                                   <br/><span style="font-size: 7.5px; color: #94a3b8;">${isRtl ? 'النطاق/المنطقة:' : 'Zone/Area:'} ${act.workZone || '---'}</span>
                                 </td>
                                 <td>${act.totalQuantity} ${act.unit}</td>
-                                <td style="text-align: center; font-weight: bold; color: #10b981;">${getActivityProgress(act, progressUpdates)}%</td>
+                                <td style="text-align: center; font-weight: bold; color: #10b981;">${getActivityProgress(act, progressUpdates, reportProject)}%</td>
                                 <td>${act.expectedFinishDate || '---'}</td>
                               </tr>
                             `;
@@ -2360,7 +2536,7 @@ export default function ProjectList({
 
                   <div className="border border-gray-100 rounded-2xl overflow-hidden divide-y divide-gray-100 text-xs">
                     {filteredWIs.map((wi, wiIdx) => {
-                      const wiProgress = getWorkItemProgress(wi, activities, progressUpdates);
+                      const wiProgress = getWorkItemProgress(wi, activities, progressUpdates, reportProject);
                       const wiActs = filteredActs.filter(act => act.workItemId === wi.id);
                       
                       return (
@@ -2380,7 +2556,7 @@ export default function ProjectList({
                                   <span className="font-semibold text-gray-700">↳ {isRtl ? act.nameAr : act.nameEn}</span>
                                   <div className="flex items-center gap-4 font-mono text-[10px] text-gray-500">
                                     <span>{isRtl ? 'الكمية:' : 'Qty:'} {act.totalQuantity} {act.unit}</span>
-                                    <span>{isRtl ? 'التقدم:' : 'Progress:'} {getActivityProgress(act, progressUpdates)}%</span>
+                                    <span>{isRtl ? 'التقدم:' : 'Progress:'} {getActivityProgress(act, progressUpdates, reportProject)}%</span>
                                     <span className="font-bold text-gray-700">🗓️ {act.expectedFinishDate || '---'}</span>
                                   </div>
                                 </div>
