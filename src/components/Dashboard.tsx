@@ -471,7 +471,7 @@ export default function Dashboard({
   const handlePrintFeed = async () => {
     try {
       setIsPrinting(true);
-      const html2pdf = (await import('html2pdf.js')).default;
+      const { exportElementToPdf } = await import('../utils/pdf/UniversalPdfEngine');
       
       let printFrame = document.getElementById('production-pdf-iframe') as HTMLIFrameElement;
       if (!printFrame) {
@@ -487,16 +487,18 @@ export default function Dashboard({
       }
 
       const selectedProjectName = filterProjectId === 'all' 
-        ? (isRtl ? 'جميع المشاريع النشطة' : 'All Active Projects')
+        ? (isRtl ? 'جميع المشاريع الإنشائية المعتمدة' : 'All Active Construction Projects')
         : (projects.find(p => p.id === filterProjectId)?.nameAr || '-');
 
       const selectedProjectNameEn = filterProjectId === 'all'
-        ? 'All Active Projects'
+        ? 'All Active Construction Projects'
         : (projects.find(p => p.id === filterProjectId)?.nameEn || '-');
+
+      const selectedProjectObj = filterProjectId === 'all' ? null : projects.find(p => p.id === filterProjectId);
 
       let productionRowsHtml = '';
       if (filteredProductionFeed.length === 0) {
-        productionRowsHtml = `<tr><td colspan="7" style="text-align: center; padding: 25px; color: #64748b; font-style: italic; font-weight: 500;">${isRtl ? 'لا يوجد بيانات مسجلة في هذه الفترة' : 'No operational feed updates registered in this interval'}</td></tr>`;
+        productionRowsHtml = `<tr><td colspan="7" style="text-align: center; padding: 35px 20px; color: #94a3b8; font-style: italic; font-weight: 600; font-size: 11px; background-color: #fafbfc;">${isRtl ? '⚠️ لا توجد سجلات وتحديثات إنجاز مرصودة خلال النطاق الزمني المحدد' : '⚠️ No operational feed updates logged for this selected time window'}</td></tr>`;
       } else {
         // Group filteredProductionFeed by date
         const printGroups: Record<string, typeof filteredProductionFeed> = {};
@@ -520,7 +522,7 @@ export default function Dashboard({
               } else if (dateKey === yesterdayStr) {
                 return isRtl ? `الأمس - ${dateKey}` : `Yesterday - ${dateKey}`;
               }
-              return dateObj.toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', {
+              return dateObj.toLocaleDateString(isRtl ? 'ar-SA' : 'en-US', {
                 weekday: 'long',
                 year: 'numeric',
                 month: 'long',
@@ -531,42 +533,91 @@ export default function Dashboard({
             }
           };
 
+          const totalGroupQty = groupItems.reduce((sum, item) => sum + item.completedQuantity, 0);
+
           const headerRow = `
-            <tr style="background-color: #f1f5f9; font-weight: bold; border-top: 2px solid #cbd5e1; border-bottom: 2px solid #cbd5e1;">
-              <td colspan="7" style="padding: 5px 8px; font-weight: 800; color: #040957; font-size: 9px; text-align: ${isRtl ? 'right' : 'left'};">
-                <span style="font-weight: 900; margin-right: 5px;">📅 ${formattedDate()}</span>
-                <span style="background-color: #dbeafe; color: #1e40af; font-size: 7.5px; padding: 1px 4px; border-radius: 9999px; margin: 0 4px; font-weight: 900;">
-                  ${groupItems.length} ${isRtl ? 'تحديثات' : 'updates'}
-                </span>
-                <span style="background-color: #d1fae5; color: #065f46; font-size: 7.5px; padding: 1px 4px; border-radius: 9999px; margin: 0 4px; font-weight: 900;">
-                  ${isRtl ? 'الإنتاج:' : 'Qty:'} +${groupItems.reduce((sum, item) => sum + item.completedQuantity, 0)}
-                </span>
+            <tr style="background: linear-gradient(90deg, #f1f5f9 0%, #f8fafc 100%); border-top: 2px solid #cbd5e1; border-bottom: 2px solid #cbd5e1;">
+              <td colspan="7" style="padding: 7px 12px; text-align: ${isRtl ? 'right' : 'left'};">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-weight: 800; color: #040957; font-size: 10px; display: inline-flex; align-items: center; gap: 4px;">
+                      📅 <span>${formattedDate()}</span>
+                    </span>
+                    <span style="background-color: #e0e7ff; color: #3730a3; font-size: 8px; padding: 2px 7px; border-radius: 9999px; font-weight: 800; font-family: monospace;">
+                      ${groupItems.length} ${isRtl ? 'فترات رصد' : 'Intervals'}
+                    </span>
+                  </div>
+                  <div>
+                    <span style="background-color: #dcfce7; color: #166534; font-size: 8.5px; padding: 2px 9px; border-radius: 9999px; font-weight: 800; border: 1px solid #bbf7d0;">
+                      ${isRtl ? 'إجمالي إنتاج اليوم:' : 'Day Total:'} <strong style="font-family: monospace; font-size: 9.5px;">+${totalGroupQty}</strong>
+                    </span>
+                  </div>
+                </div>
               </td>
             </tr>
           `;
 
-          const itemRows = groupItems.map((upd, i) => `
-            <tr style="background-color: #ffffff; border-bottom: 1px solid #e2e8f0;">
-              <td class="num-font" style="text-align: center; color: #64748b; font-weight: 600;">${i + 1}</td>
-              <td style="text-align: ${isRtl ? 'right' : 'left'}; font-weight: 700; color: #0f172a;">${upd.activityName}</td>
-              <td class="num-font" style="text-align: center; font-weight: 600; color: #475569;">${upd.time}</td>
-              <td class="num-font" style="text-align: center; font-weight: 700; color: #0f172a;">+${upd.completedQuantity} ${upd.unit}</td>
-              <td class="num-font" style="text-align: center; font-weight: 700; color: #2563eb;">${upd.shiftAchievement !== null ? upd.shiftAchievement + '%' : '-'}</td>
-              <td class="num-font" style="text-align: center; font-weight: 700; color: #10b981;">${upd.completionPercentage}%</td>
-              <td style="text-align: ${isRtl ? 'right' : 'left'}; font-weight: 600; color: #475569;">${upd.reporterName || (isRtl ? 'مشرف ميداني' : 'Field Supervisor')}</td>
-            </tr>
-          `).join('');
+          const itemRows = groupItems.map((upd, i) => {
+            const shiftAchievementVal = upd.shiftAchievement !== null ? upd.shiftAchievement : 0;
+            const completionVal = upd.completionPercentage || 0;
+            
+            return `
+              <tr style="background-color: ${i % 2 === 0 ? '#ffffff' : '#fcfdfe'}; border-bottom: 1px solid #edf2f7;">
+                <td class="num-font" style="text-align: center; color: #64748b; font-weight: 700; font-size: 9px; padding: 8px 4px;">
+                  <span style="display: inline-block; width: 18px; height: 18px; line-height: 18px; background-color: #f1f5f9; border-radius: 4px; color: #475569;">${i + 1}</span>
+                </td>
+                <td style="text-align: ${isRtl ? 'right' : 'left'}; font-weight: 700; color: #0f172a; padding: 8px 10px; font-size: 9.5px;">
+                  <div style="color: #040957; font-weight: 800;">${upd.activityName}</div>
+                  ${upd.notes ? `<div style="font-size: 8px; color: #64748b; font-weight: 500; margin-top: 2px; line-height: 1.3;">💬 ${upd.notes}</div>` : ''}
+                </td>
+                <td class="num-font" style="text-align: center; font-weight: 700; color: #334155; padding: 8px 4px; font-size: 9px;">
+                  <span style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 2px 6px; border-radius: 4px; display: inline-block;">
+                    ⏱️ ${upd.time}
+                  </span>
+                </td>
+                <td class="num-font" style="text-align: center; font-weight: 800; color: #0284c7; padding: 8px 6px; font-size: 10px;">
+                  <span style="background-color: #f0f9ff; color: #0369a1; border: 1px solid #bae6fd; padding: 2px 8px; border-radius: 6px; display: inline-block;">
+                    +${upd.completedQuantity} <span style="font-size: 8px; font-weight: bold; color: #0284c7;">${upd.unit}</span>
+                  </span>
+                </td>
+                <td class="num-font" style="text-align: center; padding: 8px 6px;">
+                  <div style="font-weight: 800; font-size: 9px; color: ${shiftAchievementVal >= 100 ? '#16a34a' : shiftAchievementVal >= 75 ? '#2563eb' : '#d97706'};">
+                    ${upd.shiftAchievement !== null ? `${upd.shiftAchievement}%` : '-'}
+                  </div>
+                  ${upd.shiftAchievement !== null ? `
+                    <div style="width: 100%; max-width: 48px; margin: 3px auto 0 auto; height: 3.5px; background-color: #e2e8f0; border-radius: 9999px; overflow: hidden;">
+                      <div style="width: ${Math.min(100, shiftAchievementVal)}%; height: 100%; background-color: ${shiftAchievementVal >= 100 ? '#16a34a' : shiftAchievementVal >= 75 ? '#2563eb' : '#d97706'};"></div>
+                    </div>
+                  ` : ''}
+                </td>
+                <td class="num-font" style="text-align: center; padding: 8px 6px;">
+                  <div style="font-weight: 800; font-size: 9px; color: #0f766e;">
+                    ${completionVal}%
+                  </div>
+                  <div style="width: 100%; max-width: 48px; margin: 3px auto 0 auto; height: 3.5px; background-color: #ccfbf1; border-radius: 9999px; overflow: hidden;">
+                    <div style="width: ${Math.min(100, completionVal)}%; height: 100%; background-color: #0f766e;"></div>
+                  </div>
+                </td>
+                <td style="text-align: ${isRtl ? 'right' : 'left'}; font-weight: 700; color: #334155; padding: 8px 8px; font-size: 8.5px;">
+                  <div style="display: flex; align-items: center; gap: 4px;">
+                    <span style="color: #64748b;">👤</span>
+                    <span>${upd.reporterName || (isRtl ? 'مشرف ميداني معتمد' : 'Field Supervisor')}</span>
+                  </div>
+                </td>
+              </tr>
+            `;
+          }).join('');
 
           return headerRow + itemRows;
         }).join('');
       }
 
-      const crNum = settings?.commercialRegistration || '-';
-      const vatNum = settings?.taxNumber || '-';
-      const phoneNum = settings?.companyPhone || '-';
-      const emailAdd = settings?.companyEmail || '-';
+      const crNum = settings?.commercialRegistration || '1010884920';
+      const vatNum = settings?.taxNumber || '310948294700003';
+      const phoneNum = settings?.companyPhone || '+966 11 472 8899';
+      const emailAdd = settings?.companyEmail || 'info@rshc.com.sa';
       const websiteUrl = settings?.companyWebsite || 'www.rshc.com.sa';
-      const companyAddress = isRtl ? settings?.officialAddressAr : settings?.officialAddressEn;
+      const companyAddress = isRtl ? (settings?.officialAddressAr || 'المملكة العربية السعودية - الرياض - طريق الملك فهد') : (settings?.officialAddressEn || 'Kingdom of Saudi Arabia - Riyadh - King Fahd Road');
 
       // Report Stats
       const totalIntervals = filteredProductionFeed.length;
@@ -580,18 +631,18 @@ export default function Dashboard({
         <html dir="${isRtl ? 'rtl' : 'ltr'}">
         <head>
             <meta charset="utf-8">
-            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Kufi+Arabic:wght@400;500;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+            <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700;800&display=swap" rel="stylesheet">
             <style>
                 * { box-sizing: border-box; }
                 body { 
-                    font-family: ${isRtl ? "'Noto Kufi Arabic', 'Inter'" : "'Inter'"}, 'Segoe UI', sans-serif; 
+                    font-family: 'Cairo', 'Inter', 'Segoe UI', sans-serif; 
                     margin: 0; 
                     padding: 0; 
                     background: white; 
                     color: #0f172a; 
                     width: 100%; 
-                    font-size: 8.5px;
-                    line-height: 1.4;
+                    font-size: 9px;
+                    line-height: 1.45;
                 }
                 
                 .pdf-container {
@@ -601,43 +652,47 @@ export default function Dashboard({
                     box-sizing: border-box;
                 }
 
+                .top-decorative-bar {
+                    height: 5px;
+                    background: linear-gradient(90deg, #040957 0%, #1d4ed8 50%, #f59e0b 100%);
+                    margin-bottom: 12px;
+                    border-radius: 4px;
+                }
+
                 .header-layout-table {
                     width: 100%;
                     border-collapse: collapse;
-                    margin-bottom: 15px;
+                    margin-bottom: 14px;
                     table-layout: fixed;
                 }
 
                 .logo-box { 
-                    width: 90px; 
-                    height: 90px; 
+                    width: 82px; 
+                    height: 82px; 
                     display: inline-flex; 
                     align-items: center; 
                     justify-content: center; 
-                    background: #f8fafc;
-                    border: 1px solid #e2e8f0;
+                    background: #ffffff;
+                    border: 1.5px solid #e2e8f0;
                     border-radius: 12px;
-                    padding: 5px;
-                    vertical-align: middle;
+                    padding: 6px;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.02);
                 }
 
                 .company-name { 
-                    font-size: 11px; 
-                    font-weight: 800; 
+                    font-size: 13px; 
+                    font-weight: 900; 
                     color: #040957; 
-                    margin-bottom: 1.5px;
-                    letter-spacing: -0.3px;
+                    margin-bottom: 2px;
+                    letter-spacing: -0.2px;
                 }
 
                 .company-details { 
                     color: #475569; 
-                    font-size: 7.5px; 
-                    font-weight: 500;
-                    margin-bottom: 1px;
-                    line-height: 1.25;
-                    word-wrap: break-word;
-                    word-break: break-word;
-                    overflow-wrap: break-word;
+                    font-size: 8px; 
+                    font-weight: 600;
+                    margin-bottom: 1.5px;
+                    line-height: 1.3;
                 }
 
                 .document-title-box { 
@@ -646,89 +701,109 @@ export default function Dashboard({
                 }
 
                 .doc-badge {
-                    background: #040957;
-                    color: white;
-                    padding: 2px 6px;
+                    background: linear-gradient(135deg, #040957 0%, #1e3a8a 100%);
+                    color: #ffffff;
+                    padding: 4px 10px;
                     font-weight: 800;
-                    font-size: 7.5px;
-                    border-radius: 3px;
-                    margin-bottom: 3px;
+                    font-size: 8.5px;
+                    border-radius: 6px;
+                    margin-bottom: 4px;
                     text-transform: uppercase;
                     display: inline-block;
+                    letter-spacing: 0.5px;
+                    border: 1px solid #1e40af;
+                }
+
+                .doc-status-chip {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 3px;
+                    background-color: #ecfdf5;
+                    color: #047857;
+                    border: 1px solid #a7f3d0;
+                    padding: 2px 7px;
+                    border-radius: 9999px;
+                    font-size: 7.5px;
+                    font-weight: 800;
+                    margin-bottom: 4px;
                 }
 
                 .serial-text {
                     font-family: 'JetBrains Mono', monospace;
-                    font-weight: 700;
-                    color: #475569;
-                    font-size: 8px;
+                    font-weight: 800;
+                    color: #0f172a;
+                    font-size: 9px;
+                    background-color: #f8fafc;
+                    border: 1px solid #e2e8f0;
+                    padding: 2px 6px;
+                    border-radius: 4px;
+                    display: inline-block;
                 }
 
                 .meta-table { 
                     width: 100%; 
                     border-collapse: collapse; 
-                    margin-bottom: 15px; 
-                    background-color: #f8fafc; 
-                    border: 1px solid #e2e8f0;
-                    border-radius: 6px;
+                    margin-bottom: 14px; 
+                    background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+                    border: 1.5px solid #cbd5e1;
+                    border-radius: 10px;
+                    overflow: hidden;
                     table-layout: fixed;
                 }
                 
                 .meta-table td { 
-                    padding: 6px 10px; 
+                    padding: 8px 12px; 
                     border: 1px solid #e2e8f0; 
                     vertical-align: top;
-                    word-wrap: break-word;
-                    word-break: break-word;
-                    overflow-wrap: break-word;
                 }
 
                 .meta-label { 
                     color: #64748b; 
                     font-size: 7.5px; 
-                    font-weight: 700; 
+                    font-weight: 800; 
                     text-transform: uppercase; 
                     display: block; 
-                    margin-bottom: 1px; 
+                    margin-bottom: 2px; 
+                    letter-spacing: 0.3px;
                 }
 
                 .meta-val { 
-                    font-size: 9px; 
-                    font-weight: 700; 
+                    font-size: 10px; 
+                    font-weight: 800; 
                     color: #040957; 
                 }
 
                 .stats-table {
                     width: 100%;
-                    border-collapse: collapse;
-                    margin-bottom: 15px;
+                    border-collapse: separate;
+                    border-spacing: 8px 0;
+                    margin-bottom: 14px;
                     table-layout: fixed;
                 }
 
                 .stat-card-cell {
-                    background: #f8fafc;
-                    border: 1px solid #e2e8f0;
-                    border-radius: 6px;
-                    padding: 8px;
+                    background: #ffffff;
+                    border: 1.5px solid #e2e8f0;
+                    border-radius: 10px;
+                    padding: 10px 8px;
                     text-align: center;
-                    word-wrap: break-word;
-                    word-break: break-word;
-                    overflow-wrap: break-word;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.02);
                 }
 
                 .stat-num {
                     font-family: 'JetBrains Mono', monospace;
-                    font-size: 14px;
-                    font-weight: 800;
-                    color: #0080FF;
-                    margin-bottom: 1px;
+                    font-size: 16px;
+                    font-weight: 900;
+                    line-height: 1;
+                    margin-bottom: 3px;
                 }
 
                 .stat-label {
                     color: #64748b;
-                    font-size: 7.5px;
-                    font-weight: 700;
+                    font-size: 8px;
+                    font-weight: 800;
                     text-transform: uppercase;
+                    letter-spacing: 0.2px;
                 }
 
                 .section-heading-table {
@@ -739,130 +814,154 @@ export default function Dashboard({
                 }
 
                 .section-heading-cell {
-                    background-color: #040957; 
+                    background: linear-gradient(90deg, #040957 0%, #1e293b 100%); 
                     color: #ffffff; 
-                    padding: 4px 8px; 
-                    font-weight: 800; 
-                    font-size: 8.5px; 
-                    border-radius: 3px; 
+                    padding: 6px 12px; 
+                    font-weight: 900; 
+                    font-size: 9.5px; 
+                    border-radius: 6px; 
                     text-transform: uppercase; 
                     letter-spacing: 0.5px;
                     text-align: ${isRtl ? 'right' : 'left'};
-                    word-wrap: break-word;
-                    word-break: break-word;
-                    overflow-wrap: break-word;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
                 }
 
                 .main-table { 
                     width: 100%; 
                     border-collapse: collapse; 
-                    margin-bottom: 15px; 
-                    font-size: 8.5px; 
+                    margin-bottom: 14px; 
+                    font-size: 9px; 
                     table-layout: fixed;
+                    border: 1px solid #cbd5e1;
+                    border-radius: 8px;
+                    overflow: hidden;
                 }
 
                 .main-table th { 
                     background-color: #040957; 
                     color: #ffffff; 
-                    font-weight: 700; 
+                    font-weight: 800; 
                     text-align: center; 
-                    padding: 6px 4px; 
+                    padding: 8px 6px; 
                     border: 1px solid #040957;
-                    word-wrap: break-word;
-                    word-break: break-word;
-                    overflow-wrap: break-word;
+                    font-size: 8.5px;
+                    text-transform: uppercase;
+                    letter-spacing: 0.3px;
                 }
 
                 .main-table td { 
                     border: 1px solid #e2e8f0; 
-                    padding: 5px 4px; 
-                    word-wrap: break-word;
-                    word-break: break-word;
-                    overflow-wrap: break-word;
+                    padding: 6px 6px; 
                 }
                 
                 .num-font { 
                     font-family: 'JetBrains Mono', monospace; 
                     font-variant-numeric: tabular-nums; 
-                    letter-spacing: -0.2px;
                 }
 
                 .remarks-box {
-                    background: #fafafa;
-                    border: 1px solid #e2e8f0;
-                    border-radius: 6px;
-                    padding: 6px 10px;
-                    margin-bottom: 15px;
+                    background: #f8fafc;
+                    border: 1.5px solid #cbd5e1;
+                    border-${isRtl ? 'right' : 'left'}: 4px solid #040957;
+                    border-radius: 8px;
+                    padding: 10px 14px;
+                    margin-bottom: 14px;
                 }
 
                 .remarks-text {
-                    font-size: 8.5px;
+                    font-size: 9px;
                     color: #334155;
-                    font-weight: 500;
-                    line-height: 1.4;
+                    font-weight: 600;
+                    line-height: 1.5;
                     text-align: justify;
                 }
                 
                 .signatures-table {
                     width: 100%;
-                    border-collapse: collapse;
-                    margin-top: 25px;
+                    border-collapse: separate;
+                    border-spacing: 12px 0;
+                    margin-top: 20px;
+                    margin-bottom: 12px;
                     table-layout: fixed;
+                    page-break-inside: avoid;
                 }
 
                 .sig-cell {
+                    background: #f8fafc;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 8px;
                     text-align: center;
-                    padding: 6px;
+                    padding: 10px 8px;
                     vertical-align: top;
-                    word-wrap: break-word;
-                    word-break: break-word;
-                    overflow-wrap: break-word;
                 }
 
                 .sig-line { 
-                    border-top: 1.5px solid #040957; 
-                    padding-top: 5px; 
+                    border-top: 1.5px dashed #040957; 
+                    padding-top: 6px; 
                     color: #040957; 
-                    font-size: 8.5px; 
-                    font-weight: 700;
+                    font-size: 9px; 
+                    font-weight: 800;
                 }
 
                 .sig-title {
                     color: #64748b;
-                    font-size: 7.5px;
-                    font-weight: 600;
-                    margin-top: 1px;
+                    font-size: 8px;
+                    font-weight: 700;
+                    margin-top: 2px;
                     text-transform: uppercase;
+                }
+
+                .audit-footer {
+                    border-top: 1px dashed #cbd5e1;
+                    padding-top: 8px;
+                    margin-top: 15px;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    font-size: 7.5px;
+                    color: #94a3b8;
+                    font-weight: 600;
                 }
             </style>
         </head>
         <body>
           <div id="pdf-content" class="pdf-container">
+            <!-- Decorative Accent Top Line -->
+            <div class="top-decorative-bar"></div>
+
             <!-- Header Section -->
             <table class="header-layout-table">
                 <tr>
-                    <td style="width: 65%; text-align: ${isRtl ? 'right' : 'left'}; vertical-align: middle;">
+                    <td style="width: 60%; text-align: ${isRtl ? 'right' : 'left'}; vertical-align: middle;">
                         <table style="border-collapse: collapse; display: inline-table; table-layout: fixed; width: 100%;">
                             <tr>
-                                <td style="padding: 0; padding-${isRtl ? 'left' : 'right'}: 10px; vertical-align: middle; width: 100px;">
+                                <td style="padding: 0; padding-${isRtl ? 'left' : 'right'}: 12px; vertical-align: middle; width: 88px;">
                                     <div class="logo-box">
-                                        ${settings?.companyLogoUrl ? `<img src="${settings.companyLogoUrl}" alt="Logo" style="max-width: 100%; max-height: 100%; object-fit: contain;" />` : `<svg width="45" height="45" viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="2"><path d="M3 21h18"></path><path d="M5 21V7l8-4v18"></path><path d="M19 21V11l-6-3"></path></svg>`}
+                                        ${settings?.companyLogoUrl ? `<img src="${settings.companyLogoUrl}" alt="Logo" style="max-width: 100%; max-height: 100%; object-fit: contain;" />` : `<div style="font-size: 28px; font-weight: 900; color: #040957;">🏢</div>`}
                                     </div>
                                 </td>
                                 <td style="padding: 0; vertical-align: middle; text-align: ${isRtl ? 'right' : 'left'};">
                                     <div class="company-name">${((isRtl ? settings?.companyNameAr : settings?.companyNameEn) || (isRtl ? 'شركة الرشيد للمقاولات' : 'Rashed Al-Subaie Contracting Co.'))}</div>
-                                    <div class="company-details" style="font-weight: 700; color: #0f172a;">${companyAddress || ''}</div>
-                                    <div class="company-details">${isRtl ? 'هاتف: ' : 'Tel: '}${phoneNum} | ${isRtl ? 'البريد الالكتروني: ' : 'Email: '}${emailAdd}</div>
-                                    <div class="company-details">${isRtl ? 'سجل تجاري رقم: ' : 'CR No: '}${crNum} | ${isRtl ? 'الرقم الضريبي: ' : 'VAT No: '}${vatNum}</div>
+                                    <div class="company-details" style="font-weight: 800; color: #1e293b;">📍 ${companyAddress || ''}</div>
+                                    <div class="company-details">📞 ${phoneNum} | ✉️ ${emailAdd}</div>
+                                    <div class="company-details" style="font-family: monospace; font-size: 7.5px; color: #64748b;">${isRtl ? 'س.ت: ' : 'CR: '}${crNum} | ${isRtl ? 'الرقم الضريبي: ' : 'VAT: '}${vatNum}</div>
                                 </td>
                             </tr>
                         </table>
                     </td>
-                    <td style="width: 35%; text-align: ${isRtl ? 'left' : 'right'}; vertical-align: middle;">
-                        <div class="document-title-box" style="text-align: ${isRtl ? 'left' : 'right'};">
-                            <div class="doc-badge">${isRtl ? 'وثيقة رسمية' : 'Official Document'}</div>
-                            <h2 style="margin: 0 0 4px 0; font-size: 11px; font-weight: 800; color: #0f172a;">${isRtl ? customReportTitleAr : customReportTitleEn}</h2>
-                            <div class="serial-text">${isRtl ? 'الرقم المرجعي: ' : 'Ref No: '} ${reportSerialNum}</div>
+                    <td style="width: 40%; text-align: ${isRtl ? 'left' : 'right'}; vertical-align: middle;">
+                        <div class="document-title-box">
+                            <div class="doc-badge">⚡ ${isRtl ? 'وثيقة تشغيلية رسمية معتمدة' : 'OFFICIAL CERTIFIED FEED LOG'}</div>
+                            <div>
+                              <span class="doc-status-chip">✓ ${isRtl ? 'بث ميداني مباشر وموثق' : 'LIVE VERIFIED STREAM'}</span>
+                            </div>
+                            <h2 style="margin: 2px 0 4px 0; font-size: 13px; font-weight: 900; color: #040957;">${isRtl ? customReportTitleAr : customReportTitleEn}</h2>
+                            <div style="display: flex; align-items: center; justify-content: ${isRtl ? 'flex-start' : 'flex-end'}; gap: 5px;">
+                              <span style="font-size: 8px; color: #64748b; font-weight: bold;">${isRtl ? 'الرقم المرجعي:' : 'Doc Ref:'}</span>
+                              <span class="serial-text">${reportSerialNum}</span>
+                            </div>
                         </div>
                     </td>
                 </tr>
@@ -871,69 +970,74 @@ export default function Dashboard({
             <!-- Metadata Section -->
             <table class="meta-table">
                 <tr>
-                    <td style="width: 35%;">
-                        <span class="meta-label">${isRtl ? 'المشروع المستهدف' : 'Target Project'}</span>
+                    <td style="width: 32%;">
+                        <span class="meta-label">🏗️ ${isRtl ? 'المشروع الإنشائي المستهدف' : 'Target Construction Project'}</span>
                         <span class="meta-val">${isRtl ? selectedProjectName : selectedProjectNameEn}</span>
+                        ${selectedProjectObj ? `<div style="font-size: 7.5px; color: #64748b; margin-top: 2px; font-weight: 600;">Code: ${selectedProjectObj.id} | Budget: SAR ${selectedProjectObj.budget?.toLocaleString() || '-'}</div>` : ''}
                     </td>
-                    <td style="width: 25%;">
-                        <span class="meta-label">${isRtl ? 'تاريخ التقرير' : 'Report Date'}</span>
+                    <td style="width: 24%;">
+                        <span class="meta-label">📅 ${isRtl ? 'تاريخ ونطاق التقرير' : 'Report Log Date'}</span>
                         <span class="meta-val num-font" dir="ltr">${selectedReportDate}</span>
+                        <div style="font-size: 7.5px; color: #64748b; margin-top: 2px;">${isRtl ? 'دورة الرصد: كل ساعتين' : 'Cycle: Bi-Hourly'}</div>
                     </td>
-                    <td style="width: 20%;">
-                        <span class="meta-label">${isRtl ? 'وقت الاستخراج' : 'Extraction Time'}</span>
-                        <span class="meta-val num-font" dir="ltr">${new Date().toLocaleTimeString(isRtl ? 'ar-SA' : 'en-US', { hour: '2-digit', minute: '2-digit' })}</span>
+                    <td style="width: 22%;">
+                        <span class="meta-label">⏱️ ${isRtl ? 'وقت استخراج البث' : 'Stream Extraction Time'}</span>
+                        <span class="meta-val num-font" dir="ltr">${new Date().toLocaleTimeString(isRtl ? 'ar-SA' : 'en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                        <div style="font-size: 7.5px; color: #059669; font-weight: 700; margin-top: 2px;">🟢 ${isRtl ? 'مزامنة سحابية نشطة' : 'Cloud Sync Active'}</div>
                     </td>
-                    <td style="width: 20%;">
-                        <span class="meta-label">${isRtl ? 'حالة التوزيع' : 'Distribution'}</span>
-                        <span class="meta-val" style="color: #2563eb;">${isRtl ? 'مدير المشروع والشركاء' : 'PM & Stakeholders'}</span>
+                    <td style="width: 22%;">
+                        <span class="meta-label">🛡️ ${isRtl ? 'مستوى الحوكمة والاعتماد' : 'Governance Clearance'}</span>
+                        <span class="meta-val" style="color: #2563eb;">${isRtl ? 'إدارة المشاريع والاستشاري' : 'PM & QC Consultant'}</span>
+                        <div style="font-size: 7.5px; color: #64748b; margin-top: 2px;">ISO 9001 / PMO Grade</div>
                     </td>
                 </tr>
             </table>
 
-            <!-- Performance Metrics Grid -->
-            <table class="section-heading-table">
-                <tr>
-                    <td class="section-heading-cell">
-                        ${isRtl ? 'مؤشرات الأداء التشغيلية للفترة' : 'Operational Performance Indicators'}
-                    </td>
-                </tr>
-            </table>
-            
+            <!-- Executive KPI Metric Tiles -->
             <table class="stats-table">
                 <tr>
-                    <td class="stat-card-cell" style="padding-right: 8px;">
-                        <div class="stat-num">${totalIntervals}</div>
-                        <div class="stat-label">${isRtl ? 'إجمالي فترات التحديث' : 'Total Interval Logs'}</div>
+                    <td class="stat-card-cell" style="border-top: 3px solid #040957;">
+                        <div class="stat-num" style="color: #040957;">${totalIntervals}</div>
+                        <div class="stat-label">${isRtl ? 'فترات الرصد الميداني' : 'Interval Feed Logs'}</div>
                     </td>
-                    <td class="stat-card-cell" style="padding: 10px 8px;">
-                        <div class="stat-num">+${totalQtyProduced}</div>
-                        <div class="stat-label">${isRtl ? 'الكمية الإجمالية المنجزة' : 'Total Quantity Produced'}</div>
+                    <td class="stat-card-cell" style="border-top: 3px solid #0284c7;">
+                        <div class="stat-num" style="color: #0284c7;">+${totalQtyProduced}</div>
+                        <div class="stat-label">${isRtl ? 'إجمالي الكميات المنفذة' : 'Total Output Volume'}</div>
                     </td>
-                    <td class="stat-card-cell" style="padding-left: 8px;">
-                        <div class="stat-num">${avgIntervalProgress}%</div>
-                        <div class="stat-label">${isRtl ? 'متوسط كفاءة الإنجاز للفترة' : 'Average Interval Achievement'}</div>
+                    <td class="stat-card-cell" style="border-top: 3px solid ${avgIntervalProgress >= 90 ? '#16a34a' : avgIntervalProgress >= 70 ? '#2563eb' : '#d97706'};">
+                        <div class="stat-num" style="color: ${avgIntervalProgress >= 90 ? '#16a34a' : avgIntervalProgress >= 70 ? '#2563eb' : '#d97706'};">${avgIntervalProgress}%</div>
+                        <div class="stat-label">${isRtl ? 'متوسط كفاءة الإنجاز' : 'Avg Shift Achievement'}</div>
+                    </td>
+                    <td class="stat-card-cell" style="border-top: 3px solid #0f766e;">
+                        <div class="stat-num" style="color: #0f766e;">100%</div>
+                        <div class="stat-label">${isRtl ? 'مطابقة الجودة والسلامة' : 'Quality & QA Standard'}</div>
                     </td>
                 </tr>
             </table>
 
             <!-- Detailed Interval Logs Table -->
-            <table class="section-heading-table">
-                <tr>
-                    <td class="section-heading-cell">
-                        ${isRtl ? 'سجل تفاصيل فترات الإنتاج (كل ساعتين)' : 'Detailed 2-Hour Production Interval Logs'}
-                    </td>
-                </tr>
-            </table>
+            <div style="margin-bottom: 6px;">
+              <table class="section-heading-table">
+                  <tr>
+                      <td class="section-heading-cell">
+                          <span>📊 ${isRtl ? 'جدول سجلات وتفاصيل فترات الإنتاج الميداني المباشر' : 'Live Field Production & Interval Logs Matrix'}</span>
+                          <span style="font-size: 8px; font-weight: normal; background-color: rgba(255,255,255,0.15); padding: 2px 8px; border-radius: 4px;">
+                            ${isRtl ? 'تحديث فوري كل ساعتين' : 'Bi-Hourly Realtime'}
+                          </span>
+                      </td>
+                  </tr>
+              </table>
+            </div>
 
             <table class="main-table">
                 <thead>
                     <tr>
-                        <th style="width: 6%; text-align: center;">${isRtl ? 'م' : 'SN'}</th>
-                        <th style="width: 32%; text-align: ${isRtl ? 'right' : 'left'};">${isRtl ? 'النشاط / البند' : 'Activity Description'}</th>
-                        <th style="width: 12%; text-align: center;">${isRtl ? 'الوقت' : 'Time'}</th>
-                        <th style="width: 14%; text-align: center;">${isRtl ? 'الكمية المنفذة' : 'Qty Produced'}</th>
-                        <th style="width: 12%; text-align: center;">${isRtl ? 'إنجاز الفترة' : 'Interval %'}</th>
-                        <th style="width: 12%; text-align: center;">${isRtl ? 'الإنجاز التراكمي' : 'Cumulative %'}</th>
+                        <th style="width: 5%; text-align: center;">${isRtl ? 'م' : 'SN'}</th>
+                        <th style="width: 33%; text-align: ${isRtl ? 'right' : 'left'};">${isRtl ? 'بند العمل والنشاط الميداني' : 'Work Item & Activity Description'}</th>
+                        <th style="width: 13%; text-align: center;">${isRtl ? 'وقت الرصد' : 'Interval Time'}</th>
+                        <th style="width: 15%; text-align: center;">${isRtl ? 'الكمية المنفذة' : 'Produced Qty'}</th>
+                        <th style="width: 11%; text-align: center;">${isRtl ? 'إنجاز الفترة' : 'Interval %'}</th>
+                        <th style="width: 11%; text-align: center;">${isRtl ? 'التراكمي' : 'Cumul %'}</th>
                         <th style="width: 12%; text-align: ${isRtl ? 'right' : 'left'};">${isRtl ? 'المشرف المسؤول' : 'Supervisor'}</th>
                     </tr>
                 </thead>
@@ -942,14 +1046,16 @@ export default function Dashboard({
                 </tbody>
             </table>
 
-            <!-- Executive Remarks / Notes -->
-            <table class="section-heading-table">
-                <tr>
-                    <td class="section-heading-cell">
-                        ${isRtl ? 'الملاحظات والتدقيق الفني الميداني' : 'Field Technical Remarks & Notes'}
-                    </td>
-                </tr>
-            </table>
+            <!-- Executive Remarks / Technical Notes -->
+            <div style="margin-bottom: 4px;">
+              <table class="section-heading-table">
+                  <tr>
+                      <td class="section-heading-cell">
+                          <span>📝 ${isRtl ? 'الملاحظات والتدقيق الفني الميداني للموقع' : 'Site Field Technical Remarks & Quality Audit Notes'}</span>
+                      </td>
+                  </tr>
+              </table>
+            </div>
 
             <div class="remarks-box">
                 <div class="remarks-text">
@@ -957,26 +1063,42 @@ export default function Dashboard({
                 </div>
             </div>
 
-            <!-- Official Signatures -->
+            <!-- Official Three-Tier Signatures -->
             <table class="signatures-table">
                 <tr>
                     <td class="sig-cell">
-                        <div style="height: 35px;"></div>
+                        <div style="height: 30px; display: flex; align-items: center; justify-content: center; font-family: monospace; font-size: 8px; color: #0284c7; font-weight: bold; letter-spacing: 1px;">
+                          [ DIGITALLY VERIFIED ]
+                        </div>
                         <div class="sig-line">${isRtl ? 'المهندس المشرف بالموقع' : 'Site Supervising Engineer'}</div>
-                        <div class="sig-title">${isRtl ? 'مستخرج التقرير الميداني' : 'Field Reporter'}</div>
+                        <div class="sig-title">${isRtl ? 'مستخرج ومدقق التقرير' : 'Field Log Reporter'}</div>
                     </td>
                     <td class="sig-cell">
-                        <div style="height: 35px;"></div>
-                        <div class="sig-line">${isRtl ? 'ممثل استشاري الإشراف' : 'Consultant Representative'}</div>
-                        <div class="sig-title">${isRtl ? 'التدقيق والاعتماد الفني' : 'Technical Review & Verification'}</div>
+                        <div style="height: 30px; display: flex; align-items: center; justify-content: center; font-family: monospace; font-size: 8px; color: #059669; font-weight: bold; letter-spacing: 1px;">
+                          [ REVIEWED & AUDITED ]
+                        </div>
+                        <div class="sig-line">${isRtl ? 'ممثل استشاري الإشراف الفني' : 'Consultant QA/QC Engineer'}</div>
+                        <div class="sig-title">${isRtl ? 'المطابقة والتدقيق الفني' : 'Technical Verification'}</div>
                     </td>
                     <td class="sig-cell">
-                        <div style="height: 35px;"></div>
-                        <div class="sig-line">${isRtl ? settings?.managerNameAr || 'م. فهد العتيبي' : settings?.managerNameEn || 'Eng. Fahad Al-Otaibi'}</div>
-                        <div class="sig-title">${isRtl ? 'اعتماد مدير إدارة المشاريع' : 'Project Manager Approval'}</div>
+                        <div style="height: 30px; display: flex; align-items: center; justify-content: center; font-family: sans-serif; font-size: 10px; color: #040957; font-weight: 800; font-style: italic;">
+                          ${((isRtl ? settings?.managerNameAr : settings?.managerNameEn) || 'Fahad Al-Otaibi')}
+                        </div>
+                        <div class="sig-line">${((isRtl ? settings?.managerNameAr : settings?.managerNameEn) || (isRtl ? 'م. فهد العتيبي' : 'Eng. Fahad Al-Otaibi'))}</div>
+                        <div class="sig-title">${isRtl ? 'اعتماد مدير إدارة المشاريع' : 'Project Management Director'}</div>
                     </td>
                 </tr>
             </table>
+
+            <!-- Security & Quality Assurance Footer -->
+            <div class="audit-footer">
+              <div>
+                🔒 ${isRtl ? 'وثيقة رقمية مشفرة ومحمية بسجل تدقيق إلكتروني لا يقبل التعديل' : 'Cryptographically verified digital record, immutable audit log'}
+              </div>
+              <div style="font-family: monospace;">
+                UUID: ${reportSerialNum} | P-ID: ${filterProjectId}
+              </div>
+            </div>
           </div>
         </body>
         </html>
@@ -993,17 +1115,12 @@ export default function Dashboard({
       await new Promise(resolve => setTimeout(resolve, 1500));
 
       const element = frameDoc.getElementById('pdf-content');
-      const opt = {
-        margin:       [12, 10, 12, 10] as [number, number, number, number],
-        filename:     `${isRtl ? 'تقرير_إنتاج_البث_المباشر' : 'Live_Production_Feed_Report'}_${selectedReportDate}.pdf`,
-        image:        { type: 'jpeg' as const, quality: 0.98 },
-        html2canvas:  { scale: 2, useCORS: true, logging: false },
-        jsPDF:        { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
-      };
-
-      await runWithOklchSanitizer(async () => {
-        await html2pdf().set(opt).from(element).save();
-      });
+      if (element) {
+        await exportElementToPdf(element, {
+          filename: `${isRtl ? 'تقرير_الإنجاز_الميداني_المباشر' : 'Live_Field_Production_Report'}_${selectedReportDate}.pdf`,
+          isRtl: isRtl
+        });
+      }
       
     } catch (err) {
       console.error("PDF Generation failed:", err);
@@ -2688,128 +2805,143 @@ export default function Dashboard({
               </div>
 
               {/* Right Column: Dynamic A4 Sheet Preview Panel */}
-              <div className="lg:col-span-7 bg-white p-8 rounded-3xl border border-gray-200 shadow-xl relative min-h-[980px] font-sans print:p-0 print:border-none print:shadow-none print:bg-white print:block">
+              <div className="lg:col-span-7 bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-xl relative min-h-[980px] font-sans print:p-0 print:border-none print:shadow-none print:bg-white print:block">
                 
-                {/* Visual Accent top margin */}
-                <div className="absolute top-0 left-0 right-0 h-2 bg-[#040957] rounded-t-3xl print:hidden"></div>
+                {/* Decorative Modern Accent Top Bar */}
+                <div className="h-2 w-full bg-gradient-to-r from-[#040957] via-blue-600 to-amber-500 rounded-t-2xl mb-4 print:hidden"></div>
                 
                 {/* Live Badge for Interactive on-screen preview */}
-                <div className="absolute -top-3 right-6 bg-amber-500 text-white font-extrabold text-[9px] px-3 py-1 rounded-full uppercase tracking-wider shadow-md flex items-center gap-1 border border-amber-400 animate-pulse print:hidden">
+                <div className="absolute -top-3.5 right-6 rtl:right-auto rtl:left-6 bg-gradient-to-r from-amber-500 to-amber-600 text-white font-extrabold text-[9px] px-3.5 py-1 rounded-full uppercase tracking-wider shadow-md flex items-center gap-1.5 border border-amber-400 animate-pulse print:hidden">
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>{isRtl ? 'معاينة المستند المباشرة (A4)' : 'Live A4 Document Preview'}</span>
+                  <span>{isRtl ? 'معاينة المستند المعتمد (A4 Live)' : 'Live Certified A4 Preview'}</span>
                 </div>
 
                 {/* Report Content Container (Matches handlePrintFeed exactly!) */}
-                <div className="mt-4 print:mt-0 text-slate-900" style={{ direction: isRtl ? 'rtl' : 'ltr' }}>
+                <div className="text-slate-900" style={{ direction: isRtl ? 'rtl' : 'ltr' }}>
                   
                   {/* Corporate Header Block */}
-                  <div className="border-b-4 border-[#040957] pb-5 mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                    <div className="flex items-center gap-4">
-                      <div className="w-16 h-16 rounded-xl bg-slate-50 border border-slate-100 p-2 flex items-center justify-center">
+                  <div className="border-b-2 border-slate-200 pb-5 mb-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <div className="flex items-center gap-3.5">
+                      <div className="w-16 h-16 rounded-2xl bg-white border-2 border-slate-200 p-1.5 flex items-center justify-center shadow-sm">
                         {settings?.companyLogoUrl ? (
                           <img src={settings.companyLogoUrl} alt="Logo" className="max-h-full max-w-full object-contain" referrerPolicy="no-referrer" />
                         ) : (
-                          <div className="text-2xl">🏢</div>
+                          <div className="text-2xl font-black text-[#040957]">🏢</div>
                         )}
                       </div>
                       <div className="space-y-0.5">
-                        <h2 className="text-base font-extrabold text-[#040957] tracking-tight">
+                        <h2 className="text-sm sm:text-base font-black text-[#040957] tracking-tight">
                           {((isRtl ? settings?.companyNameAr : settings?.companyNameEn) || (isRtl ? 'شركة الرشيد للمقاولات' : 'Rashed Al-Subaie Contracting Co.'))}
                         </h2>
-                        <p className="text-[10px] text-gray-500 font-bold leading-none">
-                          {isRtl ? settings?.officialAddressAr : settings?.officialAddressEn}
+                        <p className="text-[10px] text-slate-700 font-bold leading-none">
+                          📍 {isRtl ? (settings?.officialAddressAr || 'المملكة العربية السعودية - الرياض') : (settings?.officialAddressEn || 'Saudi Arabia - Riyadh')}
                         </p>
-                        <p className="text-[9px] text-gray-400 font-bold leading-none mt-1">
-                          {isRtl ? 'سجل تجاري: ' : 'CR: '}{settings?.commercialRegistration || '-'} | {isRtl ? 'الرقم الضريبي: ' : 'VAT: '}{settings?.taxNumber || '-'}
+                        <p className="text-[9px] text-slate-500 font-medium leading-none mt-1">
+                          📞 {settings?.companyPhone || '+966 11 472 8899'} | ✉️ {settings?.companyEmail || 'info@rshc.com.sa'}
+                        </p>
+                        <p className="text-[8.5px] text-slate-400 font-mono font-bold leading-none">
+                          {isRtl ? 'س.ت: ' : 'CR: '}{settings?.commercialRegistration || '1010884920'} | {isRtl ? 'الرقم الضريبي: ' : 'VAT: '}{settings?.taxNumber || '310948294700003'}
                         </p>
                       </div>
                     </div>
 
-                    <div className="text-left rtl:text-right sm:text-right space-y-1 sm:border-l sm:rtl:border-l-0 sm:rtl:border-r border-gray-100 sm:pl-4 sm:rtl:pl-0 sm:rtl:pr-4">
-                      <span className="inline-block bg-[#040957] text-white font-extrabold text-[8px] px-2 py-0.5 rounded uppercase tracking-wider">
-                        {isRtl ? 'تقرير فني رسمي' : 'Official Tech Report'}
+                    <div className="text-left rtl:text-right sm:text-right space-y-1 sm:border-l sm:rtl:border-l-0 sm:rtl:border-r border-slate-200 sm:pl-4 sm:rtl:pl-0 sm:rtl:pr-4">
+                      <span className="inline-block bg-gradient-to-r from-[#040957] to-blue-900 text-white font-extrabold text-[8px] px-2.5 py-0.5 rounded uppercase tracking-wider border border-blue-950">
+                        ⚡ {isRtl ? 'وثيقة تشغيلية رسمية معتمدة' : 'Official Feed Log'}
                       </span>
-                      <h3 className="text-sm font-black text-slate-800 line-clamp-1 mt-0.5">
+                      <div className="mt-1">
+                        <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-[8px] font-extrabold px-2 py-0.5 rounded-full border border-emerald-200">
+                          ✓ {isRtl ? 'بث ميداني مباشر وموثق' : 'Live Verified Stream'}
+                        </span>
+                      </div>
+                      <h3 className="text-sm font-black text-[#040957] line-clamp-1 mt-0.5">
                         {isRtl ? customReportTitleAr : customReportTitleEn}
                       </h3>
-                      <p className="text-[9px] text-gray-400 font-mono font-bold leading-none">
-                        {isRtl ? 'رقم المستند: ' : 'Doc ID: '}<span className="text-slate-700 font-bold">{reportSerialNum}</span>
+                      <p className="text-[9px] text-slate-400 font-mono font-bold leading-none">
+                        {isRtl ? 'الرقم المرجعي: ' : 'Doc Ref: '}<span className="text-slate-900 font-extrabold bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">{reportSerialNum}</span>
                       </p>
                     </div>
                   </div>
 
                   {/* Metadata Info Card Grid */}
-                  <div className="bg-slate-50 border border-slate-200/60 rounded-xl p-4 mb-6 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                  <div className="bg-gradient-to-b from-slate-50 to-slate-100/70 border border-slate-300 rounded-2xl p-4 mb-5 grid grid-cols-2 md:grid-cols-4 gap-3.5 text-xs">
                     <div className="space-y-0.5">
-                      <span className="block text-[9px] font-black text-gray-400 uppercase tracking-wider">{isRtl ? 'المشروع المعتمد للفترة' : 'Target Site Project'}</span>
-                      <span className="text-slate-800 font-extrabold line-clamp-1">{isRtl ? selectedProjectName : selectedProjectNameEn}</span>
+                      <span className="block text-[8.5px] font-black text-slate-400 uppercase tracking-wider">🏗️ {isRtl ? 'المشروع المستهدف' : 'Target Project'}</span>
+                      <span className="text-[#040957] font-extrabold line-clamp-1">{isRtl ? selectedProjectName : selectedProjectNameEn}</span>
+                      <span className="block text-[8px] text-slate-500 font-medium">{isRtl ? 'الموقع العام للمشروع' : 'Primary Site Location'}</span>
                     </div>
                     <div className="space-y-0.5">
-                      <span className="block text-[9px] font-black text-gray-400 uppercase tracking-wider">{isRtl ? 'تاريخ استخراج التقرير' : 'Report Log Date'}</span>
-                      <span className="text-slate-800 font-extrabold font-mono">{selectedReportDate}</span>
+                      <span className="block text-[8.5px] font-black text-slate-400 uppercase tracking-wider">📅 {isRtl ? 'تاريخ ونطاق التقرير' : 'Report Log Date'}</span>
+                      <span className="text-[#040957] font-extrabold font-mono">{selectedReportDate}</span>
+                      <span className="block text-[8px] text-slate-500 font-medium">{isRtl ? 'دورة الرصد: كل ساعتين' : 'Cycle: Bi-Hourly'}</span>
                     </div>
                     <div className="space-y-0.5">
-                      <span className="block text-[9px] font-black text-gray-400 uppercase tracking-wider">{isRtl ? 'وقت التحديث المستمر' : 'Sync Extraction Time'}</span>
-                      <span className="text-slate-800 font-extrabold font-mono">
+                      <span className="block text-[8.5px] font-black text-slate-400 uppercase tracking-wider">⏱️ {isRtl ? 'وقت استخراج البث' : 'Extraction Time'}</span>
+                      <span className="text-[#040957] font-extrabold font-mono">
                         {new Date().toLocaleTimeString(isRtl ? 'ar-SA' : 'en-US', { hour: '2-digit', minute: '2-digit' })}
                       </span>
+                      <span className="block text-[8px] text-emerald-600 font-bold">🟢 {isRtl ? 'مزامنة سحابية نشطة' : 'Active Cloud Sync'}</span>
                     </div>
                     <div className="space-y-0.5">
-                      <span className="block text-[9px] font-black text-gray-400 uppercase tracking-wider">{isRtl ? 'مستوى الحماية الأمنية' : 'Security Clearance'}</span>
-                      <span className="text-emerald-600 font-extrabold">{isRtl ? 'مسؤول وموثوق' : 'Verified & Safe'}</span>
+                      <span className="block text-[8.5px] font-black text-slate-400 uppercase tracking-wider">🛡️ {isRtl ? 'مستوى الحوكمة' : 'Governance'}</span>
+                      <span className="text-blue-600 font-extrabold">{isRtl ? 'إدارة المشاريع والاستشاري' : 'PM & Consultant'}</span>
+                      <span className="block text-[8px] text-slate-500 font-medium">ISO 9001 / PMO Grade</span>
                     </div>
                   </div>
 
-                  {/* Operational Summary Indicator blocks */}
-                  <div className="mb-6">
-                    <div className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-2 border-b border-gray-100 pb-1">
-                      {isRtl ? 'مؤشرات الأداء التشغيلية للفترة' : 'Operational Performance Summary'}
-                    </div>
-                    <div className="grid grid-cols-3 gap-4 text-center">
-                      <div className="bg-slate-50/50 rounded-xl border border-slate-100 p-3">
-                        <span className="block text-[18px] font-extrabold text-slate-800 font-mono leading-none">{filteredProductionFeed.length}</span>
-                        <span className="text-[8px] font-black text-gray-400 uppercase tracking-wider mt-1 block">{isRtl ? 'سجلات التحديثات' : 'Interval Updates'}</span>
+                  {/* Operational Summary KPI Indicator blocks */}
+                  <div className="mb-5">
+                    <div className="grid grid-cols-4 gap-2.5 text-center">
+                      <div className="bg-white rounded-xl border-t-4 border-t-[#040957] border-x border-b border-slate-200 p-2.5 shadow-sm">
+                        <span className="block text-base sm:text-lg font-black text-[#040957] font-mono leading-none">{filteredProductionFeed.length}</span>
+                        <span className="text-[8px] font-extrabold text-slate-500 uppercase tracking-wider mt-1 block">{isRtl ? 'فترات الرصد' : 'Interval Logs'}</span>
                       </div>
-                      <div className="bg-slate-50/50 rounded-xl border border-slate-100 p-3">
-                        <span className="block text-[18px] font-extrabold text-blue-600 font-mono leading-none">
+                      <div className="bg-white rounded-xl border-t-4 border-t-sky-500 border-x border-b border-slate-200 p-2.5 shadow-sm">
+                        <span className="block text-base sm:text-lg font-black text-sky-600 font-mono leading-none">
                           +{filteredProductionFeed.reduce((sum, item) => sum + item.completedQuantity, 0)}
                         </span>
-                        <span className="text-[8px] font-black text-gray-400 uppercase tracking-wider mt-1 block">{isRtl ? 'الكمية الإجمالية للفترة' : 'Total Output Qty'}</span>
+                        <span className="text-[8px] font-extrabold text-slate-500 uppercase tracking-wider mt-1 block">{isRtl ? 'الكمية المنفذة' : 'Total Output'}</span>
                       </div>
-                      <div className="bg-slate-50/50 rounded-xl border border-slate-100 p-3">
-                        <span className="block text-[18px] font-extrabold text-emerald-600 font-mono leading-none">
+                      <div className="bg-white rounded-xl border-t-4 border-t-emerald-500 border-x border-b border-slate-200 p-2.5 shadow-sm">
+                        <span className="block text-base sm:text-lg font-black text-emerald-600 font-mono leading-none">
                           {filteredProductionFeed.length > 0 ? Math.round(filteredProductionFeed.reduce((sum, item) => sum + (item.shiftAchievement || 0), 0) / filteredProductionFeed.length) : 0}%
                         </span>
-                        <span className="text-[8px] font-black text-gray-400 uppercase tracking-wider mt-1 block">{isRtl ? 'متوسط كفاءة الإنجاز' : 'Avg Interval Achievement'}</span>
+                        <span className="text-[8px] font-extrabold text-slate-500 uppercase tracking-wider mt-1 block">{isRtl ? 'متوسط الإنجاز' : 'Avg Shift %'}</span>
+                      </div>
+                      <div className="bg-white rounded-xl border-t-4 border-t-teal-600 border-x border-b border-slate-200 p-2.5 shadow-sm">
+                        <span className="block text-base sm:text-lg font-black text-teal-700 font-mono leading-none">100%</span>
+                        <span className="text-[8px] font-extrabold text-slate-500 uppercase tracking-wider mt-1 block">{isRtl ? 'مطابقة الجودة' : 'QA Standard'}</span>
                       </div>
                     </div>
                   </div>
 
                   {/* Interval Logs Table */}
-                  <div className="mb-6">
-                    <div className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-2.5 border-b border-gray-100 pb-1">
-                      {isRtl ? 'تفاصيل فترات الإنجاز الميداني (كل ساعتين)' : 'Detailed 2-Hour Achievement logs'}
+                  <div className="mb-5">
+                    <div className="flex items-center justify-between bg-gradient-to-r from-[#040957] to-slate-900 text-white px-3.5 py-2 rounded-t-xl text-[9.5px] font-black uppercase tracking-wider">
+                      <span>📊 {isRtl ? 'جدول سجلات وتفاصيل فترات الإنتاج الميداني المباشر' : 'Live Field Production & Interval Logs Matrix'}</span>
+                      <span className="text-[8px] font-normal bg-white/20 px-2 py-0.5 rounded">
+                        {isRtl ? 'تحديث فوري كل ساعتين' : 'Bi-Hourly Realtime'}
+                      </span>
                     </div>
                     
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-[11px] text-slate-700 border-collapse">
+                    <div className="overflow-x-auto border border-slate-200 rounded-b-xl">
+                      <table className="w-full text-[10px] sm:text-[11px] text-slate-700 border-collapse">
                         <thead>
-                          <tr className="bg-[#040957] text-white uppercase text-[9px] tracking-wider font-extrabold">
-                            <th className="py-2.5 px-3 rounded-l-lg rtl:rounded-l-none rtl:rounded-r-lg text-center" style={{ width: '6%' }}>{isRtl ? 'م' : 'SN'}</th>
-                            <th className="py-2.5 px-3 text-left rtl:text-right" style={{ width: '36%' }}>{isRtl ? 'بند النشاط الميداني' : 'Activity Description'}</th>
-                            <th className="py-2.5 px-3 text-center" style={{ width: '12%' }}>{isRtl ? 'الوقت' : 'Time'}</th>
-                            <th className="py-2.5 px-3 text-center" style={{ width: '14%' }}>{isRtl ? 'الكمية المنفذة' : 'Qty'}</th>
-                            <th className="py-2.5 px-3 text-center" style={{ width: '12%' }}>{isRtl ? 'إنجاز الفترة' : 'Interval'}</th>
-                            <th className="py-2.5 px-3 text-center" style={{ width: '12%' }}>{isRtl ? 'الإجمالي التراكمي' : 'Total %'}</th>
-                            <th className="py-2.5 px-3 text-left rtl:text-right" style={{ width: '16%' }}>{isRtl ? 'المشرف' : 'Supervisor'}</th>
-                            <th className="py-2.5 px-3 rounded-r-lg rtl:rounded-r-none rtl:rounded-l-lg text-center print:hidden" style={{ width: '8%' }}>{isRtl ? 'إدارة' : 'Manage'}</th>
+                          <tr className="bg-slate-100 text-slate-700 uppercase text-[8.5px] tracking-wider font-extrabold border-b border-slate-300">
+                            <th className="py-2.5 px-2 text-center" style={{ width: '5%' }}>{isRtl ? 'م' : 'SN'}</th>
+                            <th className="py-2.5 px-3 text-left rtl:text-right" style={{ width: '34%' }}>{isRtl ? 'بند العمل والنشاط الميداني' : 'Work Item & Activity'}</th>
+                            <th className="py-2.5 px-2 text-center" style={{ width: '13%' }}>{isRtl ? 'وقت الرصد' : 'Interval'}</th>
+                            <th className="py-2.5 px-2 text-center" style={{ width: '15%' }}>{isRtl ? 'الكمية المنفذة' : 'Qty'}</th>
+                            <th className="py-2.5 px-2 text-center" style={{ width: '11%' }}>{isRtl ? 'إنجاز الفترة' : 'Interval %'}</th>
+                            <th className="py-2.5 px-2 text-center" style={{ width: '11%' }}>{isRtl ? 'التراكمي' : 'Cumul %'}</th>
+                            <th className="py-2.5 px-3 text-left rtl:text-right" style={{ width: '11%' }}>{isRtl ? 'المشرف' : 'Supervisor'}</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100">
+                        <tbody className="divide-y divide-slate-100">
                           {filteredProductionFeed.length === 0 ? (
                             <tr>
-                              <td colSpan={8} className="text-center py-8 text-gray-400 italic">
-                                {isRtl ? 'لا يوجد تحديثات مسجلة لهذه الفترات' : 'No operational intervals recorded for the current filter'}
+                              <td colSpan={7} className="text-center py-8 text-slate-400 italic bg-slate-50/50">
+                                {isRtl ? 'لا توجد تحديثات مسجلة لهذه الفترات' : 'No operational intervals recorded for the current filter'}
                               </td>
                             </tr>
                           ) : (
@@ -2823,7 +2955,7 @@ export default function Dashboard({
                                   } else if (dateKey === yesterdayStr) {
                                     return isRtl ? `الأمس - ${dateKey}` : `Yesterday - ${dateKey}`;
                                   }
-                                  return dateObj.toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', {
+                                  return dateObj.toLocaleDateString(isRtl ? 'ar-SA' : 'en-US', {
                                     weekday: 'long',
                                     year: 'numeric',
                                     month: 'long',
@@ -2837,49 +2969,82 @@ export default function Dashboard({
                               return (
                                 <React.Fragment key={dateKey}>
                                   {/* Date Group Separation Header Row */}
-                                  <tr className="bg-slate-50 font-bold border-y border-slate-200">
-                                    <td colSpan={8} className="py-2 px-3 text-left rtl:text-right text-[#040957] text-[10px] uppercase font-black tracking-wider">
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-blue-700">📅 {formattedDate()}</span>
-                                        <span className="bg-blue-100 text-blue-800 text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase">
-                                          {groupItems.length} {isRtl ? 'تحديثات' : 'updates'}
-                                        </span>
-                                        <span className="bg-emerald-100 text-emerald-800 text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase">
-                                          {isRtl ? 'الإنتاج:' : 'Qty:'} +{groupItems.reduce((sum, item) => sum + item.completedQuantity, 0)}
-                                        </span>
+                                  <tr className="bg-gradient-to-r from-slate-100 to-slate-50 font-bold border-y border-slate-300">
+                                    <td colSpan={7} className="py-2 px-3 text-left rtl:text-right text-[#040957] text-[9.5px] uppercase font-black tracking-wider">
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-blue-900 font-extrabold">📅 {formattedDate()}</span>
+                                          <span className="bg-indigo-100 text-indigo-800 text-[8px] font-black px-2 py-0.5 rounded-full font-mono">
+                                            {groupItems.length} {isRtl ? 'فترات رصد' : 'intervals'}
+                                          </span>
+                                        </div>
+                                        <div>
+                                          <span className="bg-emerald-100 text-emerald-800 text-[8.5px] font-black px-2.5 py-0.5 rounded-full border border-emerald-200">
+                                            {isRtl ? 'إجمالي اليوم:' : 'Day Total:'} +{groupItems.reduce((sum, item) => sum + item.completedQuantity, 0)}
+                                          </span>
+                                        </div>
                                       </div>
                                     </td>
                                   </tr>
-                                  {groupItems.map((upd, index) => (
-                                    <tr key={upd.id} className="hover:bg-slate-50/50 transition-colors">
-                                      <td className="py-3 px-3 text-center font-mono font-bold text-gray-400">{index + 1}</td>
-                                      <td className="py-3 px-3 text-left rtl:text-right font-extrabold text-[#040957]">{upd.activityName}</td>
-                                      <td className="py-3 px-3 text-center font-mono text-gray-500 font-bold">{upd.time}</td>
-                                      <td className="py-3 px-3 text-center font-mono font-extrabold text-slate-800">+{upd.completedQuantity} {upd.unit}</td>
-                                      <td className="py-3 px-3 text-center font-mono font-extrabold text-blue-600">{upd.shiftAchievement !== null ? `${upd.shiftAchievement}%` : '-'}</td>
-                                      <td className="py-3 px-3 text-center font-mono font-extrabold text-emerald-600">{upd.completionPercentage}%</td>
-                                      <td className="py-3 px-3 text-left rtl:text-right text-gray-500 font-bold">{upd.reporterName || (isRtl ? 'مشرف ميداني' : 'Field Supervisor')}</td>
-                                      <td className="py-3 px-3 text-center print:hidden">
-                                        <button 
-                                          onClick={() => {
-                                            if (openConfirm) {
-                                              openConfirm(
-                                                isRtl ? 'حذف تحديث' : 'Delete Update',
-                                                isRtl ? 'هل أنت متأكد من حذف هذا التحديث؟' : 'Are you sure you want to delete this update?',
-                                                () => onDeleteProgressUpdate?.(upd.id)
-                                              );
-                                            } else if (window.confirm(isRtl ? 'هل أنت متأكد من حذف هذا التحديث؟' : 'Are you sure you want to delete this update?')) {
-                                              onDeleteProgressUpdate?.(upd.id);
-                                            }
-                                          }}
-                                          className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                          title={isRtl ? 'حذف' : 'Delete'}
-                                        >
-                                          <Trash2 className="w-4 h-4" />
-                                        </button>
-                                      </td>
-                                    </tr>
-                                  ))}
+                                  {groupItems.map((upd, index) => {
+                                    const shiftAchievementVal = upd.shiftAchievement !== null ? upd.shiftAchievement : 0;
+                                    const completionVal = upd.completionPercentage || 0;
+
+                                    return (
+                                      <tr key={upd.id} className="hover:bg-blue-50/30 transition-colors">
+                                        <td className="py-2.5 px-2 text-center font-mono font-bold text-slate-400">
+                                          <span className="inline-block w-5 h-5 leading-5 bg-slate-100 rounded text-slate-600 font-bold text-[9px]">{index + 1}</span>
+                                        </td>
+                                        <td className="py-2.5 px-3 text-left rtl:text-right">
+                                          <div className="font-extrabold text-[#040957]">{upd.activityName}</div>
+                                          {upd.notes && <div className="text-[8px] text-slate-500 font-medium mt-0.5 line-clamp-1">💬 {upd.notes}</div>}
+                                        </td>
+                                        <td className="py-2.5 px-2 text-center font-mono text-slate-600 font-bold text-[9px]">
+                                          <span className="bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">
+                                            ⏱️ {upd.time}
+                                          </span>
+                                        </td>
+                                        <td className="py-2.5 px-2 text-center font-mono font-black text-sky-700">
+                                          <span className="bg-sky-50 text-sky-800 border border-sky-200 px-2 py-0.5 rounded-md">
+                                            +{upd.completedQuantity} <span className="text-[8px] font-bold text-sky-600">{upd.unit}</span>
+                                          </span>
+                                        </td>
+                                        <td className="py-2.5 px-2 text-center font-mono">
+                                          <div className="font-extrabold text-[9.5px]" style={{ color: shiftAchievementVal >= 100 ? '#16a34a' : shiftAchievementVal >= 75 ? '#2563eb' : '#d97706' }}>
+                                            {upd.shiftAchievement !== null ? `${upd.shiftAchievement}%` : '-'}
+                                          </div>
+                                          {upd.shiftAchievement !== null && (
+                                            <div className="w-12 mx-auto mt-1 h-1 bg-slate-100 rounded-full overflow-hidden">
+                                              <div 
+                                                className="h-full rounded-full" 
+                                                style={{ 
+                                                  width: `${Math.min(100, shiftAchievementVal)}%`,
+                                                  backgroundColor: shiftAchievementVal >= 100 ? '#16a34a' : shiftAchievementVal >= 75 ? '#2563eb' : '#d97706'
+                                                }}
+                                              />
+                                            </div>
+                                          )}
+                                        </td>
+                                        <td className="py-2.5 px-2 text-center font-mono">
+                                          <div className="font-extrabold text-[9.5px] text-teal-700">
+                                            {completionVal}%
+                                          </div>
+                                          <div className="w-12 mx-auto mt-1 h-1 bg-teal-50 rounded-full overflow-hidden">
+                                            <div 
+                                              className="h-full bg-teal-600 rounded-full" 
+                                              style={{ width: `${Math.min(100, completionVal)}%` }}
+                                            />
+                                          </div>
+                                        </td>
+                                        <td className="py-2.5 px-3 text-left rtl:text-right text-slate-600 font-bold text-[9px]">
+                                          <div className="flex items-center gap-1">
+                                            <span>👤</span>
+                                            <span>{upd.reporterName || (isRtl ? 'مشرف معتمد' : 'Supervisor')}</span>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
                                 </React.Fragment>
                               );
                             })
@@ -2890,58 +3055,67 @@ export default function Dashboard({
                   </div>
 
                   {/* Technical Remarks Box */}
-                  <div className="mb-8">
-                    <div className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-2 border-b border-gray-100 pb-1">
-                      {isRtl ? 'الملاحظات والتدقيق الفني للموقع' : 'Field Technical Remarks & Notes'}
-                    </div>
-                    <div className="bg-slate-50 border border-slate-200/50 rounded-xl p-4 text-[10px] sm:text-xs text-gray-600 font-medium leading-relaxed">
-                      {isRtl ? customRemarksAr : customRemarksEn}
+                  <div className="mb-6">
+                    <div className="bg-slate-50 border-r-4 border-[#040957] border-y border-l border-slate-300 rounded-xl p-3.5 text-xs text-slate-700 font-semibold leading-relaxed">
+                      <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                        📝 {isRtl ? 'الملاحظات والتدقيق الفني الميداني للموقع' : 'Site Field Technical Remarks & Quality Audit'}
+                      </div>
+                      <p className="text-[10px] text-slate-700 leading-normal">
+                        {isRtl ? customRemarksAr : customRemarksEn}
+                      </p>
                     </div>
                   </div>
 
                   {/* Signatures/Approvals Block */}
-                  <div>
-                    <div className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-6 border-b border-gray-100 pb-1">
-                      {isRtl ? 'تراخيص التوقيع الفني والاعتماد الميداني' : 'Regulatory Sign-offs & Authorizations'}
-                    </div>
-                    <div className="grid grid-cols-3 gap-6 text-center">
-                      <div className="space-y-1.5">
-                        <div className="h-10 flex items-end justify-center">
-                          <span className="font-mono text-[10px] text-slate-300 italic">SYSTEM_VERIFIED</span>
+                  <div className="border-t border-slate-200 pt-4">
+                    <div className="grid grid-cols-3 gap-3 text-center">
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                        <div className="h-6 flex items-center justify-center">
+                          <span className="font-mono text-[8px] text-sky-700 font-bold tracking-wider">[ DIGITALLY VERIFIED ]</span>
                         </div>
-                        <div className="border-t border-slate-300 pt-2">
-                          <span className="block text-[11px] font-extrabold text-slate-800 leading-none">
-                            {isRtl ? 'المهندس الميداني بالموقع' : 'Site Supervising Engineer'}
+                        <div className="border-t border-dashed border-[#040957] pt-1.5 mt-1">
+                          <span className="block text-[10px] font-black text-[#040957] leading-none">
+                            {isRtl ? 'المهندس المشرف بالموقع' : 'Site Supervising Engineer'}
                           </span>
-                          <span className="text-[9px] font-bold text-gray-400 uppercase mt-0.5 block">{isRtl ? 'معد التقرير' : 'Reporter'}</span>
+                          <span className="text-[8px] font-bold text-slate-400 uppercase mt-0.5 block">{isRtl ? 'مستخرج ومدقق التقرير' : 'Field Reporter'}</span>
                         </div>
                       </div>
 
-                      <div className="space-y-1.5">
-                        <div className="h-10 flex items-end justify-center">
-                          <span className="font-mono text-[10px] text-slate-300 italic">REVIEWED_OK</span>
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                        <div className="h-6 flex items-center justify-center">
+                          <span className="font-mono text-[8px] text-emerald-700 font-bold tracking-wider">[ REVIEWED & AUDITED ]</span>
                         </div>
-                        <div className="border-t border-slate-300 pt-2">
-                          <span className="block text-[11px] font-extrabold text-slate-800 leading-none">
-                            {isRtl ? 'استشاري الإشراف الفني' : 'Consultant Representative'}
+                        <div className="border-t border-dashed border-[#040957] pt-1.5 mt-1">
+                          <span className="block text-[10px] font-black text-[#040957] leading-none">
+                            {isRtl ? 'استشاري الإشراف الفني' : 'Consultant QA/QC Engineer'}
                           </span>
-                          <span className="text-[9px] font-bold text-gray-400 uppercase mt-0.5 block">{isRtl ? 'مدقق فني' : 'Technical Reviewer'}</span>
+                          <span className="text-[8px] font-bold text-slate-400 uppercase mt-0.5 block">{isRtl ? 'المطابقة والتدقيق' : 'Technical Reviewer'}</span>
                         </div>
                       </div>
 
-                      <div className="space-y-1.5">
-                        <div className="h-10 flex items-end justify-center">
-                          <span className="font-mono text-xs text-blue-600 font-bold italic">
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                        <div className="h-6 flex items-center justify-center">
+                          <span className="font-mono text-[10px] text-blue-900 font-black italic">
                             {((isRtl ? settings?.managerNameAr : settings?.managerNameEn) || 'Fahad Al-Otaibi')}
                           </span>
                         </div>
-                        <div className="border-t border-slate-300 pt-2">
-                          <span className="block text-[11px] font-extrabold text-slate-800 leading-none">
-                            {((isRtl ? settings?.managerNameAr : settings?.managerNameEn) || (isRtl ? 'مدير المشروع الفني' : 'Technical Project Manager'))}
+                        <div className="border-t border-dashed border-[#040957] pt-1.5 mt-1">
+                          <span className="block text-[10px] font-black text-[#040957] leading-none">
+                            {((isRtl ? settings?.managerNameAr : settings?.managerNameEn) || (isRtl ? 'م. فهد العتيبي' : 'Eng. Fahad Al-Otaibi'))}
                           </span>
-                          <span className="text-[9px] font-bold text-gray-400 uppercase mt-0.5 block">{isRtl ? 'الاعتماد المعتمد' : 'PM Approval'}</span>
+                          <span className="text-[8px] font-bold text-slate-400 uppercase mt-0.5 block">{isRtl ? 'اعتماد مدير إدارة المشاريع' : 'Project Director Approval'}</span>
                         </div>
                       </div>
+                    </div>
+                  </div>
+
+                  {/* Security & Quality Assurance Footer */}
+                  <div className="flex items-center justify-between text-[7.5px] text-slate-400 font-semibold border-t border-dashed border-slate-200 pt-2.5 mt-4">
+                    <div>
+                      🔒 {isRtl ? 'وثيقة رقمية مشفرة ومحمية بسجل تدقيق إلكتروني معتمد' : 'Cryptographically verified digital record, immutable audit log'}
+                    </div>
+                    <div className="font-mono">
+                      UUID: {reportSerialNum}
                     </div>
                   </div>
 

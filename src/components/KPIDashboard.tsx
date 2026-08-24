@@ -636,7 +636,7 @@ export default function KPIDashboard({
 
   const handlePrint = async () => {
     try {
-      const html2pdf = (await import('html2pdf.js')).default;
+      const { exportElementToPdf } = await import('../utils/pdf/UniversalPdfEngine');
       
       let printFrame = document.getElementById('kpi-report-pdf-iframe') as HTMLIFrameElement;
       if (!printFrame) {
@@ -718,17 +718,12 @@ export default function KPIDashboard({
       await new Promise(resolve => setTimeout(resolve, 2000));
 
       const captureElement = frameDoc.getElementById('pdf-capture-root');
-      const opt = {
-        margin:       [10, 10, 10, 10] as [number, number, number, number],
-        filename:     `KPI_Report_${new Date().toISOString().split('T')[0]}.pdf`,
-        image:        { type: 'jpeg' as const, quality: 0.98 },
-        html2canvas:  { scale: 2, useCORS: true, logging: false },
-        jsPDF:        { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
-      };
-
-      await runWithOklchSanitizer(async () => {
-        await html2pdf().set(opt).from(captureElement).save();
-      });
+      if (captureElement) {
+        await exportElementToPdf(captureElement, {
+          filename: `KPI_Report_${new Date().toISOString().split('T')[0]}.pdf`,
+          isRtl: isRtl
+        });
+      }
       
     } catch (err) {
       console.error("KPI PDF Generation failed:", err);

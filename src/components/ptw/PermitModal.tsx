@@ -542,6 +542,8 @@ export const PermitModal: React.FC<PermitModalProps> = ({
     setStatus(nextStatus);
     setApprovalComment('');
 
+    await handleSavePermit(nextStatus, updatedApprovals, nextIndex);
+
     await onLogAudit({
       recordType: 'WorkPermit',
       recordId: permit?.id || permitNumber,
@@ -611,9 +613,12 @@ export const PermitModal: React.FC<PermitModalProps> = ({
       suspendedAt: new Date().toISOString()
     };
 
-    setSuspensions(prev => [...prev, newSusp]);
+    const nextSusp = [...suspensions, newSusp];
+    setSuspensions(nextSusp);
     setStatus('Suspended');
     setSuspensionReason('');
+
+    await handleSavePermit('Suspended', approvals, currentApprovalIndex, extensions, nextSusp);
 
     await onLogAudit({
       recordType: 'WorkPermit',
@@ -633,12 +638,15 @@ export const PermitModal: React.FC<PermitModalProps> = ({
   // Resume Suspended Permit
   const handleResumePermit = async () => {
     setStatus('Active');
-    setSuspensions(prev => prev.map((s, i) => i === prev.length - 1 ? {
+    const nextSusp = suspensions.map((s, i) => i === suspensions.length - 1 ? {
       ...s,
       resumedAt: new Date().toISOString(),
       resumedBy: currentUserName,
       resumeApproval: 'Approved by HSE'
-    } : s));
+    } : s);
+    setSuspensions(nextSusp);
+
+    await handleSavePermit('Active', approvals, currentApprovalIndex, extensions, nextSusp);
 
     await onLogAudit({
       recordType: 'WorkPermit',
@@ -678,6 +686,8 @@ export const PermitModal: React.FC<PermitModalProps> = ({
     setClosure(finalClosure);
     setStatus('Closed');
 
+    await handleSavePermit('Closed', approvals, currentApprovalIndex, extensions, suspensions, finalClosure);
+
     await onLogAudit({
       recordType: 'WorkPermit',
       recordId: permit?.id || permitNumber,
@@ -694,7 +704,7 @@ export const PermitModal: React.FC<PermitModalProps> = ({
   };
 
   // Save Permit
-  const handleSavePermit = async () => {
+  const handleSavePermit = async (overrideStatus?: string | any, overrideApprovals?: ApprovalStep[], overrideApprovalIndex?: number, overrideExtensions?: PTWExtension[], overrideSuspensions?: PTWSuspension[], overrideClosure?: PTWClosure) => {
     if (!selectedActivityId) {
       setActivityValidationError(isRtl ? 'يجب اختيار نشاط (Activity) قائم لإصدار تصريح العمل والربط التلقائي.' : 'You must select an existing Activity to issue a Permit to Work.');
       setActiveTab('info');
@@ -705,6 +715,12 @@ export const PermitModal: React.FC<PermitModalProps> = ({
     try {
       const pType = permitTypes.find(pt => pt.id === selectedPermitTypeId) || DEFAULT_PERMIT_TYPES[0];
       const linkedAct = activities.find(a => a.id === selectedActivityId);
+      const finalStatus = typeof overrideStatus === 'string' ? overrideStatus : status;
+      const finalApprovals = overrideApprovals || approvals;
+      const finalApprovalIndex = overrideApprovalIndex !== undefined ? overrideApprovalIndex : currentApprovalIndex;
+      const finalExtensions = overrideExtensions || extensions;
+      const finalSuspensions = overrideSuspensions || suspensions;
+      const finalClosure = overrideClosure || closure;
 
       const workerNames = assignedWorkerIds.map(wId => {
         const found = workers.find(w => w.id === wId);
@@ -747,8 +763,8 @@ export const PermitModal: React.FC<PermitModalProps> = ({
         validFromTime,
         validUntilDate,
         validUntilTime,
-        actualStartDate: status === 'Active' ? (permit?.actualStartDate || validFromDate) : undefined,
-        actualStartTime: status === 'Active' ? (permit?.actualStartTime || validFromTime) : undefined,
+        actualStartDate: finalStatus === 'Active' ? (permit?.actualStartDate || validFromDate) : undefined,
+        actualStartTime: finalStatus === 'Active' ? (permit?.actualStartTime || validFromTime) : undefined,
 
         hazards,
         safetyControls,
@@ -758,19 +774,19 @@ export const PermitModal: React.FC<PermitModalProps> = ({
         assemblyPoint,
         attachments,
 
-        approvals,
-        currentApprovalIndex,
+        approvals: finalApprovals,
+        currentApprovalIndex: finalApprovalIndex,
 
-        extensions,
-        suspensions,
-        closure,
+        extensions: finalExtensions,
+        suspensions: finalSuspensions,
+        closure: finalClosure,
 
-        status,
+        status: finalStatus,
         createdAt: permit?.createdAt || new Date().toISOString(),
         createdBy: permit?.createdBy || currentUserName,
         updatedAt: new Date().toISOString(),
-        approvedAt: (status === 'Active' || status === 'Approved') ? (permit?.approvedAt || new Date().toISOString()) : undefined,
-        approvedBy: (status === 'Active' || status === 'Approved') ? (permit?.approvedBy || currentUserName) : undefined,
+        approvedAt: (finalStatus === 'Active' || finalStatus === 'Approved') ? (permit?.approvedAt || new Date().toISOString()) : undefined,
+        approvedBy: (finalStatus === 'Active' || finalStatus === 'Approved') ? (permit?.approvedBy || currentUserName) : undefined,
         qrCodeUrl: qrCodeDataUrl
       };
 
@@ -789,7 +805,7 @@ export const PermitModal: React.FC<PermitModalProps> = ({
         comments: `Permit ${payload.permitNumber} saved with Activity: ${linkedAct?.nameAr || linkedAct?.nameEn || 'Linked'}.`
       });
 
-      onClose();
+      if (!overrideStatus || overrideStatus === 'Submitted') onClose();
     } catch (err) {
       console.error('Error saving PTW:', err);
       alert(isRtl ? 'حدث خطأ أثناء حفظ تصريح العمل' : 'Error saving Permit to Work');
@@ -807,29 +823,10 @@ export const PermitModal: React.FC<PermitModalProps> = ({
         alert(isRtl ? 'يرجى التبديل لتبويب المعاينة قبل التحميل' : 'Please open the Preview tab first');
         return;
       }
-      // @ts-ignore
-      const html2pdf = (await import('html2pdf.js')).default;
-      const opt = {
-        margin: [6, 4, 6, 4] as [number, number, number, number],
+      const { exportElementToPdf } = await import('../../utils/pdf/UniversalPdfEngine');
+      await exportElementToPdf(element, {
         filename: `${permitNumber || 'PTW'}.pdf`,
-        image: { type: 'jpeg' as const, quality: 0.98 },
-        html2canvas: { 
-          scale: 2, 
-          useCORS: true, 
-          letterRendering: true,
-          scrollY: 0,
-          scrollX: 0,
-          windowWidth: 794,
-          logging: false
-        },
-        pagebreak: { 
-          mode: ['avoid-all', 'css', 'legacy'],
-          avoid: ['.pdf-avoid-break', 'tr', 'table'] 
-        },
-        jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
-      };
-      await runWithOklchSanitizer(async () => {
-        await html2pdf().set(opt).from(element).save();
+        isRtl: isRtl
       });
     } catch (err) {
       console.error('PDF error:', err);
@@ -889,97 +886,110 @@ export const PermitModal: React.FC<PermitModalProps> = ({
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center gap-1 px-6 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 overflow-x-auto text-xs font-semibold">
+        <div className="flex items-center gap-2 p-3 border-b border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 overflow-x-auto text-xs font-bold shrink-0">
           <button
+            type="button"
             onClick={() => setActiveTab('info')}
-            className={`py-3 px-3.5 border-b-2 flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+            className={`py-2 px-3.5 rounded-xl flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0 shadow-xs ${
               activeTab === 'info' 
-                ? 'border-rose-600 text-rose-700 dark:text-rose-400' 
-                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                ? 'bg-rose-600 text-white shadow-sm' 
+                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
             }`}
           >
-            <Building className="w-4 h-4" />
+            <Building className="w-4 h-4 shrink-0" />
             <span>{isRtl ? '1. بيانات التصريح والصلاحية' : '1. Scope & Validity'}</span>
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('hazards')}
-            className={`py-3 px-3.5 border-b-2 flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+            className={`py-2 px-3.5 rounded-xl flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0 shadow-xs ${
               activeTab === 'hazards' 
-                ? 'border-rose-600 text-rose-700 dark:text-rose-400' 
-                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                ? 'bg-rose-600 text-white shadow-sm' 
+                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
             }`}
           >
-            <AlertTriangle className="w-4 h-4" />
+            <AlertTriangle className="w-4 h-4 shrink-0" />
             <span>{isRtl ? '2. مصفوفة المخاطر' : '2. Hazard Matrix'}</span>
-            <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 font-mono">
+            <span className={`px-1.5 py-0.5 text-[10px] rounded-full font-mono ${
+              activeTab === 'hazards' ? 'bg-white/20 text-white' : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+            }`}>
               {hazards.length}
             </span>
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('controls')}
-            className={`py-3 px-3.5 border-b-2 flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+            className={`py-2 px-3.5 rounded-xl flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0 shadow-xs ${
               activeTab === 'controls' 
-                ? 'border-rose-600 text-rose-700 dark:text-rose-400' 
-                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                ? 'bg-rose-600 text-white shadow-sm' 
+                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
             }`}
           >
-            <ShieldCheck className="w-4 h-4" />
+            <ShieldCheck className="w-4 h-4 shrink-0" />
             <span>{isRtl ? '3. ضوابط السلامة ومهمات الوقاية' : '3. Controls & PPE'}</span>
-            <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-mono">
+            <span className={`px-1.5 py-0.5 text-[10px] rounded-full font-mono ${
+              activeTab === 'controls' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+            }`}>
               {safetyControls.filter(c => c.isImplemented).length}/{safetyControls.length}
             </span>
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('approvals')}
-            className={`py-3 px-3.5 border-b-2 flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+            className={`py-2 px-3.5 rounded-xl flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0 shadow-xs ${
               activeTab === 'approvals' 
-                ? 'border-rose-600 text-rose-700 dark:text-rose-400' 
-                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                ? 'bg-rose-600 text-white shadow-sm' 
+                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
             }`}
           >
-            <PenTool className="w-4 h-4" />
+            <PenTool className="w-4 h-4 shrink-0" />
             <span>{isRtl ? '4. التوقيعات والاعتماد' : '4. Approvals'}</span>
-            <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 font-mono">
+            <span className={`px-1.5 py-0.5 text-[10px] rounded-full font-mono ${
+              activeTab === 'approvals' ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
+            }`}>
               {approvals.filter(a => a.status === 'Approved').length}/{approvals.length}
             </span>
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('lifecycle')}
-            className={`py-3 px-3.5 border-b-2 flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+            className={`py-2 px-3.5 rounded-xl flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0 shadow-xs ${
               activeTab === 'lifecycle' 
-                ? 'border-rose-600 text-rose-700 dark:text-rose-400' 
-                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                ? 'bg-rose-600 text-white shadow-sm' 
+                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
             }`}
           >
-            <PauseCircle className="w-4 h-4" />
+            <PauseCircle className="w-4 h-4 shrink-0" />
             <span>{isRtl ? '5. التمديد والإيقاف والإغلاق' : '5. Lifecycle & Closure'}</span>
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('preview')}
-            className={`py-3 px-3.5 border-b-2 flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+            className={`py-2 px-3.5 rounded-xl flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0 shadow-xs ${
               activeTab === 'preview' 
-                ? 'border-rose-600 text-rose-700 dark:text-rose-400' 
-                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                ? 'bg-rose-600 text-white shadow-sm' 
+                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
             }`}
           >
-            <Eye className="w-4 h-4" />
+            <Eye className="w-4 h-4 shrink-0" />
             <span>{isRtl ? '6. معاينة وثيقة التصريح (A4)' : '6. Document Preview (A4)'}</span>
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('qr')}
-            className={`py-3 px-3.5 border-b-2 flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+            className={`py-2 px-3.5 rounded-xl flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0 shadow-xs ${
               activeTab === 'qr' 
-                ? 'border-rose-600 text-rose-700 dark:text-rose-400' 
-                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                ? 'bg-rose-600 text-white shadow-sm' 
+                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
             }`}
           >
-            <QrCode className="w-4 h-4" />
+            <QrCode className="w-4 h-4 shrink-0" />
             <span>{isRtl ? 'الرمز (QR)' : 'QR Token'}</span>
           </button>
         </div>
@@ -1943,7 +1953,11 @@ export const PermitModal: React.FC<PermitModalProps> = ({
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => window.print()}
+                    onClick={() => {
+                      import('../../utils/pdf/UniversalPdfEngine').then(({ printDocumentElement }) => {
+                        printDocumentElement('ptw-print-area');
+                      });
+                    }}
                     className="flex-1 sm:flex-initial px-3 py-2 sm:py-1.5 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-colors min-h-[38px] sm:min-h-0"
                   >
                     <Printer className="w-4 h-4" />
@@ -1963,10 +1977,11 @@ export const PermitModal: React.FC<PermitModalProps> = ({
 
               {/* Printable Layout */}
               <div 
-                className="overflow-x-auto overflow-y-auto bg-slate-200/90 dark:bg-slate-950 p-2 sm:p-4 rounded-xl flex justify-center touch-pan-x touch-pan-y"
-                style={{ WebkitOverflowScrolling: 'touch' }}
+                className="overflow-x-auto overflow-y-auto bg-neutral-900 p-6 sm:p-12 rounded-xl flex justify-center touch-pan-x touch-pan-y shadow-inner border border-neutral-800"
+                style={{ WebkitOverflowScrolling: 'touch', minHeight: '600px' }}
               >
-                <PermitPrintableDoc
+                <div className="bg-white shadow-2xl shadow-black/50 transition-transform origin-top hover:scale-[1.01] duration-300">
+                  <PermitPrintableDoc
                   permit={{
                     id: permit?.id || 'new',
                     permitNumber,
@@ -2018,6 +2033,7 @@ export const PermitModal: React.FC<PermitModalProps> = ({
                   lang={lang}
                   qrCodeUrl={qrCodeDataUrl}
                 />
+                </div>
               </div>
             </div>
           )}
@@ -2045,12 +2061,12 @@ export const PermitModal: React.FC<PermitModalProps> = ({
         </div>
 
         {/* Modal Footer */}
-        <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
+        <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
           <div>
             {status === 'Draft' && (
               <button
                 type="button"
-                onClick={() => setStatus('Submitted')}
+                onClick={() => handleSavePermit('Submitted')}
                 className="px-4 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm"
               >
                 <Send className="w-4 h-4" />
@@ -2059,7 +2075,7 @@ export const PermitModal: React.FC<PermitModalProps> = ({
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={onClose}
@@ -2070,7 +2086,7 @@ export const PermitModal: React.FC<PermitModalProps> = ({
             <button
               type="button"
               disabled={isSaving}
-              onClick={handleSavePermit}
+              onClick={() => handleSavePermit()}
               className="px-5 py-2 bg-rose-800 hover:bg-rose-900 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-md"
             >
               <Save className="w-4 h-4" />

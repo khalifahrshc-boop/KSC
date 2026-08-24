@@ -4,19 +4,19 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { WorkPermit, SystemSettings } from '../../types';
-import { generatePTWQRCode } from '../../utils/ptwCalculations';
+import { StartWorkRecord, SystemSettings } from '../../types';
+import { generateStartWorkQRCode } from '../../utils/ptwCalculations';
 import { QrCode, CheckSquare, Square } from 'lucide-react';
 
-interface PermitPrintableDocProps {
-  permit: WorkPermit;
+interface StartWorkPrintableDocProps {
+  startWork: StartWorkRecord;
   settings: SystemSettings;
   lang: 'ar' | 'en';
   qrCodeUrl?: string;
 }
 
-export const PermitPrintableDoc: React.FC<PermitPrintableDocProps> = ({
-  permit,
+export const StartWorkPrintableDoc: React.FC<StartWorkPrintableDocProps> = ({
+  startWork,
   settings,
   lang,
   qrCodeUrl: externalQrCodeUrl
@@ -32,29 +32,20 @@ export const PermitPrintableDoc: React.FC<PermitPrintableDocProps> = ({
       setInternalQrCodeUrl(externalQrCodeUrl);
     } else {
       let isMounted = true;
-      generatePTWQRCode(permit, isRtl ? settings.companyNameAr : settings.companyNameEn).then(url => {
+      generateStartWorkQRCode(startWork, isRtl ? startWork.projectNameAr : startWork.projectNameEn).then(url => {
         if (isMounted && url) {
           setInternalQrCodeUrl(url);
         }
       });
       return () => { isMounted = false; };
     }
-  }, [externalQrCodeUrl, permit, settings, isRtl]);
+  }, [externalQrCodeUrl, startWork, isRtl]);
 
   const activeQrCode = externalQrCodeUrl || internalQrCodeUrl;
 
-  const getRiskColor = (risk: string) => {
-    switch (risk) {
-      case 'Critical': return 'text-red-700 font-black';
-      case 'High': return 'text-orange-700 font-bold';
-      case 'Medium': return 'text-amber-600 font-bold';
-      default: return 'text-emerald-700 font-bold';
-    }
-  };
-
   return (
     <div 
-      id={`permit-print-${permit.id}`}
+      id={`start-work-print-${startWork.id}`}
       className="bg-white text-slate-900 w-full max-w-[210mm] mx-auto text-[10px] print:w-full"
       style={{ 
         fontFamily: "'Cairo', 'Tajawal', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
@@ -91,10 +82,10 @@ export const PermitPrintableDoc: React.FC<PermitPrintableDocProps> = ({
                   {companyName}
                 </div>
                 <div className="text-sm font-black underline underline-offset-2 decoration-2 text-slate-900">
-                  {isRtl ? 'تصريح وتفويض عمل خطر' : 'HAZARDOUS WORK PERMIT (PTW)'}
+                  {isRtl ? 'تصريح ومحضر بدء الأعمال' : 'START WORK AUTHORIZATION'}
                 </div>
                 <div className="inline-block text-[9px] font-bold mt-1 bg-slate-800 text-white px-2.5 py-0.5 uppercase tracking-widest rounded-sm">
-                  {isRtl ? permit.permitTypeAr : permit.permitTypeEn}
+                  {isRtl ? 'شهادة التوثيق والجاهزية للبدء الميداني' : 'OFFICIAL SITE EXECUTION CLEARANCE'}
                 </div>
               </td>
               
@@ -107,11 +98,11 @@ export const PermitPrintableDoc: React.FC<PermitPrintableDocProps> = ({
                   <tbody>
                     <tr className="border-b border-slate-800">
                       <td className={`bg-slate-100 font-bold p-1 text-center text-[8px] border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`} style={{ width: '35%' }}>Form ID</td>
-                      <td className="p-1 text-center font-mono font-bold text-[8.5px]" style={{ width: '65%' }}>HSE-PTW-01</td>
+                      <td className="p-1 text-center font-mono font-bold text-[8.5px]" style={{ width: '65%' }}>HSE-SWA-02</td>
                     </tr>
                     <tr className="border-b border-slate-800">
                       <td className={`bg-slate-100 font-bold p-1 text-center text-[8px] border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`} style={{ width: '35%' }}>Rev. No</td>
-                      <td className="p-1 text-center font-mono font-bold text-[8.5px]" style={{ width: '65%' }}>02</td>
+                      <td className="p-1 text-center font-mono font-bold text-[8.5px]" style={{ width: '65%' }}>0{startWork.revision || 1}</td>
                     </tr>
                     <tr>
                       <td colSpan={2} className="p-1 text-center align-middle bg-slate-50">
@@ -129,231 +120,168 @@ export const PermitPrintableDoc: React.FC<PermitPrintableDocProps> = ({
           </tbody>
         </table>
 
-        {/* Permit Meta Details Table */}
+        {/* Form Meta Details Table */}
         <table className="w-full border-collapse border-b-[2px] border-slate-800 text-[9.5px]" style={{ tableLayout: 'fixed' }}>
           <tbody>
             <tr>
               <td className={`bg-slate-100 font-bold p-1.5 border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`} style={{ width: '12%' }}>
-                {isRtl ? 'رقم التصريح' : 'Permit No'}
+                {isRtl ? 'رقم المحضر' : 'Ref No'}
               </td>
               <td className={`p-1.5 font-mono font-bold border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`} style={{ width: '18%' }}>
-                {permit.permitNumber}
+                {startWork.startWorkNumber}
               </td>
               <td className={`bg-slate-100 font-bold p-1.5 border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`} style={{ width: '12%' }}>
-                {isRtl ? 'مستوى الخطورة' : 'Risk Level'}
+                {isRtl ? 'حالة الاعتماد' : 'Status'}
               </td>
               <td className={`p-1.5 font-bold uppercase border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`} style={{ width: '18%' }}>
-                <span className={getRiskColor(permit.riskLevel)}>{permit.riskLevel}</span>
+                {startWork.status}
               </td>
-              <td className={`bg-slate-100 font-bold p-1.5 border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`} style={{ width: '10%' }}>
-                {isRtl ? 'تاريخ البدء' : 'Valid From'}
+              <td className={`bg-slate-100 font-bold p-1.5 border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`} style={{ width: '15%' }}>
+                {isRtl ? 'القرار النهائي' : 'Final Decision'}
               </td>
-              <td className={`p-1.5 font-mono font-bold border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`} style={{ width: '15%' }}>
-                {permit.validFrom}
-              </td>
-              <td className={`bg-slate-100 font-bold p-1.5 border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`} style={{ width: '10%' }}>
-                {isRtl ? 'تاريخ الانتهاء' : 'Valid To'}
-              </td>
-              <td className="p-1.5 font-mono font-bold" style={{ width: '15%' }}>
-                {permit.validTo}
+              <td className="p-1.5 font-black uppercase text-center" style={{ width: '25%' }}>
+                <span className={`px-2 py-0.5 rounded font-black inline-block ${
+                  startWork.isReadyToStart ? 'bg-emerald-100 text-emerald-900 border border-emerald-300' : 'bg-rose-100 text-rose-900 border border-rose-300'
+                }`}>
+                  {startWork.isReadyToStart ? (isRtl ? 'جاهز للبدء ومصرح له (APPROVED)' : 'APPROVED TO EXECUTE') : (isRtl ? 'غير مصرح للبدء (HOLD)' : 'PENDING / HOLD')}
+                </span>
               </td>
             </tr>
           </tbody>
         </table>
 
-        {/* Section 1: Activity, Location & Scope */}
+        {/* Section 1: Project Info */}
         <div className="bg-slate-800 text-white font-bold px-2 py-1 text-[10.5px] uppercase border-b border-slate-800">
-          1. {isRtl ? 'تفاصيل النشاط الميداني والموقع الدقيق' : 'ACTIVITY, LOCATION & SCOPE'}
+          1. {isRtl ? 'بيانات المشروع والجهة المنفذة' : 'PROJECT & EXECUTION ENTITY INFO'}
         </div>
         <table className="w-full border-collapse border-b-[2px] border-slate-800 text-[9.5px]" style={{ tableLayout: 'fixed' }}>
           <tbody>
             <tr className="border-b border-slate-800">
               <td className={`bg-slate-100 font-bold p-1.5 border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`} style={{ width: '15%' }}>
-                {isRtl ? 'المشروع / الموقع' : 'Project / Location'}
+                {isRtl ? 'اسم المشروع' : 'Project Name'}
               </td>
               <td className={`p-1.5 font-bold border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`} style={{ width: '35%' }}>
-                {permit.workLocation}
+                {isRtl ? startWork.projectNameAr : startWork.projectNameEn}
               </td>
               <td className={`bg-slate-100 font-bold p-1.5 border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`} style={{ width: '15%' }}>
-                {isRtl ? 'المنطقة الدقيقة' : 'Exact Area'}
+                {isRtl ? 'موقع المشروع / المنطقة' : 'Location / Area'}
               </td>
               <td className="p-1.5 font-bold" style={{ width: '35%' }}>
-                {permit.exactWorkArea}
+                {isRtl ? startWork.areaLocationAr : startWork.areaLocationEn}
               </td>
             </tr>
             <tr className="border-b border-slate-800">
               <td className={`bg-slate-100 font-bold p-1.5 border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`} style={{ width: '15%' }}>
-                {isRtl ? 'النشاط' : 'Activity'}
+                {isRtl ? 'المقاول الرئيسي/الفرعي' : 'Contractor/Sub'}
               </td>
               <td className={`p-1.5 font-bold border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`} style={{ width: '35%' }}>
-                {isRtl ? permit.activityNameAr : permit.activityNameEn}
+                {isRtl ? startWork.contractorAr : startWork.contractorEn}
               </td>
               <td className={`bg-slate-100 font-bold p-1.5 border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`} style={{ width: '15%' }}>
                 {isRtl ? 'المشرف المسؤول' : 'Supervisor'}
               </td>
               <td className="p-1.5 font-bold" style={{ width: '35%' }}>
-                {permit.supervisorName || 'Site Engineer'}
+                {startWork.supervisorName || 'Site Supervisor'}
               </td>
             </tr>
             <tr>
               <td className={`bg-slate-100 font-bold p-1.5 border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`} style={{ width: '15%' }}>
-                {isRtl ? 'توصيف العمل' : 'Work Scope'}
+                {isRtl ? 'وقت وتاريخ البدء' : 'Planned Start'}
               </td>
-              <td colSpan={3} className="p-1.5 font-medium leading-relaxed">
-                {isRtl ? permit.descriptionOfWorkAr : permit.descriptionOfWorkEn}
+              <td className={`p-1.5 font-bold border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`} style={{ width: '35%' }}>
+                {startWork.plannedStartDate} {startWork.plannedStartTime}
+              </td>
+              <td className={`bg-slate-100 font-bold p-1.5 border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`} style={{ width: '15%' }}>
+                {isRtl ? 'حجم القوى العاملة' : 'Workforce'}
+              </td>
+              <td className="p-1.5 font-bold" style={{ width: '35%' }}>
+                {startWork.workforceCount} {isRtl ? 'عمال' : 'Workers'}
               </td>
             </tr>
           </tbody>
         </table>
 
-        {/* Section 2: Resources & Emergency Preparedness */}
+        {/* Section 2: Instructions and Equipment */}
         <div className="bg-slate-800 text-white font-bold px-2 py-1 text-[10.5px] uppercase border-b border-slate-800">
-          2. {isRtl ? 'الموارد المخصصة وتدابير الاستجابة للطوارئ' : 'RESOURCES & EMERGENCY PREPAREDNESS'}
+          2. {isRtl ? 'تفاصيل المعدات والتعليمات الفنية' : 'EQUIPMENT & TECHNICAL INSTRUCTIONS'}
         </div>
         <table className="w-full border-collapse border-b-[2px] border-slate-800 text-[9.5px]" style={{ tableLayout: 'fixed' }}>
           <tbody>
             <tr>
-              {/* Labor & Equipment */}
               <td 
                 className={`p-2 align-top border-slate-800 ${isRtl ? 'border-l-[2px]' : 'border-r-[2px]'}`}
                 style={{ width: '50%' }}
               >
                 <div className="font-bold text-[9px] uppercase text-slate-800 mb-1 border-b border-slate-300 pb-0.5">
-                  👷 {isRtl ? 'فريق العمالة والمعدات المسندة' : 'Assigned Crew & Equipment'}
+                  🚜 {isRtl ? 'المعدات المعتمدة (Equipment)' : 'Equipment'}
                 </div>
-                <div className="text-[9px] leading-relaxed">
-                  <span className="font-bold underline">{isRtl ? 'العمالة:' : 'Crew:'}</span>{' '}
-                  <span className="font-medium">
-                    {permit.assignedWorkerNames?.length ? permit.assignedWorkerNames.join(' • ') : `${permit.numberOfWorkers} ${isRtl ? 'عمال' : 'workers'}`}
-                  </span>
-                  <div className="mt-1">
-                    <span className="font-bold underline">{isRtl ? 'المعدات:' : 'Equipment:'}</span>{' '}
-                    <span className="font-medium">
-                      {permit.assignedEquipmentNames?.length ? permit.assignedEquipmentNames.join(' • ') : 'N/A'}
-                    </span>
-                  </div>
+                <div className="text-[9px] font-medium leading-relaxed">
+                  {startWork.equipmentDetails || (isRtl ? 'لا توجد معدات ثقيلة محددة للنشاط' : 'No heavy equipment specified')}
                 </div>
               </td>
-
-              {/* Emergency Contact & Assembly */}
               <td 
                 className="p-2 align-top bg-slate-50/50"
                 style={{ width: '50%' }}
               >
                 <div className="font-bold text-[9px] uppercase text-rose-800 mb-1 border-b border-rose-200 pb-0.5">
-                  🚨 {isRtl ? 'بيانات الطوارئ ونقطة التجمع الإلزامية' : 'Emergency Contact & Assembly Point'}
+                  ⚠️ {isRtl ? 'التعليمات الخاصة (Special Instructions)' : 'Special Instructions'}
                 </div>
-                <table className="w-full border-collapse text-[9px]" style={{ tableLayout: 'fixed' }}>
-                  <tbody>
-                    <tr>
-                      <td className="p-0.5 font-bold text-slate-700" style={{ width: '35%' }}>{isRtl ? 'مسؤول الطوارئ:' : 'Contact:'}</td>
-                      <td className="p-0.5 font-mono font-bold text-rose-700" style={{ width: '65%' }}>
-                        {permit.emergencyContactName} - {permit.emergencyContactPhone}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="p-0.5 font-bold text-slate-700" style={{ width: '35%' }}>{isRtl ? 'نقطة التجمع:' : 'Assembly Point:'}</td>
-                      <td className="p-0.5 font-bold text-slate-900" style={{ width: '65%' }}>
-                        {permit.assemblyPoint || 'Zone A - Main Evacuation Area'}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+                <div className="text-[9px] font-medium text-rose-900 leading-relaxed">
+                  {startWork.specialInstructions || (isRtl ? 'لا توجد تعليمات خاصة. يرجى اتباع إجراءات السلامة العامة المعتمدة.' : 'No special instructions. Follow standard HSE guidelines.')}
+                </div>
               </td>
             </tr>
           </tbody>
         </table>
 
-        {/* Section 3: Hazards Identification & Control (JSA) */}
-        <div className="bg-slate-800 text-white font-bold px-2 py-1 text-[10.5px] uppercase border-b border-slate-800">
-          3. {isRtl ? 'تحليل المخاطر وضوابط التحكم الميدانية (JSA)' : 'HAZARD IDENTIFICATION & CONTROL (JSA)'}
+        {/* Section 3: Readiness Pre-conditions */}
+        <div className="bg-slate-800 text-white font-bold px-2 py-1 text-[10.5px] uppercase border-b border-slate-800 flex justify-between">
+          <span>3. {isRtl ? 'قائمة الشروط المسبقة وبنود الجاهزية الإلزامية (Pre-conditions Checklist)' : 'MANDATORY PRE-CONDITIONS & READINESS CHECKLIST'}</span>
+          <span className="font-normal text-[9px]">{isRtl ? 'إلزامي تحقيق كافة البنود' : 'All items must be strictly verified'}</span>
         </div>
         <table className="w-full border-collapse border-b-[2px] border-slate-800 text-[9px]" style={{ tableLayout: 'fixed' }}>
           <thead className="bg-slate-100 text-[8.5px] uppercase border-b border-slate-800">
             <tr>
               <th className={`p-1 text-center font-bold border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`} style={{ width: '4%' }}>#</th>
-              <th className={`p-1 text-center font-bold border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`} style={{ width: '26%' }}>{isRtl ? 'الخطر المحتمل' : 'Identified Hazard'}</th>
-              <th className={`p-1 text-center font-bold border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`} style={{ width: '12%' }}>{isRtl ? 'الخطورة' : 'Risk'}</th>
-              <th className={`p-1 text-center font-bold border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`} style={{ width: '44%' }}>{isRtl ? 'إجراء التحكم الوقائي' : 'Control Measure'}</th>
-              <th className="p-1 text-center font-bold" style={{ width: '14%' }}>{isRtl ? 'المسؤول' : 'Action By'}</th>
+              <th className={`p-1 text-center font-bold border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`} style={{ width: '20%' }}>{isRtl ? 'التصنيف (Category)' : 'Category'}</th>
+              <th className={`p-1 text-center font-bold border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`} style={{ width: '61%' }}>{isRtl ? 'بند الجاهزية والشروط المسبقة' : 'Pre-condition Requirement'}</th>
+              <th className="p-1 text-center font-bold" style={{ width: '15%' }}>{isRtl ? 'مستوفى (Met?)' : 'Met?'}</th>
             </tr>
           </thead>
           <tbody>
-            {permit.hazards.map((hz, idx) => (
-              <tr key={hz.id} className="border-b border-slate-800 last:border-b-0 pdf-avoid-break">
-                <td className={`p-1 text-center font-bold border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`}>{idx + 1}</td>
-                <td className={`p-1 font-bold border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`}>{isRtl ? hz.hazardAr : hz.hazardEn}</td>
-                <td className={`p-1 text-center font-bold border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`}>
-                  <span className={getRiskColor(hz.riskLevel)}>{hz.riskLevel}</span>
+            {startWork.preconditions.map((item, index) => (
+              <tr key={item.id} className="border-b border-slate-800 last:border-b-0 pdf-avoid-break">
+                <td className={`p-1 text-center font-bold border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`}>{index + 1}</td>
+                <td className={`p-1 font-bold border-slate-800 text-center ${isRtl ? 'border-l' : 'border-r'}`}>{item.category}</td>
+                <td className={`p-1 font-medium border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`}>
+                  {isRtl ? item.titleAr : item.titleEn}
                 </td>
-                <td className={`p-1 font-medium border-slate-800 ${isRtl ? 'border-l' : 'border-r'}`}>{isRtl ? hz.controlMeasureAr : hz.controlMeasureEn}</td>
-                <td className="p-1 text-center font-bold text-[8.5px]">{hz.responsiblePerson}</td>
+                <td className="p-1 text-center font-bold">
+                  {item.isMet ? (
+                    <div className="flex items-center justify-center gap-1 text-emerald-700">
+                      <CheckSquare className="w-3.5 h-3.5" /> <span>{isRtl ? 'نعم (Yes)' : 'YES'}</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center gap-1 text-rose-700">
+                      <Square className="w-3.5 h-3.5" /> <span>{isRtl ? 'لا (No)' : 'NO'}</span>
+                    </div>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
 
-        {/* Section 4: Safety & PPE */}
-        <table className="w-full border-collapse border-b-[2px] border-slate-800 text-[9px]" style={{ tableLayout: 'fixed' }}>
-          <tbody>
-            <tr>
-              {/* 4A: Safety Controls */}
-              <td 
-                className={`p-0 align-top border-slate-800 ${isRtl ? 'border-l-[2px]' : 'border-r-[2px]'}`}
-                style={{ width: '50%' }}
-              >
-                <div className="bg-slate-800 text-white font-bold px-2 py-1 text-[10px] uppercase text-center">
-                  4A. {isRtl ? 'ضوابط السلامة الإلزامية' : 'MANDATORY SAFETY CONTROLS'}
-                </div>
-                <div className="p-1.5 space-y-1">
-                  {permit.safetyControls.map((ctrl) => (
-                    <div key={ctrl.id} className="flex items-start gap-1 p-0.5 pdf-avoid-break">
-                      <span className="shrink-0 pt-[1px] text-slate-800">
-                        {ctrl.isImplemented ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5 text-slate-400" />}
-                      </span>
-                      <span className="font-bold leading-tight flex-1 text-[8.5px]">
-                        {isRtl ? ctrl.controlAr : ctrl.controlEn}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </td>
-
-              {/* 4B: PPE */}
-              <td 
-                className="p-0 align-top"
-                style={{ width: '50%' }}
-              >
-                <div className="bg-slate-800 text-white font-bold px-2 py-1 text-[10px] uppercase text-center">
-                  4B. {isRtl ? 'مهمات الوقاية الشخصية (PPE)' : 'PERSONAL PROTECTIVE EQUIP.'}
-                </div>
-                <div className="p-1.5 grid grid-cols-2 gap-x-2 gap-y-1">
-                  {permit.ppeChecklist.map((ppe) => (
-                    <div key={ppe.id} className="flex items-center gap-1 pdf-avoid-break">
-                      <span className="shrink-0 text-slate-800">
-                        {ppe.isAvailable ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5 text-slate-400" />}
-                      </span>
-                      <span className="font-bold leading-tight truncate text-[8.5px]">
-                        {isRtl ? ppe.ppeAr : ppe.ppeEn}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-
-        {/* Section 5: Authorization & Signatures */}
+        {/* Section 4: Signatures */}
         <div className="bg-slate-800 text-white font-bold px-2 py-1 text-[10.5px] uppercase border-b border-slate-800">
-          5. {isRtl ? 'سلسلة الاعتمادات والتوقيعات الرقمية الرسمية' : 'AUTHORIZATION & DIGITAL SIGNATURES'}
+          4. {isRtl ? 'الاعتمادات والتوقيعات الرقمية (Authorizations & Signatures)' : 'AUTHORIZATION & DIGITAL SIGNATURES'}
         </div>
         <table className="w-full border-collapse bg-slate-50/60" style={{ tableLayout: 'fixed' }}>
           <tbody>
             <tr>
-              {permit.approvals.map((app, index) => {
-                const cellWidth = `${100 / Math.max(1, permit.approvals.length)}%`;
-                const isLast = index === permit.approvals.length - 1;
+              {startWork.approvals.map((app, index) => {
+                const cellWidth = `${100 / Math.max(1, startWork.approvals.length)}%`;
+                const isLast = index === startWork.approvals.length - 1;
 
                 return (
                   <td 
@@ -388,10 +316,10 @@ export const PermitPrintableDoc: React.FC<PermitPrintableDocProps> = ({
         <tbody>
           <tr>
             <td className="text-left rtl:text-right" style={{ width: '70%' }}>
-              🔒 {isRtl ? 'هذا التصريح وثيقة سلامة رسمية ملزمة بموقع العمل ومسجلة بالنظام' : 'This permit is a legally binding HSE document logged in the official system'}
+              🔒 {isRtl ? 'هذا النموذج ملزم قانونياً بموقع العمل ومسجل بالنظام الإلكتروني' : 'This form is a legally binding site document logged in the official system'}
             </td>
             <td className="text-right rtl:text-left font-mono" style={{ width: '30%' }}>
-              {isRtl ? 'النسخة المعتمدة الأصلية' : 'CERTIFIED ORIGINAL'} | REF: {permit.permitNumber}
+              {isRtl ? 'النسخة الأصلية (Original Copy)' : 'ORIGINAL COPY'} | REF: {startWork.startWorkNumber}
             </td>
           </tr>
         </tbody>
@@ -400,5 +328,4 @@ export const PermitPrintableDoc: React.FC<PermitPrintableDocProps> = ({
   );
 };
 
-export default PermitPrintableDoc;
-
+export default StartWorkPrintableDoc;

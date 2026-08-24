@@ -47,15 +47,10 @@ import {
   MorningMeetingPlan,
   StartCard,
   WorkPermit,
+  StartWorkRecord,
   PermitTypeConfig,
   PermitAuditLog
 } from './types';
-import { 
-  seedStartCards, 
-  seedPermits, 
-  seedPermitTypes, 
-  seedPermitAuditLogs 
-} from './data/ptwSeedData';
 import { translations } from './utils/translation';
 import { dbApi } from './lib/api';
 import { backfillActivities } from './utils/progressCalculations';
@@ -75,6 +70,38 @@ import MainLogin from './components/MainLogin';
 import PTWManagementPanel from './components/ptw/PTWManagementPanel';
 import StartCardModal from './components/ptw/StartCardModal';
 import PermitModal from './components/ptw/PermitModal';
+import { StartWorkModal } from './components/ptw/StartWorkModal';
+
+// SaaS Subscription & Billing Platform Imports
+import {
+  SaaSPlan,
+  SaaSCustomer,
+  SaaSSubscription,
+  SaaSInvoice,
+  SaaSPayment,
+  SaaSLicense,
+  SaaSDevice,
+  SaaSAuditLog,
+  SaaSSettings,
+  SaaSEnforcementCheck
+} from './types/saas';
+import {
+  SEED_SAAS_PLANS,
+  SEED_SAAS_CUSTOMERS,
+  SEED_SAAS_SUBSCRIPTIONS,
+  SEED_SAAS_INVOICES,
+  SEED_SAAS_PAYMENTS,
+  SEED_SAAS_LICENSES,
+  SEED_SAAS_DEVICES,
+  SEED_SAAS_AUDIT_LOGS,
+  DEFAULT_SAAS_SETTINGS,
+  enforceSubscriptionAccess
+} from './services/saasService';
+import SaaSAdminControlCenter from './components/saas/SaaSAdminControlCenter';
+import SaaSBannerAndGuard from './components/saas/SaaSBannerAndGuard';
+import { SaaSPublicLanding } from './components/saas/public/SaaSPublicLanding';
+import { SaaSPublicRegister } from './components/saas/public/SaaSPublicRegister';
+import { SaaSCustomerPortal } from './components/saas/customer/SaaSCustomerPortal';
 
 import { 
   Briefcase, 
@@ -108,7 +135,8 @@ import {
   LayoutGrid,
   MoreHorizontal,
   Smartphone,
-  Sparkles
+  Sparkles,
+  Crown
 } from 'lucide-react';
 
 export default function App() {
@@ -120,11 +148,78 @@ export default function App() {
 
   const [darkMode, setDarkMode] = useState<boolean>(false);
 
-  const [activeModule, setActiveModule] = useState<string>('dashboard');
+  const [activeModule, setActiveModuleState] = useState<string>(() => {
+    const hash = window.location.hash.replace('#', '').trim();
+    const searchParams = new URLSearchParams(window.location.search);
+    const modParam = searchParams.get('module');
+    const pathname = window.location.pathname.replace('/', '').trim();
+
+    if (
+      hash === 'saas' || hash === 'saasAdmin' || hash === 'subscriptions' ||
+      modParam === 'saasAdmin' || modParam === 'saas' ||
+      pathname === 'saas' || pathname === 'saasAdmin'
+    ) {
+      return 'saasAdmin';
+    }
+    if (hash === 'saas-landing' || hash === 'landing' || hash === 'pricing') return 'saasLanding';
+    if (hash === 'saas-register' || hash === 'register') return 'saasRegister';
+    if (hash === 'saas-portal' || hash === 'portal' || hash === 'account') return 'saasPortal';
+    if (hash) return hash;
+    if (modParam) return modParam;
+    return 'dashboard';
+  });
+
+  const setActiveModule = (mod: string) => {
+    setActiveModuleState(mod);
+    window.location.hash = mod;
+  };
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace('#', '').trim();
+      if (hash === 'saas' || hash === 'saasAdmin' || hash === 'subscriptions') {
+        setActiveModuleState('saasAdmin');
+      } else if (hash === 'saas-landing' || hash === 'landing' || hash === 'pricing') {
+        setActiveModuleState('saasLanding');
+      } else if (hash === 'saas-register' || hash === 'register') {
+        setActiveModuleState('saasRegister');
+      } else if (hash === 'saas-portal' || hash === 'portal' || hash === 'account') {
+        setActiveModuleState('saasPortal');
+      } else if (hash) {
+        setActiveModuleState(hash);
+      }
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
   const [preselectedReport, setPreselectedReport] = useState<{category: any, id: string | string[], action?: 'print' | 'pdf'} | null>(null);
   const [isBackgroundPrinting, setIsBackgroundPrinting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [initError, setInitError] = useState<string | null>(null);
+
+  // --- SAAS SUBSCRIPTION & BILLING PLATFORM STATE ---
+  const [saasPlans, setSaasPlans] = useState<SaaSPlan[]>(SEED_SAAS_PLANS);
+  const [saasCustomers, setSaasCustomers] = useState<SaaSCustomer[]>(SEED_SAAS_CUSTOMERS);
+  const [saasSubscriptions, setSaasSubscriptions] = useState<SaaSSubscription[]>(SEED_SAAS_SUBSCRIPTIONS);
+  const [saasInvoices, setSaasInvoices] = useState<SaaSInvoice[]>(SEED_SAAS_INVOICES);
+  const [saasPayments, setSaasPayments] = useState<SaaSPayment[]>(SEED_SAAS_PAYMENTS);
+  const [saasLicenses, setSaasLicenses] = useState<SaaSLicense[]>(SEED_SAAS_LICENSES);
+  const [saasDevices, setSaasDevices] = useState<SaaSDevice[]>(SEED_SAAS_DEVICES);
+  const [saasAuditLogs, setSaasAuditLogs] = useState<SaaSAuditLog[]>(SEED_SAAS_AUDIT_LOGS);
+  const [saasSettings, setSaasSettings] = useState<SaaSSettings>(DEFAULT_SAAS_SETTINGS);
+
+  // Active Tenant ID for current workspace context
+  const [activeTenantId, setActiveTenantId] = useState<string>('tenant_c101');
+
+  // Blocked Action Limit Modal Dialog State
+  const [blockedModalInfo, setBlockedModalInfo] = useState<{
+    isOpen: boolean;
+    titleEn: string;
+    titleAr: string;
+    messageEn: string;
+    messageAr: string;
+    errorCode?: string;
+  } | null>(null);
   
   // Real team users stored in local database
   const [users, setUsers] = useState<User[]>([]);
@@ -194,6 +289,168 @@ export default function App() {
   const [equipment, setEquipment] = useState<EquipmentItem[]>([]);
   const [workers, setWorkers] = useState<Worker[]>([]);
 
+  // Active Subscription Enforcement Calculation
+  const activeTenantSubscription = saasSubscriptions.find(s => s.tenantId === activeTenantId) || saasSubscriptions[0] || null;
+  const currentEnforcement: SaaSEnforcementCheck = enforceSubscriptionAccess(
+    activeTenantSubscription,
+    saasPlans,
+    {
+      activeUsersCount: users.length || 1,
+      activeDevicesCount: saasDevices.filter(d => d.tenantId === activeTenantId && d.status === 'ACTIVE').length || 1,
+      activeProjectsCount: projects.length || 1
+    }
+  );
+
+  // SaaS Persistence Handlers
+  const handleSaveSaasSubscription = async (sub: SaaSSubscription) => {
+    try {
+      await dbApi.save<SaaSSubscription>('saasSubscriptions', sub);
+      setSaasSubscriptions(prev => {
+        const idx = prev.findIndex(s => s.id === sub.id);
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = sub;
+          return updated;
+        }
+        return [sub, ...prev];
+      });
+    } catch (e) {
+      console.error('Failed to save SaaS subscription:', e);
+    }
+  };
+
+  const handleSaveSaasCustomer = async (cust: SaaSCustomer) => {
+    try {
+      await dbApi.save<SaaSCustomer>('saasCustomers', cust);
+      setSaasCustomers(prev => {
+        const idx = prev.findIndex(c => c.id === cust.id);
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = cust;
+          return updated;
+        }
+        return [cust, ...prev];
+      });
+    } catch (e) {
+      console.error('Failed to save SaaS customer:', e);
+    }
+  };
+
+  const handleSaveSaasPlan = async (plan: SaaSPlan) => {
+    try {
+      await dbApi.save<SaaSPlan>('saasPlans', plan);
+      setSaasPlans(prev => {
+        const idx = prev.findIndex(p => p.id === plan.id);
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = plan;
+          return updated;
+        }
+        return [...prev, plan];
+      });
+    } catch (e) {
+      console.error('Failed to save SaaS plan:', e);
+    }
+  };
+
+  const handleSaveSaasInvoice = async (inv: SaaSInvoice) => {
+    try {
+      await dbApi.save<SaaSInvoice>('saasInvoices', inv);
+      setSaasInvoices(prev => {
+        const idx = prev.findIndex(i => i.id === inv.id);
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = inv;
+          return updated;
+        }
+        return [inv, ...prev];
+      });
+    } catch (e) {
+      console.error('Failed to save SaaS invoice:', e);
+    }
+  };
+
+  const handleSaveSaasPayment = async (pay: SaaSPayment) => {
+    try {
+      await dbApi.save<SaaSPayment>('saasPayments', pay);
+      setSaasPayments(prev => {
+        const idx = prev.findIndex(p => p.id === pay.id);
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = pay;
+          return updated;
+        }
+        return [pay, ...prev];
+      });
+    } catch (e) {
+      console.error('Failed to save SaaS payment:', e);
+    }
+  };
+
+  const handleSaveSaasLicense = async (lic: SaaSLicense) => {
+    try {
+      await dbApi.save<SaaSLicense>('saasLicenses', lic);
+      setSaasLicenses(prev => {
+        const idx = prev.findIndex(l => l.id === lic.id);
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = lic;
+          return updated;
+        }
+        return [lic, ...prev];
+      });
+    } catch (e) {
+      console.error('Failed to save SaaS license:', e);
+    }
+  };
+
+  const handleSaveSaasDevice = async (dev: SaaSDevice) => {
+    try {
+      const isNew = !saasDevices.some(d => d.id === dev.id);
+      if (isNew && currentEnforcement.resourceLimits.maxDevices !== -1 && saasDevices.length >= currentEnforcement.resourceLimits.maxDevices) {
+        setBlockedModalInfo({
+          isOpen: true,
+          titleAr: 'تم تجاوز الحد الأقصى للأجهزة',
+          titleEn: 'Device Limit Reached',
+          messageAr: `الباقة الحالية تسمح بـ ${currentEnforcement.resourceLimits.maxDevices} أجهزة كحد أقصى. يرجى إلغاء تنشيط جهاز أو ترقية الباقة.`,
+          messageEn: `Your current plan supports up to ${currentEnforcement.resourceLimits.maxDevices} devices. Please deactivate an existing device or upgrade your plan.`,
+          errorCode: 'DEVICE_LIMIT_REACHED'
+        });
+        return;
+      }
+      await dbApi.save<SaaSDevice>('saasDevices', dev);
+      setSaasDevices(prev => {
+        const idx = prev.findIndex(d => d.id === dev.id);
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = dev;
+          return updated;
+        }
+        return [dev, ...prev];
+      });
+    } catch (e) {
+      console.error('Failed to save SaaS device:', e);
+    }
+  };
+
+  const handleSaveSaasSettings = async (set: SaaSSettings) => {
+    try {
+      await dbApi.save<SaaSSettings>('saasSettings', set);
+      setSaasSettings(set);
+    } catch (e) {
+      console.error('Failed to save SaaS settings:', e);
+    }
+  };
+
+  const handleAddSaasAuditLog = async (log: SaaSAuditLog) => {
+    try {
+      await dbApi.save<SaaSAuditLog>('saasAuditLogs', log);
+      setSaasAuditLogs(prev => [log, ...prev]);
+    } catch (e) {
+      console.error('Failed to add SaaS audit log:', e);
+    }
+  };
+
   const handleAddFieldRequest = async (request: Omit<FieldRequest, 'id'>) => {
     try {
       const newRequest = {
@@ -235,6 +492,7 @@ export default function App() {
   // Start Card & Permit to Work (PTW) Module State
   const [startCards, setStartCards] = useState<StartCard[]>([]);
   const [permits, setPermits] = useState<WorkPermit[]>([]);
+  const [startWorks, setStartWorks] = useState<StartWorkRecord[]>([]);
   const [permitTypes, setPermitTypes] = useState<PermitTypeConfig[]>([]);
   const [permitAuditLogs, setPermitAuditLogs] = useState<PermitAuditLog[]>([]);
 
@@ -247,6 +505,33 @@ export default function App() {
   const [selectedPermit, setSelectedPermit] = useState<WorkPermit | null>(null);
   const [initialActivityIdForPermit, setInitialActivityIdForPermit] = useState<string | undefined>(undefined);
   const [initialStartCardIdForPermit, setInitialStartCardIdForPermit] = useState<string | undefined>(undefined);
+
+  const [isStartWorkModalOpen, setIsStartWorkModalOpen] = useState(false);
+  const [selectedStartWork, setSelectedStartWork] = useState<StartWorkRecord | null>(null);
+  const [initialActivityIdForStartWork, setInitialActivityIdForStartWork] = useState<string | undefined>(undefined);
+
+  const handleOpenStartWorkModal = (stw?: StartWorkRecord | null, activityId?: string) => {
+    setSelectedStartWork(stw || null);
+    setInitialActivityIdForStartWork(activityId);
+    setIsStartWorkModalOpen(true);
+  };
+
+  const handleSaveStartWork = async (record: StartWorkRecord) => {
+    try {
+      const saved = await dbApi.save<StartWorkRecord>('startWorks', record);
+      setStartWorks(prev => {
+        const exists = prev.some(p => p.id === saved.id);
+        if (exists) {
+          return prev.map(p => p.id === saved.id ? saved : p);
+        }
+        return [saved, ...prev];
+      });
+      logSystemAction('SAVE_START_WORK', `Saved Start Work record: ${saved.startWorkNumber}`);
+    } catch (e) {
+      console.error('Failed to save Start Work record:', e);
+      alert('Error saving Start Work record');
+    }
+  };
 
   const [isFieldPortal, setIsFieldPortal] = useState<boolean>(() => {
     return window.location.search.includes('portal=field') || window.location.hash.includes('portal=field');
@@ -288,6 +573,37 @@ export default function App() {
     setConfirmModal({ isOpen: true, title, message, onConfirm, isDestructive });
   };
 
+  // --- PTW Seed Data Purge (One-Time) ---
+  useEffect(() => {
+    const purgeSeedData = async () => {
+      const isPurged = localStorage.getItem('ptw_seed_purged_v2');
+      if (isPurged) return;
+
+      try {
+        const seedStartCardIds = ['sc-101', 'sc-102', 'sc-201'];
+        const seedPermitIds = ['ptw-101', 'ptw-102', 'ptw-103'];
+        const seedLogIds = ['pal-1', 'pal-2', 'pal-3', 'pal-4', 'pal-5'];
+        
+        await Promise.all([
+          ...seedStartCardIds.map(id => dbApi.delete('startCards', id)),
+          ...seedPermitIds.map(id => dbApi.delete('workPermits', id)),
+          ...seedLogIds.map(id => dbApi.delete('permitAuditLogs', id))
+        ]);
+        
+        localStorage.setItem('ptw_seed_purged_v2', 'true');
+        
+        setStartCards(prev => prev.filter(c => !seedStartCardIds.includes(c.id)));
+        setPermits(prev => prev.filter(p => !seedPermitIds.includes(p.id)));
+        setPermitAuditLogs(prev => prev.filter(l => !seedLogIds.includes(l.id)));
+        
+        console.log('PTW Seed data purged successfully');
+      } catch (e) {
+        console.error('Failed to purge PTW seed data', e);
+      }
+    };
+    purgeSeedData();
+  }, []);
+
   // Database Initialization Logic
   useEffect(() => {
     const initData = async () => {
@@ -301,7 +617,8 @@ export default function App() {
           dbAuditLogs, dbSettings, dbCheckIns, dbAttendance, dbProgress, 
           dbSafety, dbDelays, dbIssues, dbSavedKpiReports, dbFieldSubmissions,
           dbQuickNotes, dbMorningMeetingPlans,
-          dbStartCards, dbWorkPermits, dbPermitTypes, dbPermitAuditLogs
+          dbStartCards, dbWorkPermits, dbPermitTypes, dbPermitAuditLogs, dbStartWorks,
+          dbSaasPlans, dbSaasCustomers, dbSaasSubscriptions, dbSaasInvoices, dbSaasPayments, dbSaasLicenses, dbSaasDevices, dbSaasAuditLogs, dbSaasSettings
         ] = await Promise.all([
           dbApi.getAll<User>('users'),
           dbApi.getAll<Project>('projects'),
@@ -326,7 +643,17 @@ export default function App() {
           dbApi.getAll<StartCard>('startCards').catch(() => []),
           dbApi.getAll<WorkPermit>('workPermits').catch(() => []),
           dbApi.getAll<PermitTypeConfig>('permitTypes').catch(() => []),
-          dbApi.getAll<PermitAuditLog>('permitAuditLogs').catch(() => [])
+          dbApi.getAll<PermitAuditLog>('permitAuditLogs').catch(() => []),
+          dbApi.getAll<StartWorkRecord>('startWorks').catch(() => []),
+          dbApi.getAll<SaaSPlan>('saasPlans').catch(() => []),
+          dbApi.getAll<SaaSCustomer>('saasCustomers').catch(() => []),
+          dbApi.getAll<SaaSSubscription>('saasSubscriptions').catch(() => []),
+          dbApi.getAll<SaaSInvoice>('saasInvoices').catch(() => []),
+          dbApi.getAll<SaaSPayment>('saasPayments').catch(() => []),
+          dbApi.getAll<SaaSLicense>('saasLicenses').catch(() => []),
+          dbApi.getAll<SaaSDevice>('saasDevices').catch(() => []),
+          dbApi.getAll<SaaSAuditLog>('saasAuditLogs').catch(() => []),
+          dbApi.getById<SaaSSettings>('saasSettings', 'settings-saas').catch(() => null)
         ]);
 
 
@@ -429,29 +756,50 @@ export default function App() {
 
         // Start Cards & PTW Initialization
         let finalStartCards = dbStartCards || [];
-        if (finalStartCards.length === 0 && seedStartCards.length > 0) {
-          finalStartCards = seedStartCards;
-          await dbApi.bulkSave('startCards', seedStartCards).catch(console.error);
-        }
+        // Removed fake data seeding per user request
 
         let finalPermits = dbWorkPermits || [];
-        if (finalPermits.length === 0 && seedPermits.length > 0) {
-          finalPermits = seedPermits;
-          await dbApi.bulkSave('workPermits', seedPermits).catch(console.error);
-        }
+        // Removed fake data seeding per user request
 
         let finalPermitTypes = dbPermitTypes || [];
-        if (finalPermitTypes.length === 0 && seedPermitTypes.length > 0) {
-          finalPermitTypes = seedPermitTypes;
-          await dbApi.bulkSave('permitTypes', seedPermitTypes).catch(console.error);
+        // Initialize Permit Types if empty
+        if (finalPermitTypes.length === 0) {
+          const { DEFAULT_PERMIT_TYPES } = await import('./utils/ptwCalculations');
+          finalPermitTypes = DEFAULT_PERMIT_TYPES;
+          await dbApi.bulkSave('permitTypes', DEFAULT_PERMIT_TYPES).catch(console.error);
         }
+        // SaaS Collections Initialization
+        if (dbSaasPlans && dbSaasPlans.length > 0) setSaasPlans(dbSaasPlans);
+        else dbApi.bulkSave('saasPlans', SEED_SAAS_PLANS).catch(console.error);
+
+        if (dbSaasCustomers && dbSaasCustomers.length > 0) setSaasCustomers(dbSaasCustomers);
+        else dbApi.bulkSave('saasCustomers', SEED_SAAS_CUSTOMERS).catch(console.error);
+
+        if (dbSaasSubscriptions && dbSaasSubscriptions.length > 0) setSaasSubscriptions(dbSaasSubscriptions);
+        else dbApi.bulkSave('saasSubscriptions', SEED_SAAS_SUBSCRIPTIONS).catch(console.error);
+
+        if (dbSaasInvoices && dbSaasInvoices.length > 0) setSaasInvoices(dbSaasInvoices);
+        else dbApi.bulkSave('saasInvoices', SEED_SAAS_INVOICES).catch(console.error);
+
+        if (dbSaasPayments && dbSaasPayments.length > 0) setSaasPayments(dbSaasPayments);
+        else dbApi.bulkSave('saasPayments', SEED_SAAS_PAYMENTS).catch(console.error);
+
+        if (dbSaasLicenses && dbSaasLicenses.length > 0) setSaasLicenses(dbSaasLicenses);
+        else dbApi.bulkSave('saasLicenses', SEED_SAAS_LICENSES).catch(console.error);
+
+        if (dbSaasDevices && dbSaasDevices.length > 0) setSaasDevices(dbSaasDevices);
+        else dbApi.bulkSave('saasDevices', SEED_SAAS_DEVICES).catch(console.error);
+
+        if (dbSaasAuditLogs && dbSaasAuditLogs.length > 0) setSaasAuditLogs(dbSaasAuditLogs);
+        else dbApi.bulkSave('saasAuditLogs', SEED_SAAS_AUDIT_LOGS).catch(console.error);
+
+        if (dbSaasSettings) setSaasSettings(dbSaasSettings);
+        else dbApi.save('saasSettings', DEFAULT_SAAS_SETTINGS, true).catch(console.error);
+
         setPermitTypes(finalPermitTypes);
 
         let finalPermitAuditLogs = dbPermitAuditLogs || [];
-        if (finalPermitAuditLogs.length === 0 && seedPermitAuditLogs.length > 0) {
-          finalPermitAuditLogs = seedPermitAuditLogs;
-          await dbApi.bulkSave('permitAuditLogs', seedPermitAuditLogs).catch(console.error);
-        }
+        // Removed fake data seeding per user request
 
         // Strictly sanitize and purge orphaned PTW records (Fake / Deleted Data Cleanup)
         const validStartCards = finalStartCards.filter(sc => 
@@ -488,6 +836,7 @@ export default function App() {
 
         setStartCards(validStartCards);
         setPermits(validWorkPermits);
+        setStartWorks(dbStartWorks || []);
         setPermitAuditLogs(validAuditLogs);
         
         setCurrentUser(dbUsers.find(u => u.roles?.includes('Super Admin')) || dbUsers[0] || mockUsers[0]);
@@ -544,6 +893,29 @@ export default function App() {
 
   // --- USER ACCESS MANAGEMENT SYSTEM HANDLERS ---
   const handleAddUser = async (user: User) => {
+    if (currentEnforcement.isReadOnly || currentEnforcement.status === 'SUSPENDED') {
+      setBlockedModalInfo({
+        isOpen: true,
+        titleAr: 'الاشتراك منتهي / غير نشط',
+        titleEn: 'Subscription Expired or Inactive',
+        messageAr: 'بسبب انتهاء أو تعليق باقة الاشتراك، النظام يعمل في وضع القراءة فقط ولا يمكن إضافة مستخدمين جدد.',
+        messageEn: 'Your subscription is expired or suspended. The system is operating in read-only mode.',
+        errorCode: 'SUBSCRIPTION_READ_ONLY'
+      });
+      return;
+    }
+    if (currentEnforcement.resourceLimits.maxUsers !== -1 && users.length >= currentEnforcement.resourceLimits.maxUsers) {
+      setBlockedModalInfo({
+        isOpen: true,
+        titleAr: 'تم تجاوز الحد الأقصى للمستخدمين',
+        titleEn: 'User Limit Reached',
+        messageAr: `الباقة الحالية تسمح بـ ${currentEnforcement.resourceLimits.maxUsers} مستخدم كحد أقصى. يرجى ترقية الباقة لزيادة عدد المستخدمين.`,
+        messageEn: `Your current plan supports up to ${currentEnforcement.resourceLimits.maxUsers} users. Please upgrade your plan.`,
+        errorCode: 'USER_LIMIT_REACHED'
+      });
+      return;
+    }
+
     try {
       if (!user.id) user.id = `user-${Date.now()}`;
       const savedUser = await dbApi.save<User>('users', user);
@@ -587,6 +959,29 @@ export default function App() {
 
   // --- STATE MUTATORS / API INTEGRATION ---
   const handleAddProject = async (proj: Project) => {
+    if (currentEnforcement.isReadOnly || currentEnforcement.status === 'SUSPENDED') {
+      setBlockedModalInfo({
+        isOpen: true,
+        titleAr: 'الاشتراك منتهي / غير نشط',
+        titleEn: 'Subscription Expired or Inactive',
+        messageAr: 'بسبب انتهاء أو تعليق باقة الاشتراك، النظام يعمل في وضع القراءة فقط ولا يمكن إضافة مشاريع جديدة.',
+        messageEn: 'Your subscription is expired or suspended. The system is operating in read-only mode.',
+        errorCode: 'SUBSCRIPTION_READ_ONLY'
+      });
+      return;
+    }
+    if (currentEnforcement.resourceLimits.maxProjects !== -1 && projects.length >= currentEnforcement.resourceLimits.maxProjects) {
+      setBlockedModalInfo({
+        isOpen: true,
+        titleAr: 'تم تجاوز الحد الأقصى للمشاريع',
+        titleEn: 'Project Limit Reached',
+        messageAr: `الباقة الحالية تسمح بـ ${currentEnforcement.resourceLimits.maxProjects} مشاريع كحد أقصى. يرجى ترقية الباقة لإضافة المزيد من المشاريع.`,
+        messageEn: `Your current plan supports up to ${currentEnforcement.resourceLimits.maxProjects} projects. Please upgrade your plan.`,
+        errorCode: 'PROJECT_LIMIT_REACHED'
+      });
+      return;
+    }
+
     try {
       if (!proj.id) proj.id = `proj-${Date.now()}`;
       const saved = await dbApi.save<Project>('projects', proj);
@@ -1400,8 +1795,16 @@ export default function App() {
 
   const handleDeleteStartCard = async (id: string) => {
     try {
-      await dbApi.delete('startCards', id);
+      const targetWorkPermits = permits.filter(p => p.startCardId === id);
+      
+      await Promise.all([
+        dbApi.delete('startCards', id),
+        ...targetWorkPermits.map(p => dbApi.delete('workPermits', p.id))
+      ]);
+      
       setStartCards(prev => prev.filter(c => c.id !== id));
+      setPermits(prev => prev.filter(p => p.startCardId !== id));
+      
       logSystemAction('DELETE_START_CARD', `Start Card ${id} deleted`);
     } catch (e) {
       console.error('Failed to delete Start Card:', e);
@@ -1866,6 +2269,14 @@ export default function App() {
         direction: lang === 'ar' ? 'rtl' : 'ltr'
       }}
     >
+      <SaaSBannerAndGuard
+        enforcement={currentEnforcement}
+        subscription={activeTenantSubscription}
+        lang={lang}
+        blockedModalInfo={blockedModalInfo}
+        onCloseBlockedModal={() => setBlockedModalInfo(null)}
+        onOpenSaaSControlCenter={() => setActiveModule('saasAdmin')}
+      />
       
       {/* Active Admin Session Welcome Banner */}
       {currentAdmin && (
@@ -1932,6 +2343,7 @@ export default function App() {
                       case 'settings': return lang === 'ar' ? 'الإعدادات' : 'Settings';
                       case 'reports': return lang === 'ar' ? 'التقارير' : 'Reports';
                       case 'logs': return lang === 'ar' ? 'سجلات الأمان' : 'Security Logs';
+                      case 'saasAdmin': return lang === 'ar' ? 'منصة الاشتراكات (SaaS)' : 'SaaS Admin';
                       case 'adminPanel': return lang === 'ar' ? 'لوحة المسؤول' : 'Admin Panel';
                       default: return '';
                     }
@@ -2044,6 +2456,9 @@ export default function App() {
               { id: 'users', label: lang === 'ar' ? 'المستخدمين والصلاحيات' : 'Users & Permissions', icon: Users },
               { id: 'settings', label: textDict.settings, icon: Building2 },
               { id: 'reports', label: textDict.reports, icon: FileText },
+              { id: 'saasLanding', label: lang === 'ar' ? 'بوابة الباقات والتسجيل' : 'SaaS Public Portal', icon: Globe },
+              { id: 'saasPortal', label: lang === 'ar' ? 'حساب المنشأة والاشتراك' : 'Customer SaaS Portal', icon: Building2 },
+              { id: 'saasAdmin', label: lang === 'ar' ? 'منصة الاشتراكات والفوترة (Admin)' : 'SaaS Control Center', icon: Crown },
               { id: 'logs', label: textDict.logs, icon: ShieldAlert },
               { 
                 id: 'adminPanel', 
@@ -2145,7 +2560,7 @@ export default function App() {
 
             {/* "More / المزيد" Bottom Navigation Tab */}
             {(() => {
-              const isMoreActive = ['ptw', 'warehouse', 'users', 'settings', 'reports', 'logs', 'adminPanel'].includes(activeModule);
+              const isMoreActive = ['ptw', 'warehouse', 'users', 'settings', 'reports', 'saasAdmin', 'logs', 'adminPanel'].includes(activeModule);
               return (
                 <button
                   onClick={() => setIsSidebarMobileOpen(!isSidebarMobileOpen)}
@@ -2265,6 +2680,9 @@ export default function App() {
                     { id: 'users', labelAr: 'المستخدمين والصلاحيات', labelEn: 'Users & Roles', icon: Users, desc: lang === 'ar' ? 'إدارة الهويات والأذونات' : 'Team access & permissions' },
                     { id: 'settings', labelAr: 'الإعدادات والشركة', labelEn: 'Settings', icon: Building2, desc: lang === 'ar' ? 'بيانات وهوية المنشأة' : 'Company & system preferences' },
                     { id: 'reports', labelAr: 'التقارير والمطابقة', labelEn: 'Reports', icon: FileText, desc: lang === 'ar' ? 'التقارير التفصيلية والتصدير' : 'Detailed analytics & exports' },
+                    { id: 'saasLanding', labelAr: 'بوابة الباقات والتسجيل', labelEn: 'SaaS Public Portal', icon: Globe, desc: lang === 'ar' ? 'البوابة التجارية والأسعار' : 'Public landing & pricing' },
+                    { id: 'saasPortal', labelAr: 'حساب المنشأة والاشتراك', labelEn: 'Customer Portal', icon: Building2, desc: lang === 'ar' ? 'إدارة اشتراك وفواتير المنشأة' : 'Customer account & billing' },
+                    { id: 'saasAdmin', labelAr: 'منصة الاشتراكات والفوترة', labelEn: 'SaaS Control Center', icon: Crown, desc: lang === 'ar' ? 'إدارة الاشتراكات والعملاء والفوترة' : 'SaaS Subscriptions & Billing' },
                     { id: 'logs', labelAr: 'سجلات الأمان والتدقيق', labelEn: 'Security Logs', icon: ShieldAlert, desc: lang === 'ar' ? 'سجل العمليات والأحداث' : 'Audit logs & safety events' },
                     { 
                       id: 'adminPanel', 
@@ -2344,6 +2762,16 @@ export default function App() {
         {/* MAIN BODY SCROLLABLE SPACE */}
         <main className={`flex-1 p-4 md:p-8 overflow-y-auto transition-all duration-500 ${isSidebarCollapsed ? 'max-w-none w-full px-4 md:px-12' : 'max-w-7xl mx-auto'} space-y-6 relative pb-28 md:pb-8`}>
           
+          {/* SAAS ACTIVE SUBSCRIPTION ENFORCEMENT BANNER & BLOCKED ACTION GUARD */}
+          <SaaSBannerAndGuard
+            enforcement={currentEnforcement}
+            subscription={activeTenantSubscription}
+            lang={lang}
+            blockedModalInfo={blockedModalInfo}
+            onCloseBlockedModal={() => setBlockedModalInfo(null)}
+            onOpenSaaSControlCenter={() => setActiveModule('saasAdmin')}
+          />
+
           {/* BACKGROUND PRINTING INDICATOR */}
           {isBackgroundPrinting && (
             <div className="fixed inset-0 z-[200] bg-white/60 backdrop-blur-sm flex items-center justify-center p-4">
@@ -2474,6 +2902,8 @@ export default function App() {
               permits={permits}
               onOpenStartCard={handleOpenStartCardModal}
               onOpenPermit={handleOpenPermitModal}
+              startWorks={startWorks}
+              onOpenStartWork={handleOpenStartWorkModal}
             />
           )}
 
@@ -2774,6 +3204,130 @@ export default function App() {
             </div>
           )}
 
+          {/* SAAS COMMERCIAL LANDING PAGE */}
+          {activeModule === 'saasLanding' && (
+            <SaaSPublicLanding
+              plans={saasPlans}
+              lang={lang}
+              onStartRegister={(planId) => {
+                setActiveModule('saasRegister');
+              }}
+              onOpenLogin={() => {
+                setActiveModule('saasPortal');
+              }}
+            />
+          )}
+
+          {/* SAAS SELF-SERVICE COMMERCIAL REGISTRATION */}
+          {activeModule === 'saasRegister' && (
+            <SaaSPublicRegister
+              plans={saasPlans}
+              settings={saasSettings}
+              onSuccessRegistration={(registeredData) => {
+                setSaasCustomers(prev => [registeredData.customer, ...prev]);
+                setSaasSubscriptions(prev => [registeredData.subscription, ...prev]);
+                setSaasLicenses(prev => [registeredData.license, ...prev]);
+                setSaasAuditLogs(prev => [registeredData.auditLog, ...prev]);
+                setUsers(prev => [registeredData.user, ...prev]);
+
+                dbApi.save('saasCustomers', registeredData.customer);
+                dbApi.save('saasSubscriptions', registeredData.subscription);
+                dbApi.save('saasLicenses', registeredData.license);
+                dbApi.save('saasAuditLogs', registeredData.auditLog);
+                dbApi.save('users', registeredData.user);
+
+                setActiveTenantId(registeredData.customer.id);
+                setCurrentUser({
+                  id: registeredData.user.id,
+                  name: registeredData.user.name,
+                  roles: ['Admin'],
+                  email: registeredData.user.email,
+                  badgeNumber: registeredData.user.id
+                });
+
+                setActiveModule('saasPortal');
+              }}
+              onCancel={() => setActiveModule('saasLanding')}
+            />
+          )}
+
+          {/* SAAS CUSTOMER SELF-SERVICE PORTAL */}
+          {activeModule === 'saasPortal' && (
+            <SaaSCustomerPortal
+              customer={saasCustomers.find(c => c.id === activeTenantId) || saasCustomers[0]}
+              subscription={saasSubscriptions.find(s => s.tenantId === activeTenantId) || saasSubscriptions[0]}
+              license={saasLicenses.find(l => l.tenantId === activeTenantId) || saasLicenses[0]}
+              plans={saasPlans}
+              invoices={saasInvoices}
+              payments={saasPayments}
+              devices={saasDevices}
+              settings={saasSettings}
+              tenantUsersCount={users.filter(u => (u as any).tenantId === activeTenantId).length || 1}
+              tenantProjectsCount={projects.length || 1}
+              tenantDevicesCount={saasDevices.filter(d => d.tenantId === activeTenantId).length || 1}
+              lang={lang}
+              onUpdateCustomerProfile={(updated) => {
+                setSaasCustomers(prev => prev.map(c => c.id === activeTenantId ? { ...c, ...updated } : c));
+                dbApi.save('saasCustomers', { ...saasCustomers.find(c => c.id === activeTenantId), ...updated });
+              }}
+              onConfirmPaymentCheckout={({ invoice, payment, updatedSubscription, updatedLicense }) => {
+                const auditLog: SaaSAuditLog = {
+                  id: `audit_${Date.now()}`,
+                  tenantId: payment.tenantId,
+                  actorId: currentUser.id || 'customer',
+                  actorName: currentUser.name || 'Customer Admin',
+                  action: 'PAYMENT_CREATED',
+                  entityType: 'Payment',
+                  entityId: payment.id,
+                  timestamp: new Date().toISOString(),
+                  reason: `تم تسليم طلب سداد تحويل بنكي برقم مرجع ${payment.referenceNumber} (قيد التدقيق والمراجعة)`
+                };
+
+                setSaasInvoices(prev => [invoice, ...prev]);
+                setSaasPayments(prev => [payment, ...prev]);
+                setSaasSubscriptions(prev => prev.map(s => s.id === updatedSubscription.id ? updatedSubscription : s));
+                setSaasLicenses(prev => prev.map(l => l.id === updatedLicense.id ? updatedLicense : l));
+                setSaasAuditLogs(prev => [auditLog, ...prev]);
+
+                dbApi.save('saasInvoices', invoice);
+                dbApi.save('saasPayments', payment);
+                dbApi.save('saasSubscriptions', updatedSubscription);
+                dbApi.save('saasLicenses', updatedLicense);
+                dbApi.save('saasAuditLogs', auditLog);
+              }}
+              onDeactivateDevice={(deviceId) => {
+                setSaasDevices(prev => prev.map(d => d.id === deviceId ? { ...d, status: 'DEACTIVATED' } : d));
+              }}
+              onNavigateToWorkspace={() => setActiveModule('dashboard')}
+            />
+          )}
+
+          {/* SAAS PLATFORM ADMINISTRATIVE CONTROL CENTER */}
+          {activeModule === 'saasAdmin' && (
+            <SaaSAdminControlCenter
+              subscriptions={saasSubscriptions}
+              customers={saasCustomers}
+              plans={saasPlans}
+              invoices={saasInvoices}
+              payments={saasPayments}
+              licenses={saasLicenses}
+              devices={saasDevices}
+              auditLogs={saasAuditLogs}
+              settings={saasSettings}
+              lang={lang}
+              currentUser={{ name: currentUser.name, id: currentUser.id }}
+              onSaveSubscription={handleSaveSaasSubscription}
+              onSaveCustomer={handleSaveSaasCustomer}
+              onSavePlan={handleSaveSaasPlan}
+              onSaveInvoice={handleSaveSaasInvoice}
+              onSavePayment={handleSaveSaasPayment}
+              onSaveLicense={handleSaveSaasLicense}
+              onSaveDevice={handleSaveSaasDevice}
+              onSaveSettings={handleSaveSaasSettings}
+              onAddAuditLog={handleAddSaasAuditLog}
+            />
+          )}
+
           {/* SECURE ADMINISTRATOR LOGIN & MANAGEMENT PANEL */}
           {activeModule === 'adminPanel' && (
             <AdminPanel
@@ -2865,6 +3419,26 @@ export default function App() {
             setPermitAuditLogs(prev => [log, ...prev]);
           }}
           lang={lang}
+        />
+      )}
+
+      {/* START WORK RECORD MODAL (GLOBAL TRIGGER) */}
+      {isStartWorkModalOpen && (
+        <StartWorkModal 
+          isOpen={isStartWorkModalOpen}
+          onClose={() => {
+            setIsStartWorkModalOpen(false);
+            setSelectedStartWork(null);
+            setInitialActivityIdForStartWork(undefined);
+          }}
+          startWork={selectedStartWork}
+          activityId={initialActivityIdForStartWork}
+          activities={activities}
+          workItems={workItems}
+          projects={projects}
+          settings={settings}
+          lang={lang}
+          onSave={handleSaveStartWork}
         />
       )}
 

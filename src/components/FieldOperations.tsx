@@ -714,7 +714,7 @@ export default function FieldOperations({
   const handlePrintSubmissionPDF = async (submission: FieldWorkSubmission) => {
     try {
       setIsPrintingSubmission(true);
-      const html2pdf = (await import('html2pdf.js')).default;
+      const { exportElementToPdf } = await import('../utils/pdf/UniversalPdfEngine');
       
       const targetProj = projects.find(p => p.id === submission.projectId);
       const projectName = targetProj ? (isRtl ? targetProj.nameAr : targetProj.nameEn) : '---';
@@ -886,16 +886,12 @@ export default function FieldOperations({
         </div>
       `;
 
-      const opt = {
-        margin: 10,
+      const wrapper = document.createElement('div');
+      wrapper.className = 'pdf-container universal-pdf-container';
+      wrapper.innerHTML = content;
+      await exportElementToPdf(wrapper, {
         filename: `Detail_Report_${submission.id}.pdf`,
-        image: { type: 'jpeg' as const, quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true },
-        jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
-      };
-
-      await runWithOklchSanitizer(async () => {
-        await html2pdf().set(opt).from(content).save();
+        isRtl: isRtl
       });
 
     } catch (error) {
@@ -909,7 +905,7 @@ export default function FieldOperations({
   const generateAttendancePDF = async () => {
     try {
       setIsGeneratingPDF(true);
-      const html2pdf = (await import('html2pdf.js')).default;
+      const { exportElementToPdf } = await import('../utils/pdf/UniversalPdfEngine');
       
       const currentProject = projects.find(p => p.id === selectedProjectId);
       if (!currentProject) return;
@@ -970,16 +966,9 @@ export default function FieldOperations({
       // However, for PDF generation we might need to inject the styles explicitly or use a more robust method.
       // html2pdf can capture the rendered element.
       
-      const opt = {
-        margin: [0, 0] as [number, number],
+      await exportElementToPdf(container.firstChild as HTMLElement, {
         filename: `${isRtl ? 'كشف_الحضور' : 'Attendance_Report'}_${attendanceDate}.pdf`,
-        image: { type: 'jpeg' as const, quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, logging: false },
-        jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
-      };
-
-      await runWithOklchSanitizer(async () => {
-        await html2pdf().set(opt).from(container.firstChild as HTMLElement).save();
+        isRtl: isRtl
       });
       
       document.body.removeChild(container);

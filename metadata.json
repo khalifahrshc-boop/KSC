@@ -1,6 +1,6 @@
 {
   "name": "Enterprise Project Management and Field Production Tracking System",
-  "description": "An enterprise-grade project management and field production tracking system with smart planning, supervisor check-ins, workforce management, and dual-language (Arabic/English) RTL support.",
+  "description": "An enterprise-grade construction management and field production tracking system with SaaS subscriptions, billing, ZATCA tax invoices, license key management, smart planning, supervisor check-ins, and dual-language (Arabic/English) support.",
   "requestFramePermissions": ["geolocation"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

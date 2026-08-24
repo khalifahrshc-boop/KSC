@@ -4,9 +4,9 @@
  */
 
 import React from 'react';
-import { Activity, Worker, WarehouseMaterial, EquipmentItem, User, StartCard, WorkPermit } from '../types';
+import { Activity, Worker, WarehouseMaterial, EquipmentItem, User, StartCard, WorkPermit, StartWorkRecord } from '../types';
 import { 
-  X, UserCheck, Package, Wrench, Printer, Clock, AlertTriangle, Calendar, Shield, ShieldCheck, FileCheck, ExternalLink, Plus, CheckCircle, AlertOctagon, Lock
+  X, UserCheck, Package, Wrench, Printer, Clock, AlertTriangle, Calendar, Shield, ShieldCheck, FileCheck, ExternalLink, Plus, CheckCircle, CheckCircle2, AlertOctagon, Lock
 } from 'lucide-react';
 import { evaluateActivityAuthorization } from '../utils/ptwCalculations';
 
@@ -24,8 +24,10 @@ interface ActivityDetailsModalProps {
   lang: 'ar' | 'en';
   startCards?: StartCard[];
   permits?: WorkPermit[];
+  startWorks?: StartWorkRecord[];
   onOpenStartCard?: (card?: StartCard | null, activityId?: string) => void;
   onOpenPermit?: (permit?: WorkPermit | null, activityId?: string) => void;
+  onOpenStartWork?: (stw?: StartWorkRecord | null, activityId?: string) => void;
 }
 
 export default function ActivityDetailsModal({
@@ -42,8 +44,10 @@ export default function ActivityDetailsModal({
   lang,
   startCards = [],
   permits = [],
+  startWorks = [],
   onOpenStartCard,
-  onOpenPermit
+  onOpenPermit,
+  onOpenStartWork
 }: ActivityDetailsModalProps) {
   const isRtl = lang === 'ar';
 
@@ -53,6 +57,7 @@ export default function ActivityDetailsModal({
   const authEval = evaluateActivityAuthorization(activity, undefined, undefined, startCards, permits);
   const relevantStartCard = authEval.startCard || startCards.find(sc => sc.activityId === activity.id || (sc.targetActivityIds && sc.targetActivityIds.includes(activity.id)));
   const relevantPermit = authEval.activePermit || permits.find(p => p.activityId === activity.id || (p.startCardId && relevantStartCard && p.startCardId === relevantStartCard.id));
+  const relevantStartWork = startWorks.find(s => s.activityId === activity.id || (relevantPermit && s.permitId === relevantPermit.id));
 
   return (
     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
@@ -172,6 +177,26 @@ export default function ActivityDetailsModal({
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>{isRtl ? 'إصدار تصريح عمل (PTW)' : 'Issue Work Permit (PTW)'}</span>
+                </button>
+              )}
+
+              {relevantStartWork ? (
+                <button
+                  type="button"
+                  onClick={() => onOpenStartWork && onOpenStartWork(relevantStartWork)}
+                  className="text-xs font-black px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-[#040957] hover:bg-slate-50 transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
+                  <span>{isRtl ? `عرض محضر البدء (${relevantStartWork.startWorkNumber})` : `View Start Work (${relevantStartWork.startWorkNumber})`}</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onOpenStartWork && onOpenStartWork(null, activity.id)}
+                  className="text-xs font-black px-3 py-1.5 rounded-xl bg-blue-700 text-white hover:bg-blue-800 transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{isRtl ? 'محضر بدء العمل (Start Work)' : 'Start Work Record'}</span>
                 </button>
               )}
             </div>

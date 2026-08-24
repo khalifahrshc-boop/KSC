@@ -44,7 +44,6 @@ import {
 } from 'lucide-react';
 import GanttChart from './GanttChart';
 // @ts-ignore
-import html2pdf from 'html2pdf.js';
 
 interface ProjectListProps {
   lang: 'ar' | 'en';
@@ -2314,62 +2313,34 @@ export default function ProjectList({
               });
             });
 
-            Promise.all(loadPromises).then(() => {
-              // Tiny timeout to guarantee rendering paint has taken effect
-              setTimeout(() => {
-                html2pdf()
-                  .set(opt)
-                  .from(container)
-                  .save()
-                  .then(() => {
-                    document.body.removeChild(container);
-                    setIsGeneratingPDF(false);
-                  })
-                  .catch((err: any) => {
-                    console.error('PDF generation error, falling back to print mode:', err);
-                    if (document.body.contains(container)) {
-                      document.body.removeChild(container);
-                    }
-                    setIsGeneratingPDF(false);
-                    // Fallback to print
-                    const iframe = document.createElement('iframe');
-                    iframe.style.position = 'absolute';
-                    iframe.style.width = '0px';
-                    iframe.style.height = '0px';
-                    iframe.style.border = 'none';
-                    document.body.appendChild(iframe);
-                    
-                    const iframeDoc = iframe.contentWindow?.document || iframe.contentDocument;
-                    if (iframeDoc) {
-                      iframeDoc.open();
-                      iframeDoc.write(printHtml);
-                      iframeDoc.close();
-                      setTimeout(() => {
-                        iframe.contentWindow?.focus();
-                        iframe.contentWindow?.print();
-                        setTimeout(() => {
-                          document.body.removeChild(iframe);
-                        }, 1000);
-                      }, 500);
-                    }
-                  });
-              }, 300);
-            }).catch(() => {
-              // Safety fallback if image promises fail
-              html2pdf()
-                .set(opt)
-                .from(container)
-                .save()
-                .then(() => {
-                  document.body.removeChild(container);
-                  setIsGeneratingPDF(false);
-                })
-                .catch(() => {
-                  if (document.body.contains(container)) {
-                    document.body.removeChild(container);
-                  }
-                  setIsGeneratingPDF(false);
+            Promise.all(loadPromises).then(async () => {
+              try {
+                const { exportElementToPdf } = await import('../utils/pdf/UniversalPdfEngine');
+                await exportElementToPdf(container, {
+                  filename: `${reportProject?.nameEn || 'Project'}_Status.pdf`,
+                  isRtl: lang === 'ar'
                 });
+                if (document.body.contains(container)) document.body.removeChild(container);
+                setIsGeneratingPDF(false);
+              } catch(e) {
+                console.error(e);
+                if (document.body.contains(container)) document.body.removeChild(container);
+                setIsGeneratingPDF(false);
+              }
+            }).catch(async () => {
+              try {
+                const { exportElementToPdf } = await import('../utils/pdf/UniversalPdfEngine');
+                await exportElementToPdf(container, {
+                  filename: `${reportProject?.nameEn || 'Project'}_Status.pdf`,
+                  isRtl: lang === 'ar'
+                });
+                if (document.body.contains(container)) document.body.removeChild(container);
+                setIsGeneratingPDF(false);
+              } catch(e) {
+                console.error(e);
+                if (document.body.contains(container)) document.body.removeChild(container);
+                setIsGeneratingPDF(false);
+              }
             });
           }
         };

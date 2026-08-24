@@ -367,6 +367,39 @@ export const DEFAULT_HAZARDS: PTWHazardItem[] = [
 ];
 
 /**
+ * Default Start Work Pre-Conditions Checklist
+ */
+export const DEFAULT_START_WORK_PRECONDITIONS: { id: string; titleEn: string; titleAr: string; category: string }[] = [
+  { id: 'stw-1', titleEn: 'Approved Work Permit (PTW) issued and active', titleAr: 'تصريح عمل (PTW) معتمد وساري المفعول', category: 'Safety' },
+  { id: 'stw-2', titleEn: 'Approved Method Statement and shop drawings available on site', titleAr: 'طريقة العمل (Method Statement) والمخططات معتمدة ومتوفرة', category: 'Quality' },
+  { id: 'stw-3', titleEn: 'Risk assessment & JSA communicated in Toolbox Talk', titleAr: 'مناقشة تقييم المخاطر (JSA) في محاضرة السلامة الصباحية (Toolbox Talk)', category: 'Safety' },
+  { id: 'stw-4', titleEn: 'Required heavy equipment inspected and operator certified', titleAr: 'فحص المعدات الثقيلة والتأكد من شهادات المشغلين المعتمدة', category: 'Equipment' },
+  { id: 'stw-5', titleEn: 'Required materials inspected and approved (MIR)', titleAr: 'المواد المطلوبة معتمدة ومفحوصة بالمستودع وبالموقع (MIR)', category: 'Materials' },
+  { id: 'stw-6', titleEn: 'Mandatory PPE and safety equipment available for all crew', titleAr: 'توفر مهمات الوقاية الشخصية الإلزامية لكافة أفراد طاقم العمل', category: 'Safety' },
+  { id: 'stw-7', titleEn: 'Work area cleared, barricaded, and safe for execution', titleAr: 'منطقة العمل نظيفة ومؤمنة بالحواجز وخالية من المعوقات', category: 'Site' },
+  { id: 'stw-8', titleEn: 'Survey setting-out and benchmarks verified by Surveyor', titleAr: 'النقاط المساحية وتحديد المحاور منتهية ومفحوصة', category: 'Quality' },
+  { id: 'stw-9', titleEn: 'Emergency contact and assembly point confirmed', titleAr: 'تأكيد أرقام الطوارئ ونقطة التجمع وتوافر الإسعافات', category: 'Safety' }
+];
+
+/**
+ * Generate structured QR Code data for Start Work Record
+ */
+export async function generateStartWorkQRCode(stw: any, projectName?: string): Promise<string> {
+  const lines = [
+    `=== OFFICIAL START WORK RECORD ===`,
+    `STW No: ${stw.startWorkNumber || 'STW-2026-0000'} (REV-${stw.revision || 1})`,
+    `Status: ${(stw.status || 'Draft').toUpperCase()}`,
+    `Project: ${projectName || stw.projectNameEn || 'Site Project'}`,
+    `Area: ${stw.areaLocationEn || 'Work Zone'}`,
+    `Supervisor: ${stw.supervisorName || 'Site Supervisor'}`,
+    `Workforce: ${stw.workforceCount || 1} Workers`,
+    `Readiness: ${stw.isReadyToStart ? 'READY TO START (APPROVED)' : 'PENDING PRE-CONDITIONS'}`,
+    `Auth Token: STW-${stw.id || 'NEW'}-${Date.now().toString(36).toUpperCase()}`
+  ].filter(Boolean);
+  return generateQRCode(lines.join('\n'), { width: 300, darkColor: '#040957' });
+}
+
+/**
  * Check if a Permit has expired based on validUntil date & time
  */
 export function isPermitExpired(permit: WorkPermit): boolean {

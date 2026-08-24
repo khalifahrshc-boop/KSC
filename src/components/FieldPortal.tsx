@@ -842,7 +842,7 @@ export default function FieldPortal({
   const handlePrintMorningMeetingPlanPDF = async (plan: MorningMeetingPlan) => {
     try {
       setIsExportingPdf(plan.id);
-      const html2pdf = (await import('html2pdf.js')).default;
+      const { exportElementToPdf } = await import('../utils/pdf/UniversalPdfEngine');
       const projectName = selectedProject ? (isRtl ? selectedProject.nameAr : selectedProject.nameEn) : '---';
 
       const content = `
@@ -960,16 +960,12 @@ export default function FieldPortal({
         </div>
       `;
 
-      const opt = {
-        margin: 10,
+      const wrapper = document.createElement('div');
+      wrapper.className = 'pdf-container universal-pdf-container';
+      wrapper.innerHTML = content;
+      await exportElementToPdf(wrapper, {
         filename: `Morning_Meeting_Plan_${plan.date}_${plan.id}.pdf`,
-        image: { type: 'jpeg' as const, quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true },
-        jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
-      };
-
-      await runWithOklchSanitizer(async () => {
-        await html2pdf().set(opt).from(content).save();
+        isRtl: isRtl
       });
     } catch (error) {
       console.error('Morning Meeting Plan PDF Error:', error);
@@ -981,7 +977,7 @@ export default function FieldPortal({
 
   const handlePrintProductionDetailPDF = async (update: Omit<ProgressUpdate, 'id' | 'projectId'>) => {
     try {
-      const html2pdf = (await import('html2pdf.js')).default;
+      const { exportElementToPdf } = await import('../utils/pdf/UniversalPdfEngine');
       const act = activities.find(a => a.id === update.activityId);
       const projectName = selectedProject ? (isRtl ? selectedProject.nameAr : selectedProject.nameEn) : '---';
 
@@ -1070,16 +1066,12 @@ export default function FieldPortal({
         </div>
       `;
 
-      const opt = {
-        margin: 10,
+      const wrapper = document.createElement('div');
+      wrapper.className = 'pdf-container universal-pdf-container';
+      wrapper.innerHTML = content;
+      await exportElementToPdf(wrapper, {
         filename: `Production_Detail_${update.time.replace(/ /g, '_')}.pdf`,
-        image: { type: 'jpeg' as const, quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true },
-        jsPDF: { unit: 'mm' as const, format: 'a5' as const, orientation: 'portrait' as const }
-      };
-
-      await runWithOklchSanitizer(async () => {
-        await html2pdf().set(opt).from(content).save();
+        isRtl: isRtl
       });
     } catch (error) {
       console.error('Production PDF Error:', error);
@@ -1309,7 +1301,7 @@ export default function FieldPortal({
     if (!lastSubmission) return;
     try {
       setIsPrinting(true);
-      const html2pdf = (await import('html2pdf.js')).default;
+      const { exportElementToPdf } = await import('../utils/pdf/UniversalPdfEngine');
       
       let printFrame = document.getElementById('field-report-pdf-iframe') as HTMLIFrameElement;
       if (!printFrame) {
@@ -1804,17 +1796,12 @@ export default function FieldPortal({
       await new Promise(resolve => setTimeout(resolve, 800));
 
       const element = frameDoc.getElementById('pdf-content');
-      const opt = {
-        margin:       [10, 10, 10, 10] as [number, number, number, number],
-        filename:     `OFFICIAL_FIELD_REPORT_${lastSubmission.id}.pdf`,
-        image:        { type: 'jpeg' as const, quality: 0.98 },
-        html2canvas:  { scale: 2, useCORS: true, logging: false },
-        jsPDF:        { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
-      };
-
-      await runWithOklchSanitizer(async () => {
-        await html2pdf().set(opt).from(element).save();
-      });
+      if (element) {
+        await exportElementToPdf(element, {
+          filename: `OFFICIAL_FIELD_REPORT_${lastSubmission.id}.pdf`,
+          isRtl: isRtl
+        });
+      }
 
     } catch (err) {
       console.error("Failed to export PDF:", err);

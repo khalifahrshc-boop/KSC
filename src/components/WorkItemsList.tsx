@@ -16,7 +16,8 @@ import {
   ProgressUpdate,
   SystemSettings,
   StartCard,
-  WorkPermit
+  WorkPermit,
+  StartWorkRecord
 } from '../types';
 import { 
   getActivityProgress, 
@@ -58,8 +59,10 @@ interface WorkItemsListProps {
   openConfirm: (title: string, message: string, onConfirm: () => void, isDestructive?: boolean) => void;
   startCards?: StartCard[];
   permits?: WorkPermit[];
+  startWorks?: StartWorkRecord[];
   onOpenStartCard?: (card?: StartCard | null, activityId?: string) => void;
   onOpenPermit?: (permit?: WorkPermit | null, activityId?: string) => void;
+  onOpenStartWork?: (stw?: StartWorkRecord | null, activityId?: string) => void;
 }
 
 interface TimelineGanttViewProps {
@@ -622,8 +625,10 @@ export default function WorkItemsList({
   openConfirm,
   startCards = [],
   permits = [],
+  startWorks = [],
   onOpenStartCard,
-  onOpenPermit
+  onOpenPermit,
+  onOpenStartWork
 }: WorkItemsListProps) {
   const isRtl = lang === 'ar';
   const isReadOnly = userRoles.length === 1 && userRoles.includes('Viewer');
@@ -1055,10 +1060,11 @@ export default function WorkItemsList({
     if (!act) return;
     setIsPrintingActivity(act.id);
     try {
-      const { default: html2pdf } = await import('html2pdf.js');
+      const { exportElementToPdf } = await import('../utils/pdf/UniversalPdfEngine');
       const stats = calculateSmartPlanningValues(act);
       
       const content = document.createElement('div');
+      content.className = 'pdf-container universal-pdf-container';
       content.style.padding = '20px';
       content.style.fontFamily = 'sans-serif';
       content.dir = isRtl ? 'rtl' : 'ltr';
@@ -1107,16 +1113,9 @@ export default function WorkItemsList({
         </div>
       `;
 
-      const opt = {
-        margin: 10,
+      await exportElementToPdf(content, {
         filename: `Inspection_Report_${act.id}.pdf`,
-        image: { type: 'jpeg' as const, quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true },
-        jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
-      };
-
-      await runWithOklchSanitizer(async () => {
-        await html2pdf().set(opt).from(content).save();
+        isRtl: isRtl
       });
 
     } catch (err) {
@@ -2091,8 +2090,10 @@ export default function WorkItemsList({
         lang={lang}
         startCards={startCards}
         permits={permits}
+        startWorks={startWorks}
         onOpenStartCard={onOpenStartCard}
         onOpenPermit={onOpenPermit}
+        onOpenStartWork={onOpenStartWork}
       />
 
     </div>

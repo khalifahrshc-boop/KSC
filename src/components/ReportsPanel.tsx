@@ -5,7 +5,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { runWithOklchSanitizer } from '../utils/pdfSanitizer';
+import { exportElementToPdf, printDocumentElement } from '../utils/pdf/UniversalPdfEngine';
 import { dbApi } from '../lib/api';
 import { 
   Project, 
@@ -823,28 +823,7 @@ export default function ReportsPanel({
     }
 
     try {
-      // Dynamic import
-      // @ts-ignore
-      const html2pdf = (await import('html2pdf.js')).default;
-      
-      const opt = {
-        margin:       [10, 5, 10, 5] as [number, number, number, number],
-        filename:     `${reportNumber || 'Official_Report'}.pdf`,
-        image:        { type: 'jpeg' as const, quality: 0.98 },
-        html2canvas:  { 
-          scale: 2, 
-          useCORS: true,
-          letterRendering: true,
-          logging: false,
-          scrollY: 0,
-          windowWidth: 1200
-        },
-        jsPDF:        { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
-      };
-
-      await runWithOklchSanitizer(async () => {
-        await html2pdf().set(opt).from(element).save();
-      });
+      await exportElementToPdf(element, { filename: `${reportNumber || 'Official_Report'}.pdf` });
     } catch (err) {
       console.error("PDF Download error:", err);
       alert(isRtl ? "حدث خطأ أثناء تحميل ملف PDF" : "An error occurred while downloading the PDF");
@@ -858,41 +837,22 @@ export default function ReportsPanel({
 
   const handlePrintReport = async () => {
     setIsPrinting(true);
-    document.body.classList.add('printing-report-active');
-    
-    // Ensure we are on the form tab to render the content
     const originalTab = activeTab;
     if (activeTab !== 'form') {
       setActiveTab('form');
-      // Wait for tab switch and render
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
-    const originalTitle = document.title;
-    document.title = reportNumber || 'FieldReport';
-
-    return new Promise<void>((resolve) => {
-      const finalizePrint = () => {
-        try {
-          window.print();
-          document.title = originalTitle;
-          setIsPrinting(false);
-          if (originalTab !== 'form') {
-            setActiveTab(originalTab);
-          }
-          document.body.classList.remove('printing-report-active');
-          resolve();
-        } catch (err) {
-          console.error("Print error:", err);
-          document.title = originalTitle;
-          setIsPrinting(false);
-          document.body.classList.remove('printing-report-active');
-          resolve();
-        }
-      };
-
-      setTimeout(finalizePrint, 800);
-    });
+    try {
+      printDocumentElement('high-fidelity-printable-form');
+    } catch (err) {
+      console.error("Print error:", err);
+    } finally {
+      setIsPrinting(false);
+      if (originalTab !== 'form') {
+        setActiveTab(originalTab);
+      }
+    }
   };
 
   const weatherKeys: Array<{ key: typeof weather; labelEn: string; labelAr: string }> = [

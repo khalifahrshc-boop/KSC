@@ -174,29 +174,122 @@
     box-shadow: none !important;
   }
 
-  /* Fix table display in print */
+  /* Fix table display & pagination in print */
   table {
     display: table !important;
     width: 100% !important;
     border-collapse: collapse !important;
+    break-inside: auto;
     page-break-inside: auto;
     border: 1px solid #e2e8f0 !important;
   }
   
-  tr {
+  tr, tbody tr, thead tr, tfoot tr {
     display: table-row !important;
+    break-inside: avoid !important;
     page-break-inside: avoid !important;
+    break-inside: avoid-page !important;
   }
 
   th, td {
     display: table-cell !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
     border: 1px solid #e2e8f0 !important;
     padding: 6px 10px !important;
   }
 
   thead {
     display: table-header-group !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
     background-color: #f8fafc !important;
+  }
+
+  tfoot {
+    display: table-footer-group !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* Section Headers Pagination Protection (Avoid Orphaned Headers) */
+  h1, h2, h3, h4, h5, h6,
+  .section-header,
+  .doc-section-header,
+  [class*="section-header"],
+  [class*="section-title"],
+  [data-section-header] {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
+
+  /* Signature Blocks & Approvals Pagination Protection */
+  .signature-block,
+  .signature-section,
+  .pdf-signature,
+  .approval-block,
+  .approvals-grid,
+  .signature-row,
+  .sign-block,
+  .digital-signature,
+  [class*="signature"],
+  [class*="approval"],
+  [data-signature-block] {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid-page !important;
+  }
+
+  /* Robust Cards, Blocks & Section Pagination Integrity */
+  .pdf-avoid-break,
+  .page-break-avoid,
+  .no-break,
+  .break-inside-avoid,
+  .keep-together,
+  .pdf-keep-together,
+  .pdf-section,
+  .pdf-card,
+  .pdf-block,
+  .pdf-summary,
+  .pdf-total,
+  .pdf-notes,
+  .pdf-info-block,
+  .pdf-header-block,
+  .printable-card,
+  .report-card,
+  .meta-card,
+  .kpi-card,
+  .doc-section,
+  .kpi-widget,
+  .summary-card {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid-page !important;
+  }
+
+  /* Page Break Utility Controls */
+  .pdf-page-break,
+  .page-break-always,
+  .page-break-before,
+  .print-page-break {
+    break-before: page !important;
+    page-break-before: always !important;
+  }
+
+  .pdf-page-break-after,
+  .page-break-after,
+  .print-page-break-after {
+    break-after: page !important;
+    page-break-after: always !important;
+  }
+
+  /* Embedded Visual Media Pagination Protection */
+  img, svg, canvas, .qr-code-container, [class*="qr-code"] {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    max-width: 100% !important;
   }
 
   /* Hide shadows, borders and rounded corners for official document look */
@@ -208,15 +301,35 @@
   }
 }
 
-/* Universal PDF & Print Layout Stability */
-.pdf-avoid-break {
+/* Universal PDF & Print Layout Stability (Global & DOM Canvas Engines) */
+.pdf-avoid-break,
+.page-break-avoid,
+.break-inside-avoid,
+.keep-together,
+.pdf-keep-together,
+.pdf-signature,
+.pdf-section,
+.pdf-card,
+.pdf-block,
+.pdf-summary,
+.signature-block,
+.signature-section,
+.approval-block {
   page-break-inside: avoid !important;
   break-inside: avoid !important;
+  break-inside: avoid-page !important;
 }
 
-.pdf-page-break {
+.pdf-page-break,
+.page-break-always {
   page-break-before: always !important;
   break-before: page !important;
+}
+
+.pdf-page-break-after,
+.page-break-after {
+  page-break-after: always !important;
+  break-after: page !important;
 }
 
 /* Ensure no text clipping inside printable documents */
@@ -259,4 +372,41 @@
 
 .animate-scaleIn {
   animation: scaleIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Responsive Mobile Layout for Printable & Preview Documents */
+@media (max-width: 640px) {
+  /* Convert multi-column grids in headers and tables to single column vertical stack */
+  [id^="permit-print-"] .grid,
+  [id^="start-card-print-"] .grid,
+  [id^="permit-preview-doc-"] .grid,
+  [id^="startcard-preview-doc-"] .grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 8px !important;
+  }
+
+  /* Stack header flex rows vertically */
+  [id^="permit-print-"] .flex-row,
+  [id^="start-card-print-"] .flex-row,
+  [id^="permit-preview-doc-"] .flex-row,
+  [id^="startcard-preview-doc-"] .flex-row {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+  }
+
+  /* Hide non-essential columns in tables for mobile clarity */
+  .mobile-hidden-col,
+  table .mobile-hide {
+    display: none !important;
+  }
+
+  /* Compact padding for document wrappers on mobile */
+  [id^="permit-print-"],
+  [id^="start-card-print-"],
+  [id^="permit-preview-doc-"],
+  [id^="startcard-preview-doc-"] {
+    padding: 12px !important;
+    font-size: 11px !important;
+  }
 }

@@ -9,7 +9,7 @@ import { WorkPermit, StartCard, SystemSettings } from '../../types';
 import { PermitPrintableDoc } from './PermitPrintableDoc';
 import { StartCardPrintableDoc } from './StartCardPrintableDoc';
 import { generateQRCode, generatePTWQRCode, generateStartCardQRCode } from '../../utils/ptwCalculations';
-import { runWithOklchSanitizer } from '../../utils/pdfSanitizer';
+import { exportElementToPdf, printDocumentElement } from '../../utils/pdf/UniversalPdfEngine';
 import { 
   X, 
   Printer, 
@@ -62,12 +62,13 @@ export const PTWPrintPreviewModal: React.FC<PTWPrintPreviewModalProps> = ({
     setDocLang(initialLang);
   }, [initialLang, isOpen]);
 
-  // Update viewport measurement on resize or open
+  // Update viewport measurement on resize or open and scroll to top
   useEffect(() => {
     if (!isOpen) return;
     const updateDimensions = () => {
       if (viewportRef.current) {
         setViewportWidth(viewportRef.current.clientWidth);
+        viewportRef.current.scrollTop = 0;
       }
     };
     updateDimensions();
@@ -109,23 +110,19 @@ export const PTWPrintPreviewModal: React.FC<PTWPrintPreviewModalProps> = ({
   // Handle direct browser print
   const handlePrint = () => {
     setIsPrinting(true);
-    document.body.classList.add('printing-ptw-active');
-    setTimeout(() => {
-      try {
-        window.print();
-      } catch (e) {
-        console.error('Print error:', e);
-      } finally {
-        setIsPrinting(false);
-        document.body.classList.remove('printing-ptw-active');
-      }
-    }, 400);
+    try {
+      printDocumentElement(docId);
+    } catch (e) {
+      console.error('Print error:', e);
+    } finally {
+      setIsPrinting(false);
+    }
   };
 
   // Standard A4 width in 96 DPI CSS pixels is 794px (~210mm)
   const standardA4Px = 794;
   const paddingOffset = window.innerWidth < 640 ? 20 : 48;
-  const fitScale = Math.min(1, Math.max(0.35, (viewportWidth - paddingOffset) / standardA4Px));
+  const fitScale = Math.min(1, Math.max(0.48, (viewportWidth - paddingOffset) / standardA4Px));
   const effectiveScale = zoomMode === 'fit' ? fitScale : zoomMode;
 
   // Handle PDF Download
@@ -138,40 +135,15 @@ export const PTWPrintPreviewModal: React.FC<PTWPrintPreviewModalProps> = ({
 
     setIsDownloadingPdf(true);
     const previousZoom = zoomMode;
-    // Reset zoom temporarily to 1 for pristine capture
     setZoomMode(1);
     await new Promise(resolve => setTimeout(resolve, 80));
 
     try {
-      // @ts-ignore
-      const html2pdf = (await import('html2pdf.js')).default;
       const fileName = type === 'permit'
         ? `${permit?.permitNumber || 'PTW_Permit'}_${permit?.status || 'Doc'}.pdf`
         : `${startCard?.cardNumber || 'StartCard'}_Rev${startCard?.revision || 1}.pdf`;
 
-      const opt = {
-        margin: [6, 4, 6, 4] as [number, number, number, number],
-        filename: fileName,
-        image: { type: 'jpeg' as const, quality: 0.98 },
-        html2canvas: { 
-          scale: 2, 
-          useCORS: true, 
-          letterRendering: true,
-          scrollY: 0,
-          scrollX: 0,
-          windowWidth: 794,
-          logging: false
-        },
-        pagebreak: { 
-          mode: ['avoid-all', 'css', 'legacy'],
-          avoid: ['.pdf-avoid-break', 'tr', 'table'] 
-        },
-        jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
-      };
-
-      await runWithOklchSanitizer(async () => {
-        await html2pdf().set(opt).from(element).save();
-      });
+      await exportElementToPdf(element, { filename: fileName });
     } catch (err) {
       console.error('PDF generation error:', err);
       alert(isRtl ? 'حدث خطأ أثناء تصدير ملف PDF' : 'An error occurred during PDF generation');
@@ -381,7 +353,7 @@ export const PTWPrintPreviewModal: React.FC<PTWPrintPreviewModalProps> = ({
         {/* Preview Viewport Canvas */}
         <div 
           ref={viewportRef}
-          className="flex-1 overflow-x-auto overflow-y-auto p-2 sm:p-6 flex items-start justify-center bg-slate-200/90 dark:bg-slate-950 select-none relative touch-pan-x touch-pan-y"
+          className="flex-1 overflow-auto p-2 sm:p-6 bg-slate-200/90 dark:bg-slate-950 select-none touch-pan-x touch-pan-y"
           style={{ WebkitOverflowScrolling: 'touch' }}
         >
           {/* Scaled Preview Document Wrapper */}
@@ -392,16 +364,16 @@ export const PTWPrintPreviewModal: React.FC<PTWPrintPreviewModalProps> = ({
               transition: 'width 0.2s ease, transform 0.2s ease',
               margin: '0 auto'
             }}
-            className="relative flex justify-center origin-top shadow-xl rounded-sm"
+            className="relative origin-top shadow-xl rounded-sm"
           >
             <div 
               style={{
                 width: `${standardA4Px}px`,
                 transform: `scale(${effectiveScale})`,
-                transformOrigin: 'top center',
+                transformOrigin: 'top left',
                 transition: 'transform 0.2s ease'
               }}
-              className="absolute top-0 left-1/2 -translate-x-1/2"
+              className="absolute top-0 left-0"
             >
               <div id={docId} className="w-full bg-white">
                 {type === 'permit' && permit && (

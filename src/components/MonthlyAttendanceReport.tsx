@@ -98,19 +98,12 @@ export default function MonthlyAttendanceReport({
     
     setIsExporting(true);
     try {
-      const html2pdf = (await import('html2pdf.js')).default;
-      const { runWithOklchSanitizer } = await import('../utils/pdfSanitizer');
+      const { exportElementToPdf } = await import('../utils/pdf/UniversalPdfEngine');
       
-      const opt = {
-        margin:       0.2,
-        filename:     `Attendance_Report_${selectedProject?.nameEn || 'Project'}_${selectedYear}_${selectedMonth}.pdf`,
-        image:        { type: 'jpeg' as const, quality: 0.98 },
-        html2canvas:  { scale: 2, useCORS: true },
-        jsPDF:        { unit: 'in', format: 'a4', orientation: 'landscape' as const }
-      };
-      
-      await runWithOklchSanitizer(async () => {
-        await html2pdf().set(opt).from(element).save();
+      await exportElementToPdf(element, {
+        filename: `Attendance_Report_${selectedProject?.nameEn || 'Project'}_${selectedYear}_${selectedMonth}.pdf`,
+        isLandscape: true,
+        isRtl: isRtl
       });
     } catch (error) {
       console.error('Error generating PDF:', error);

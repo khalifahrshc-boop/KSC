@@ -5,6 +5,24 @@
 
 export type UserRole = 'Super Admin' | 'Project Manager' | 'Site Supervisor' | 'Warehouse Manager' | 'Viewer';
 
+export type SaaSPermission =
+  | 'VIEW_SUBSCRIPTIONS'
+  | 'CREATE_SUBSCRIPTION'
+  | 'EDIT_SUBSCRIPTION'
+  | 'ACTIVATE_SUBSCRIPTION'
+  | 'SUSPEND_SUBSCRIPTION'
+  | 'RENEW_SUBSCRIPTION'
+  | 'MANAGE_PLANS'
+  | 'VIEW_PAYMENTS'
+  | 'CREATE_PAYMENT'
+  | 'REFUND_PAYMENT'
+  | 'VIEW_INVOICES'
+  | 'MANAGE_LICENSES'
+  | 'MANAGE_DEVICES'
+  | 'VIEW_AUDIT_LOG';
+
+export * from './types/saas';
+
 export interface User {
   id: string;
   name: string;
@@ -89,6 +107,86 @@ export type StartCardStatus =
   | 'Rejected' 
   | 'Expired' 
   | 'Cancelled';
+
+export type StartWorkStatus =
+  | 'Draft'
+  | 'Pending Approval'
+  | 'Approved'
+  | 'Ready to Start'
+  | 'Started'
+  | 'Paused'
+  | 'Completed'
+  | 'Cancelled';
+
+export interface StartWorkPrecondition {
+  id: string;
+  titleEn: string;
+  titleAr: string;
+  category: string;
+  isMet: boolean;
+  notes?: string;
+  verifiedBy?: string;
+}
+
+export interface StartWorkRecord {
+  id: string;
+  startWorkNumber: string; // e.g. STW-2026-0001
+  revision: number;
+  projectId: string;
+  workItemId: string;
+  activityId: string; // Mandatory link to Activity
+  permitId?: string; // Optional or mandatory link to approved PTW
+  
+  // Info
+  projectNameEn: string;
+  projectNameAr: string;
+  projectNumber: string;
+  areaLocationEn: string;
+  areaLocationAr: string;
+  workPackageCode?: string;
+  contractorEn: string;
+  contractorAr: string;
+  subcontractorEn?: string;
+  subcontractorAr?: string;
+  supervisorName: string;
+  
+  // Dates & Times
+  plannedStartDate: string;
+  plannedStartTime: string;
+  plannedEndDate?: string;
+  actualStartDate?: string;
+  actualStartTime?: string;
+  expectedCompletionDate?: string;
+  
+  // Resources & Planning
+  workforceCount: number;
+  equipmentDetails?: string;
+  materialsDetails?: string;
+  methodStatementRef?: string;
+  riskAssessmentRef?: string;
+  jsaRef?: string;
+  requiredInspections?: string[];
+  requiredApprovals?: string[];
+  specialInstructions?: string;
+  remarks?: string;
+  
+  // Pre-conditions (deterministic READY TO START vs NOT READY TO START)
+  preconditions: StartWorkPrecondition[];
+  isReadyToStart: boolean;
+  
+  // Approvals & Audit
+  approvals: ApprovalStep[];
+  currentApprovalIndex: number;
+  status: StartWorkStatus;
+  
+  createdAt: string;
+  createdBy: string;
+  updatedAt?: string;
+  approvedAt?: string;
+  approvedBy?: string;
+  qrCodeUrl?: string;
+  notes?: string;
+}
 
 export type PTWStatus = 
   | 'Draft' 

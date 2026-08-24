@@ -34,6 +34,164 @@ async function startServer() {
     res.json({ status: "ok" });
   });
 
+  // --- SAAS SUBSCRIPTION, BILLING, LICENSE & TENANT MANAGEMENT ENDPOINTS ---
+
+  // 1. SaaS State Transition Engine
+  const SAAS_VALID_TRANSITIONS: Record<string, string[]> = {
+    TRIAL: ['ACTIVE', 'EXPIRED', 'CANCELLED', 'SUSPENDED', 'PENDING_PAYMENT'],
+    PENDING_PAYMENT: ['ACTIVE', 'CANCELLED', 'SUSPENDED'],
+    ACTIVE: ['PAST_DUE', 'SUSPENDED', 'EXPIRED', 'CANCELLED'],
+    PAST_DUE: ['ACTIVE', 'SUSPENDED', 'EXPIRED', 'CANCELLED'],
+    SUSPENDED: ['ACTIVE', 'EXPIRED', 'CANCELLED'],
+    EXPIRED: ['ACTIVE', 'SUSPENDED', 'CANCELLED'],
+    CANCELLED: ['ACTIVE', 'TRIAL']
+  };
+
+  // Enforcement Evaluation Helper API
+  app.post("/api/saas/enforce", (req, res) => {
+    try {
+      const { subscription, usersCount = 0, projectsCount = 0, devicesCount = 0 } = req.body;
+      
+      if (!subscription) {
+        res.status(403).json({
+          isAllowed: false,
+          status: 'EXPIRED',
+          isReadOnly: true,
+          errorCode: 'SUBSCRIPTION_EXPIRED',
+          messageEn: 'No active subscription found for tenant. Access restricted.',
+          messageAr: 'لم يتم العثور على اشتراك نشط للمؤسسة. الوصول محظور.'
+        });
+        return;
+      }
+
+      const today = new Date();
+      today.setHours(0,0,0,0);
+      const expiry = new Date(subscription.endDate || today);
+      expiry.setHours(0,0,0,0);
+      const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+      let effectiveStatus = subscription.status || 'ACTIVE';
+      if (subscription.status !== 'SUSPENDED' && subscription.status !== 'CANCELLED') {
+        if (diffDays <= 0) {
+          const grace = subscription.gracePeriodDays || 7;
+          if (Math.abs(diffDays) <= grace) {
+            effectiveStatus = 'PAST_DUE';
+          } else {
+            effectiveStatus = 'EXPIRED';
+          }
+        }
+      }
+
+      if (effectiveStatus === 'SUSPENDED') {
+        res.status(403).json({
+          isAllowed: false,
+          status: 'SUSPENDED',
+          isReadOnly: true,
+          daysRemaining: diffDays,
+          errorCode: 'SUBSCRIPTION_SUSPENDED',
+          messageEn: 'Subscription suspended by system owner.',
+          messageAr: 'تم تعليق الاشتراك من قبل إدارة المنصة.'
+        });
+        return;
+      }
+
+      if (effectiveStatus === 'EXPIRED') {
+        const isReadOnly = subscription.readOnlyOnExpiry ?? true;
+        res.status(403).json({
+          isAllowed: !isReadOnly,
+          status: 'EXPIRED',
+          isReadOnly,
+          daysRemaining: diffDays,
+          errorCode: 'SUBSCRIPTION_EXPIRED',
+          messageEn: isReadOnly
+            ? 'Subscription expired. Application operating in Read-Only mode.'
+            : 'Subscription expired. Access restricted.',
+          messageAr: isReadOnly
+            ? 'انتهت صلاحية الاشتراك. التطبيق يعمل في وضع القراءة فقط.'
+            : 'انتهت صلاحية الاشتراك. الوصول محظور.'
+        });
+        return;
+      }
+
+      // Check User Limit
+      if (subscription.maxUsers !== -1 && usersCount >= subscription.maxUsers) {
+        res.json({
+          isAllowed: true,
+          status: effectiveStatus,
+          isReadOnly: false,
+          daysRemaining: diffDays,
+          errorCode: 'USER_LIMIT_REACHED',
+          messageEn: `User limit reached (${usersCount}/${subscription.maxUsers}). Upgrade plan to add users.`,
+          messageAr: `تم الوصول إلى الحد الأقصى للمستخدمين (${usersCount}/${subscription.maxUsers}). يرجى ترقية الباقة.`,
+          currentUsers: usersCount,
+          maxUsers: subscription.maxUsers
+        });
+        return;
+      }
+
+      // Check Project Limit
+      if (subscription.maxProjects !== -1 && projectsCount >= subscription.maxProjects) {
+        res.json({
+          isAllowed: true,
+          status: effectiveStatus,
+          isReadOnly: false,
+          daysRemaining: diffDays,
+          errorCode: 'PROJECT_LIMIT_REACHED',
+          messageEn: `Project limit reached (${projectsCount}/${subscription.maxProjects}). Upgrade plan to create projects.`,
+          messageAr: `تم الوصول إلى الحد الأقصى للمشاريع (${projectsCount}/${subscription.maxProjects}). يرجى ترقية الباقة.`,
+          currentProjects: projectsCount,
+          maxProjects: subscription.maxProjects
+        });
+        return;
+      }
+
+      res.json({
+        isAllowed: true,
+        status: effectiveStatus,
+        isReadOnly: false,
+        daysRemaining: diffDays,
+        currentUsers: usersCount,
+        maxUsers: subscription.maxUsers,
+        currentProjects: projectsCount,
+        maxProjects: subscription.maxProjects
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Enforcement calculation failed" });
+    }
+  });
+
+  // State Transition API for Subscriptions
+  app.post("/api/saas/subscriptions/transition", (req, res) => {
+    try {
+      const { currentStatus, targetStatus, action, reason } = req.body;
+      
+      if (!currentStatus || !targetStatus) {
+        res.status(400).json({ error: "Missing state transition parameters" });
+        return;
+      }
+
+      const allowed = SAAS_VALID_TRANSITIONS[currentStatus]?.includes(targetStatus) || currentStatus === targetStatus;
+      if (!allowed) {
+        res.status(400).json({
+          error: "INVALID_SUBSCRIPTION_STATE_TRANSITION",
+          messageEn: `Cannot transition subscription from ${currentStatus} to ${targetStatus}`,
+          messageAr: `لا يمكن نقل حالة الاشتراك من ${currentStatus} إلى ${targetStatus}`
+        });
+        return;
+      }
+
+      res.json({
+        success: true,
+        previousStatus: currentStatus,
+        newStatus: targetStatus,
+        action,
+        timestamp: new Date().toISOString()
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // AI-POWERED FIELD REPORT AUDIT & PROCESS IMPROVEMENT ENDPOINT
   app.post("/api/gemini/audit-submission", async (req, res) => {
     try {

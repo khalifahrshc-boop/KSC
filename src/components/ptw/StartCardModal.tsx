@@ -419,6 +419,8 @@ export const StartCardModal: React.FC<StartCardModalProps> = ({
     setStatus(nextStatus);
     setApprovalComment('');
 
+    await handleSaveStartCard(nextStatus, updatedApprovals, nextIndex);
+
     await onLogAudit({
       recordType: 'StartCard',
       recordId: startCard?.id || cardNumber,
@@ -444,6 +446,9 @@ export const StartCardModal: React.FC<StartCardModalProps> = ({
     }
 
     setStatus('Submitted');
+    // Save directly instead of just setting status locally
+    await handleSaveStartCard('Submitted');
+    
     await onLogAudit({
       recordType: 'StartCard',
       recordId: startCard?.id || cardNumber,
@@ -460,11 +465,14 @@ export const StartCardModal: React.FC<StartCardModalProps> = ({
   };
 
   // Save changes
-  const handleSaveStartCard = async () => {
+  const handleSaveStartCard = async (overrideStatus?: string | any, overrideApprovals?: ApprovalStep[], overrideApprovalIndex?: number) => {
     setIsSaving(true);
     try {
       const proj = selectedProject;
       const targetAct = activities.find(a => a.id === selectedActivityId);
+      const finalStatus = typeof overrideStatus === 'string' ? overrideStatus : status;
+      const finalApprovals = overrideApprovals || approvals;
+      const finalApprovalIndex = overrideApprovalIndex !== undefined ? overrideApprovalIndex : currentApprovalIndex;
 
       const payload: StartCard = {
         id: startCard?.id || `sc-${Date.now()}`,
@@ -519,15 +527,15 @@ export const StartCardModal: React.FC<StartCardModalProps> = ({
 
         checklist,
         attachments,
-        approvals,
-        currentApprovalIndex,
+        approvals: finalApprovals,
+        currentApprovalIndex: finalApprovalIndex,
 
-        status,
+        status: finalStatus,
         createdAt: startCard?.createdAt || new Date().toISOString(),
         createdBy: startCard?.createdBy || currentUserName,
         updatedAt: new Date().toISOString(),
-        approvedAt: status === 'Approved' ? (startCard?.approvedAt || new Date().toISOString()) : undefined,
-        approvedBy: status === 'Approved' ? (startCard?.approvedBy || currentUserName) : undefined,
+        approvedAt: finalStatus === 'Approved' ? (startCard?.approvedAt || new Date().toISOString()) : undefined,
+        approvedBy: finalStatus === 'Approved' ? (startCard?.approvedBy || currentUserName) : undefined,
         qrCodeUrl: qrCodeDataUrl
       };
 
@@ -546,7 +554,7 @@ export const StartCardModal: React.FC<StartCardModalProps> = ({
         comments: `Start Card ${payload.cardNumber} saved successfully.`
       });
 
-      onClose();
+      if (!overrideStatus || overrideStatus === 'Submitted') onClose();
     } catch (err) {
       console.error('Error saving Start Card:', err);
       alert(isRtl ? 'حدث خطأ أثناء حفظ كارت بدء العمل' : 'Error saving Start Card');
@@ -564,29 +572,10 @@ export const StartCardModal: React.FC<StartCardModalProps> = ({
         alert(isRtl ? 'يرجى التبديل لتبويب المعاينة قبل التحميل' : 'Please open the Preview tab first');
         return;
       }
-      // @ts-ignore
-      const html2pdf = (await import('html2pdf.js')).default;
-      const opt = {
-        margin: [6, 4, 6, 4] as [number, number, number, number],
+      const { exportElementToPdf } = await import('../../utils/pdf/UniversalPdfEngine');
+      await exportElementToPdf(element, {
         filename: `${cardNumber || 'StartCard'}_Rev${revision}.pdf`,
-        image: { type: 'jpeg' as const, quality: 0.98 },
-        html2canvas: { 
-          scale: 2, 
-          useCORS: true, 
-          letterRendering: true,
-          scrollY: 0,
-          scrollX: 0,
-          windowWidth: 794,
-          logging: false
-        },
-        pagebreak: { 
-          mode: ['avoid-all', 'css', 'legacy'],
-          avoid: ['.pdf-avoid-break', 'tr', 'table'] 
-        },
-        jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
-      };
-      await runWithOklchSanitizer(async () => {
-        await html2pdf().set(opt).from(element).save();
+        isRtl: isRtl
       });
     } catch (err) {
       console.error('PDF error:', err);
@@ -643,85 +632,97 @@ export const StartCardModal: React.FC<StartCardModalProps> = ({
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center gap-1 px-6 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 overflow-x-auto text-xs font-semibold">
+        <div className="flex items-center gap-2 p-3 border-b border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 overflow-x-auto text-xs font-bold shrink-0">
           <button
+            type="button"
             onClick={() => setActiveTab('info')}
-            className={`py-3 px-3.5 border-b-2 flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+            className={`py-2 px-3.5 rounded-xl flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0 shadow-xs ${
               activeTab === 'info' 
-                ? 'border-[#040957] dark:border-blue-500 text-[#040957] dark:text-blue-400' 
-                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                ? 'bg-[#040957] text-white dark:bg-blue-600 shadow-sm' 
+                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
             }`}
           >
-            <Building2 className="w-4 h-4" />
+            <Building2 className="w-4 h-4 shrink-0" />
             <span>{isRtl ? '1. بيانات المشروع والعمل' : '1. Project & Scope'}</span>
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('checklist')}
-            className={`py-3 px-3.5 border-b-2 flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+            className={`py-2 px-3.5 rounded-xl flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0 shadow-xs ${
               activeTab === 'checklist' 
-                ? 'border-[#040957] dark:border-blue-500 text-[#040957] dark:text-blue-400' 
-                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                ? 'bg-[#040957] text-white dark:bg-blue-600 shadow-sm' 
+                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
             }`}
           >
-            <ShieldCheck className="w-4 h-4" />
+            <ShieldCheck className="w-4 h-4 shrink-0" />
             <span>{isRtl ? '2. بنود الفحص والجاهزية' : '2. Readiness Checklist'}</span>
-            <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-mono">
+            <span className={`px-1.5 py-0.5 text-[10px] rounded-full font-mono ${
+              activeTab === 'checklist' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+            }`}>
               {checklist.filter(c => c.status === 'Pass').length}/{checklist.length}
             </span>
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('attachments')}
-            className={`py-3 px-3.5 border-b-2 flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+            className={`py-2 px-3.5 rounded-xl flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0 shadow-xs ${
               activeTab === 'attachments' 
-                ? 'border-[#040957] dark:border-blue-500 text-[#040957] dark:text-blue-400' 
-                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                ? 'bg-[#040957] text-white dark:bg-blue-600 shadow-sm' 
+                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
             }`}
           >
-            <Paperclip className="w-4 h-4" />
+            <Paperclip className="w-4 h-4 shrink-0" />
             <span>{isRtl ? '3. المخططات والمرفقات' : '3. Attachments'}</span>
-            <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-slate-200 dark:bg-slate-800 font-mono">
+            <span className={`px-1.5 py-0.5 text-[10px] rounded-full font-mono ${
+              activeTab === 'attachments' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-200'
+            }`}>
               {attachments.length}
             </span>
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('approvals')}
-            className={`py-3 px-3.5 border-b-2 flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+            className={`py-2 px-3.5 rounded-xl flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0 shadow-xs ${
               activeTab === 'approvals' 
-                ? 'border-[#040957] dark:border-blue-500 text-[#040957] dark:text-blue-400' 
-                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                ? 'bg-[#040957] text-white dark:bg-blue-600 shadow-sm' 
+                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
             }`}
           >
-            <PenTool className="w-4 h-4" />
+            <PenTool className="w-4 h-4 shrink-0" />
             <span>{isRtl ? '4. سلسلة الاعتمادات' : '4. Approvals'}</span>
-            <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 font-mono">
+            <span className={`px-1.5 py-0.5 text-[10px] rounded-full font-mono ${
+              activeTab === 'approvals' ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
+            }`}>
               {approvals.filter(a => a.status === 'Approved').length}/{approvals.length}
             </span>
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('preview')}
-            className={`py-3 px-3.5 border-b-2 flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+            className={`py-2 px-3.5 rounded-xl flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0 shadow-xs ${
               activeTab === 'preview' 
-                ? 'border-[#040957] dark:border-blue-500 text-[#040957] dark:text-blue-400' 
-                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                ? 'bg-[#040957] text-white dark:bg-blue-600 shadow-sm' 
+                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
             }`}
           >
-            <Eye className="w-4 h-4" />
+            <Eye className="w-4 h-4 shrink-0" />
             <span>{isRtl ? '5. معاينة وطباعة الوثيقة (A4)' : '5. Document Preview (A4)'}</span>
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('qr')}
-            className={`py-3 px-3.5 border-b-2 flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+            className={`py-2 px-3.5 rounded-xl flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0 shadow-xs ${
               activeTab === 'qr' 
-                ? 'border-[#040957] dark:border-blue-500 text-[#040957] dark:text-blue-400' 
-                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                ? 'bg-[#040957] text-white dark:bg-blue-600 shadow-sm' 
+                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
             }`}
           >
-            <QrCode className="w-4 h-4" />
+            <QrCode className="w-4 h-4 shrink-0" />
             <span>{isRtl ? 'الرمز والمطابقة (QR)' : 'QR & Token'}</span>
           </button>
         </div>
@@ -1283,7 +1284,7 @@ export const StartCardModal: React.FC<StartCardModalProps> = ({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 pt-2">
+                  <div className="flex flex-wrap items-center gap-2 pt-2">
                     <button
                       type="button"
                       onClick={() => handleApproveCurrentStep('Approved')}
@@ -1324,7 +1325,11 @@ export const StartCardModal: React.FC<StartCardModalProps> = ({
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => window.print()}
+                    onClick={() => {
+                      import('../../utils/pdf/UniversalPdfEngine').then(({ printDocumentElement }) => {
+                        printDocumentElement('startcard-print-area');
+                      });
+                    }}
                     className="px-3 py-1.5 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors"
                   >
                     <Printer className="w-4 h-4" />
@@ -1344,9 +1349,10 @@ export const StartCardModal: React.FC<StartCardModalProps> = ({
 
               {/* Printable Layout Container */}
               <div 
-                className="overflow-x-auto overflow-y-auto bg-slate-200/90 dark:bg-slate-950 p-2 sm:p-4 rounded-xl flex justify-center touch-pan-x touch-pan-y"
-                style={{ WebkitOverflowScrolling: 'touch' }}
+                className="overflow-x-auto overflow-y-auto bg-neutral-900 p-6 sm:p-12 rounded-xl flex justify-center touch-pan-x touch-pan-y shadow-inner border border-neutral-800"
+                style={{ WebkitOverflowScrolling: 'touch', minHeight: '600px' }}
               >
+                <div className="bg-white shadow-2xl shadow-black/50 transition-transform origin-top hover:scale-[1.01] duration-300">
                 <StartCardPrintableDoc
                   startCard={{
                     id: startCard?.id || 'new',
@@ -1393,6 +1399,7 @@ export const StartCardModal: React.FC<StartCardModalProps> = ({
                   lang={lang}
                   qrCodeUrl={qrCodeDataUrl}
                 />
+                </div>
               </div>
             </div>
           )}
@@ -1434,7 +1441,7 @@ export const StartCardModal: React.FC<StartCardModalProps> = ({
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={onClose}
@@ -1445,7 +1452,7 @@ export const StartCardModal: React.FC<StartCardModalProps> = ({
             <button
               type="button"
               disabled={isSaving}
-              onClick={handleSaveStartCard}
+              onClick={() => handleSaveStartCard()}
               className="px-5 py-2 bg-[#040957] hover:bg-blue-900 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-md transition-all"
             >
               <Save className="w-4 h-4" />

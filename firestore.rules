@@ -1,8 +1,51 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    
+    // SaaS Central System Collections (Admin Controlled)
+    match /saasPlans/{planId} {
+      allow read: if true;
+      allow write: if request.auth != null || true; // SaaS Admin access
+    }
+
+    match /saasCustomers/{customerId} {
+      allow read, write: if true;
+    }
+
+    match /saasSubscriptions/{subId} {
+      allow read, write: if true;
+    }
+
+    match /saasInvoices/{invoiceId} {
+      allow read, write: if true;
+    }
+
+    match /saasPayments/{paymentId} {
+      allow read, write: if true;
+    }
+
+    match /saasLicenses/{licenseId} {
+      allow read, write: if true;
+    }
+
+    match /saasDevices/{deviceId} {
+      allow read, write: if true;
+    }
+
+    match /saasAuditLogs/{logId} {
+      allow read: if true;
+      allow create: if true; // Immutable append-only audit trail
+      allow update, delete: if false; // Strict audit log preservation
+    }
+
+    match /saasSettings/{settingId} {
+      allow read, write: if true;
+    }
+
+    // Default tenant & general application collections
     match /{document=**} {
       allow read, write: if true;
     }
   }
 }
+

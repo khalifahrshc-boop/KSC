@@ -226,6 +226,98 @@
         { "name": "password", "type": "string" },
         { "name": "createdAt", "type": "string" }
       ]
+    },
+    {
+      "name": "saasPlans",
+      "description": "Configurable SaaS subscription plans",
+      "fields": [
+        { "name": "nameEn", "type": "string" },
+        { "name": "nameAr", "type": "string" },
+        { "name": "monthlyPrice", "type": "number" },
+        { "name": "yearlyPrice", "type": "number" },
+        { "name": "maxUsers", "type": "number" },
+        { "name": "maxDevices", "type": "number" },
+        { "name": "maxProjects", "type": "number" },
+        { "name": "isActive", "type": "boolean" }
+      ]
+    },
+    {
+      "name": "saasCustomers",
+      "description": "SaaS platform customer companies",
+      "fields": [
+        { "name": "companyNameEn", "type": "string" },
+        { "name": "companyNameAr", "type": "string" },
+        { "name": "contactPerson", "type": "string" },
+        { "name": "email", "type": "string" },
+        { "name": "status", "type": "string" }
+      ]
+    },
+    {
+      "name": "saasSubscriptions",
+      "description": "Tenant subscriptions and status",
+      "fields": [
+        { "name": "tenantId", "type": "string" },
+        { "name": "planId", "type": "string" },
+        { "name": "status", "type": "string" },
+        { "name": "startDate", "type": "string" },
+        { "name": "endDate", "type": "string" }
+      ]
+    },
+    {
+      "name": "saasInvoices",
+      "description": "SaaS subscription invoices",
+      "fields": [
+        { "name": "invoiceNumber", "type": "string" },
+        { "name": "tenantId", "type": "string" },
+        { "name": "totalAmount", "type": "number" },
+        { "name": "paymentStatus", "type": "string" }
+      ]
+    },
+    {
+      "name": "saasPayments",
+      "description": "SaaS subscription payment records",
+      "fields": [
+        { "name": "tenantId", "type": "string" },
+        { "name": "subscriptionId", "type": "string" },
+        { "name": "amount", "type": "number" },
+        { "name": "paymentMethod", "type": "string" }
+      ]
+    },
+    {
+      "name": "saasLicenses",
+      "description": "License keys for tenant subscriptions",
+      "fields": [
+        { "name": "licenseKey", "type": "string" },
+        { "name": "tenantId", "type": "string" },
+        { "name": "status", "type": "string" }
+      ]
+    },
+    {
+      "name": "saasDevices",
+      "description": "Registered devices associated with tenant licenses",
+      "fields": [
+        { "name": "deviceId", "type": "string" },
+        { "name": "tenantId", "type": "string" },
+        { "name": "status", "type": "string" }
+      ]
+    },
+    {
+      "name": "saasAuditLogs",
+      "description": "Immutable audit events for SaaS administrative actions",
+      "fields": [
+        { "name": "actorId", "type": "string" },
+        { "name": "action", "type": "string" },
+        { "name": "entityType", "type": "string" },
+        { "name": "timestamp", "type": "string" }
+      ]
+    },
+    {
+      "name": "saasSettings",
+      "description": "Global SaaS system configuration",
+      "fields": [
+        { "name": "defaultVatRate", "type": "number" },
+        { "name": "currency", "type": "string" }
+      ]
     }
   ]
 }
