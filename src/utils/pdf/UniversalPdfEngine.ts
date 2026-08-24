@@ -110,8 +110,19 @@ export function injectUniversalPdfStyles(): void {
       max-width: 100% !important;
       box-sizing: border-box !important;
       background: #ffffff !important;
-      color: #0f172a !important;
+      color: #090d16 !important;
       font-family: 'Cairo', 'Tajawal', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+      -webkit-font-smoothing: antialiased !important;
+      -moz-osx-font-smoothing: grayscale !important;
+      text-rendering: optimizeLegibility !important;
+      font-weight: 500 !important;
+      box-shadow: none !important;
+      text-shadow: none !important;
+    }
+
+    .universal-pdf-container * {
+      box-shadow: none !important;
+      text-shadow: none !important;
     }
     
     .universal-pdf-container .overflow-x-auto,
@@ -153,16 +164,15 @@ export function getUniversalPdfConfig(options: UniversalPdfOptions = {}, targetW
   const filename = options.filename || `Document_${new Date().toISOString().slice(0, 10)}.pdf`;
   // Symmetrical clean margins: 6mm on all sides
   const margin = options.margin || [6, 6, 6, 6]; 
-  const scale = options.scale || 2;
-  const imageQuality = options.imageQuality || 0.98;
+  const scale = options.scale || 3; // High resolution scale for crisp, un-faded text and lines
+  const imageQuality = options.imageQuality || 0.99;
   const orientation = options.isLandscape ? 'landscape' : 'portrait';
 
   return {
     margin,
     filename,
     image: {
-      type: 'jpeg' as const,
-      quality: imageQuality
+      type: 'png' as const
     },
     html2canvas: {
       scale,
@@ -170,6 +180,7 @@ export function getUniversalPdfConfig(options: UniversalPdfOptions = {}, targetW
       allowTaint: true,
       backgroundColor: '#ffffff',
       logging: false,
+      letterRendering: true,
       scrollX: 0,
       scrollY: 0,
       x: 0,
@@ -224,109 +235,160 @@ export async function exportElementToPdf(
 
   const isRtl = options.isRtl ?? (targetElement.getAttribute('dir') === 'rtl' || document.documentElement.dir === 'rtl');
   const isLandscape = !!options.isLandscape;
-  
-  // Calculate exact printable width in mm:
-  // Standard A4: 210mm x 297mm (Portrait) or 297mm x 210mm (Landscape)
-  const margins = options.margin || [6, 6, 6, 6];
-  const totalPageWidthMm = isLandscape ? 297 : 210;
-  const printableWidthMm = totalPageWidthMm - (margins[1] + margins[3]); // 210 - 12 = 198mm
+  const filename = options.filename || `Document_${new Date().toISOString().slice(0, 10)}.pdf`;
 
-  // Create an isolated staging sandbox attached directly to document.body
-  // This completely eliminates issues with modal scroll positions, parent flex offsets, CSS scale transforms, and RTL clipping.
-  const sandbox = document.createElement('div');
-  sandbox.id = 'universal-pdf-sandbox';
-  sandbox.style.position = 'fixed';
-  sandbox.style.top = '0';
-  sandbox.style.left = '0';
-  sandbox.style.zIndex = '-999999';
-  sandbox.style.opacity = '1';
-  sandbox.style.pointerEvents = 'none';
-  sandbox.style.margin = '0';
-  sandbox.style.padding = '0';
-  sandbox.style.background = '#ffffff';
-  sandbox.style.color = '#0f172a';
-  sandbox.style.display = 'block';
-  sandbox.style.overflow = 'visible';
-  sandbox.style.transform = 'none';
-  sandbox.style.width = `${printableWidthMm}mm`;
-  sandbox.style.minWidth = `${printableWidthMm}mm`;
-  sandbox.style.maxWidth = `${printableWidthMm}mm`;
-  sandbox.setAttribute('dir', isRtl ? 'rtl' : 'ltr');
-
-  // Clone the target element
-  const clone = targetElement.cloneNode(true) as HTMLElement;
-  clone.classList.add('universal-pdf-container');
-  clone.style.width = '100%';
-  clone.style.minWidth = '100%';
-  clone.style.maxWidth = '100%';
-  clone.style.margin = '0';
-  clone.style.padding = '0';
-  clone.style.transform = 'none';
-  clone.style.boxSizing = 'border-box';
-  clone.style.overflow = 'visible';
-  clone.setAttribute('dir', isRtl ? 'rtl' : 'ltr');
-
-  // Remove any interactive or hover scale classes that might distort dimensions
-  clone.classList.remove('hover:scale-[1.01]', 'scale-90', 'scale-95');
-
-  sandbox.appendChild(clone);
-  document.body.appendChild(sandbox);
-
-  try {
-    // Wait for all images inside the clone (logos, QR codes) to finish loading
-    const images = Array.from(sandbox.querySelectorAll('img'));
-    await Promise.all(
-      images.map((img) => {
-        if (!img.crossOrigin) img.crossOrigin = 'anonymous';
-        if (img.complete) return Promise.resolve(true);
-        return new Promise((resolve) => {
-          img.onload = () => resolve(true);
-          img.onerror = () => resolve(false);
-          setTimeout(() => resolve(false), 2000); // 2s timeout safeguard
-        });
-      })
-    );
-
-    // Give browser a microtask tick for font and layout computation
-    await new Promise((r) => setTimeout(r, 100));
-
-    const html2pdf = (await import('html2pdf.js')).default;
-    const targetWidthPx = sandbox.offsetWidth || (isLandscape ? 1100 : 750);
-    const config = getUniversalPdfConfig({ ...options, margin: margins, isLandscape, isRtl }, targetWidthPx);
-
-    await runWithOklchSanitizer(async () => {
-      const worker: any = html2pdf().set(config as any).from(clone).toPdf();
-      
-      await worker.get('pdf').then(function(pdf: any) {
-        const totalPages = pdf.internal.getNumberOfPages();
-        const pageWidth = isLandscape ? 297 : 210;
-        const pageHeight = isLandscape ? 210 : 297;
-        const rightMargin = margins[1];
-        const bottomMargin = margins[2];
-        
-        for (let i = 1; i <= totalPages; i++) {
-          pdf.setPage(i);
-          pdf.setFontSize(8);
-          pdf.setTextColor(140);
-          
-          const pageString = isRtl ? `صفحة ${i} من ${totalPages}` : `Page ${i} of ${totalPages}`;
-          const x = isRtl ? rightMargin : (pageWidth - rightMargin);
-          const y = pageHeight - (bottomMargin / 2);
-          
-          pdf.text(pageString, x, y, { align: isRtl ? 'left' : 'right' });
-        }
-      });
-
-      await worker.save();
-    });
-  } catch (error) {
-    console.error('Universal PDF Export failed:', error);
-    throw error;
-  } finally {
-    if (sandbox.parentNode) {
-      sandbox.parentNode.removeChild(sandbox);
-    }
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) {
+    // Fallback to standard window.print if popup blocked
+    window.print();
+    return;
   }
+
+  // Generate complete HTML document embedding the target element and authoritative print/PDF styles
+  const stylesHtml = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+    .map(el => el.outerHTML)
+    .join('\n');
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html lang="${isRtl ? 'ar' : 'en'}" dir="${isRtl ? 'rtl' : 'ltr'}">
+      <head>
+        <meta charset="utf-8" />
+        <title>${filename}</title>
+        ${stylesHtml}
+        <style>
+          @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;900&family=Tajawal:wght@300;400;500;700;900&display=swap');
+          
+          body {
+            font-family: 'Cairo', 'Tajawal', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+            background: #ffffff !important;
+            color: #0f172a !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            text-rendering: optimizeLegibility;
+          }
+
+          table {
+            border-collapse: collapse !important;
+            width: 100% !important;
+            break-inside: auto !important;
+            page-break-inside: auto !important;
+          }
+
+          thead {
+            display: table-header-group !important;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+
+          tfoot {
+            display: table-footer-group !important;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+
+          tr {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+            display: table-row !important;
+          }
+
+          td, th {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+
+          .pdf-keep-together, 
+          .pdf-section, 
+          .pdf-card, 
+          .pdf-block, 
+          .pdf-summary, 
+          .pdf-signature, 
+          .pdf-total, 
+          .pdf-avoid-break {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+
+          h1, h2, h3, h4, h5, h6 {
+            break-after: avoid !important;
+            page-break-after: avoid !important;
+          }
+
+          @media print {
+            @page {
+              size: A4 ${isLandscape ? 'landscape' : 'portrait'};
+              margin: ${options.margin ? `${options.margin[0]}mm ${options.margin[1]}mm ${options.margin[2]}mm ${options.margin[3]}mm` : '8mm'};
+            }
+            body, html {
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+              background: #ffffff !important;
+              overflow: visible !important;
+              height: auto !important;
+            }
+            div, section, article, main, header, footer {
+              overflow: visible !important;
+              max-height: none !important;
+              height: auto !important;
+              box-sizing: border-box !important;
+            }
+            table {
+              display: table !important;
+              width: 100% !important;
+              border-collapse: collapse !important;
+              table-layout: fixed !important;
+              break-inside: auto !important;
+              page-break-inside: auto !important;
+            }
+            thead {
+              display: table-header-group !important;
+              break-inside: avoid !important;
+              page-break-inside: avoid !important;
+            }
+            tbody {
+              display: table-row-group !important;
+              break-inside: auto !important;
+              page-break-inside: auto !important;
+            }
+            tfoot {
+              display: table-footer-group !important;
+              break-inside: avoid !important;
+              page-break-inside: avoid !important;
+            }
+            tr {
+              display: table-row !important;
+              break-inside: avoid !important;
+              page-break-inside: avoid !important;
+            }
+            th, td {
+              display: table-cell !important;
+              break-inside: avoid !important;
+              page-break-inside: avoid !important;
+            }
+          }
+        </style>
+      </head>
+      <body dir="${isRtl ? 'rtl' : 'ltr'}">
+        <div style="width: 100%; max-width: 100%; margin: 0 auto; background: #ffffff;">
+          ${targetElement.outerHTML}
+        </div>
+        <script>
+          window.onload = function() {
+            setTimeout(function() {
+              window.print();
+            }, 500);
+          };
+        </script>
+      </body>
+    </html>
+  `;
+
+  printWindow.document.open();
+  printWindow.document.write(htmlContent);
+  printWindow.document.close();
 }
 
 /**
