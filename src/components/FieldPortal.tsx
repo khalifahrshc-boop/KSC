@@ -68,6 +68,8 @@ import {
 } from 'lucide-react';
 import { getActivityProgress, getSystemToday } from '../utils/progressCalculations';
 import { dbApi } from '../lib/api';
+import { auth } from '../lib/firebase';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 import { runWithOklchSanitizer } from '../utils/pdfSanitizer';
 import { getCurrentGpsCoordinates, getGoogleMapsUrl, GpsCaptureResult } from '../utils/geolocation';
 
@@ -1829,23 +1831,30 @@ export default function FieldPortal({
     
     setIsAuthenticating(true);
     try {
-      const list = await dbApi.getAll<any>('admins');
-      const found = list.find(a => a.idNumber === authId.trim() && a.password === authPassword.trim());
+      const emailToUse = authId.trim().includes('@') ? authId.trim() : `${authId.trim()}@sudairicorp.com`;
+      const userCredential = await signInWithEmailAndPassword(auth, emailToUse, authPassword.trim());
+      const fbUser = userCredential.user;
       
-      if (found) {
-        setIsAuthorized(true);
-        setSupUserId(found.id);
-        setSupName(found.name);
-        setSupNationalId(found.idNumber);
-        // Assuming ID number could act as badge for now, or just leave badge to be filled manually if they have a different one.
-        setSupBadge(found.idNumber);
-        setSupTitle(found.role || 'Site Supervisor');
+      let userDoc: any = null;
+      try {
+        userDoc = await dbApi.getById('users', fbUser.uid);
+      } catch {}
+
+      setIsAuthorized(true);
+      setSupUserId(fbUser.uid);
+      setSupName(userDoc?.name || fbUser.displayName || fbUser.email?.split('@')[0] || 'Supervisor');
+      setSupNationalId(userDoc?.badgeNumber || authId.trim());
+      setSupBadge(userDoc?.badgeNumber || authId.trim());
+      setSupTitle(userDoc?.roles?.[0] || 'Site Supervisor');
+    } catch (err: any) {
+      console.warn('FieldPortal Auth note:', err?.code || err);
+      if (err.code === 'auth/operation-not-allowed') {
+        setAuthError(isRtl ? 'تسجيل الدخول بالبريد وكلمة المرور غير مفعّل في Firebase Console' : 'Email/Password sign-in is disabled in Firebase Console');
+      } else if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
+        setAuthError(isRtl ? 'بيانات الاعتماد المدخلة غير صحيحة' : 'Invalid credentials provided');
       } else {
-        setAuthError(isRtl ? 'رقم الهوية أو كلمة المرور المدخلة غير صحيحة' : 'The ID Number or Password entered is incorrect');
+        setAuthError(isRtl ? 'حدث خطأ أثناء تسجيل الدخول' : 'Failed to authenticate');
       }
-    } catch (err) {
-      console.error(err);
-      setAuthError(isRtl ? 'حدث خطأ في الاتصال بقاعدة البيانات' : 'Failed to connect to the database');
     } finally {
       setIsAuthenticating(false);
     }
@@ -1911,17 +1920,6 @@ export default function FieldPortal({
             >
               {isAuthenticating ? (isRtl ? 'جاري التحقق...' : 'Verifying...') : (isRtl ? 'تسجيل الدخول الأمن' : 'Secure Login')}
             </button>
-            <div className="border-t border-dashed border-gray-150 pt-4 text-center">
-              <span className="text-[10px] text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100 inline-block font-bold">
-                💡 {isRtl ? 'استخدم بيانات المسؤول المعتمد:' : 'Use authorized administrator credentials:'}{' '}
-                <span className="font-mono bg-white px-1.5 py-0.5 rounded border border-emerald-200 ml-1">
-                  ID: 1001
-                </span>
-                <span className="font-mono bg-white px-1.5 py-0.5 rounded border border-emerald-200 ml-1">
-                  PW: password123
-                </span>
-              </span>
-            </div>
           </form>
         </div>
       </div>

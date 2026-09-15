@@ -17,6 +17,7 @@ import {
   EquipmentItem
 } from '../types';
 import { dbApi } from '../lib/api';
+import { auth } from '../lib/firebase';
 import { getProjectProgress, getProjectStatusDetails, getWorkItemProgress, getActivityProgress } from '../utils/progressCalculations';
 import { 
   Plus, 
@@ -139,11 +140,15 @@ export default function ProjectList({
 
   useEffect(() => {
     const loadAdmins = async () => {
-      try {
-        const list = await dbApi.getAll<any>('admins');
-        setAdmins(list);
-      } catch (err) {
-        console.error('Error fetching admins for override check:', err);
+      if (auth.currentUser) {
+        try {
+          const dbList = await dbApi.getAll<any>('admins').catch(() => []);
+          if (dbList && dbList.length > 0) {
+            setAdmins(dbList);
+          }
+        } catch (err) {
+          console.warn('Admins list note:', err);
+        }
       }
     };
     loadAdmins();

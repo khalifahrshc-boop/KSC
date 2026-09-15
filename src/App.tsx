@@ -53,6 +53,8 @@ import {
 } from './types';
 import { translations } from './utils/translation';
 import { dbApi } from './lib/api';
+import { auth } from './lib/firebase';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { backfillActivities } from './utils/progressCalculations';
 import Dashboard from './components/Dashboard';
 import KPIDashboard from './components/KPIDashboard';
@@ -161,8 +163,9 @@ export default function App() {
     ) {
       return 'saasAdmin';
     }
+    if (pathname === 'login') return 'login';
+    if (pathname === 'register' || hash === 'saas-register' || hash === 'register') return 'saasRegister';
     if (hash === 'saas-landing' || hash === 'landing' || hash === 'pricing') return 'saasLanding';
-    if (hash === 'saas-register' || hash === 'register') return 'saasRegister';
     if (hash === 'saas-portal' || hash === 'portal' || hash === 'account') return 'saasPortal';
     if (hash) return hash;
     if (modParam) return modParam;
@@ -171,11 +174,32 @@ export default function App() {
 
   const setActiveModule = (mod: string) => {
     setActiveModuleState(mod);
-    window.location.hash = mod;
+    
+    // Support pathname history for core routes
+    if (mod === 'login' && window.location.pathname !== '/login') {
+      window.history.pushState(null, '', '/login');
+    } else if (mod === 'saasRegister' && window.location.pathname !== '/register') {
+      window.history.pushState(null, '', '/register');
+    } else if (mod !== 'login' && mod !== 'saasRegister' && (window.location.pathname === '/login' || window.location.pathname === '/register')) {
+      window.history.pushState(null, '', '/');
+      window.location.hash = mod;
+    } else if (mod !== 'login' && mod !== 'saasRegister') {
+      window.location.hash = mod;
+    }
   };
 
   useEffect(() => {
-    const handleHashChange = () => {
+    const handleNavigationChange = () => {
+      const pathname = window.location.pathname.replace('/', '').trim();
+      if (pathname === 'login') {
+        setActiveModuleState('login');
+        return;
+      }
+      if (pathname === 'register') {
+        setActiveModuleState('saasRegister');
+        return;
+      }
+      
       const hash = window.location.hash.replace('#', '').trim();
       if (hash === 'saas' || hash === 'saasAdmin' || hash === 'subscriptions') {
         setActiveModuleState('saasAdmin');
@@ -189,8 +213,12 @@ export default function App() {
         setActiveModuleState(hash);
       }
     };
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
+    window.addEventListener('popstate', handleNavigationChange);
+    window.addEventListener('hashchange', handleNavigationChange);
+    return () => {
+      window.removeEventListener('popstate', handleNavigationChange);
+      window.removeEventListener('hashchange', handleNavigationChange);
+    };
   }, []);
   const [preselectedReport, setPreselectedReport] = useState<{category: any, id: string | string[], action?: 'print' | 'pdf'} | null>(null);
   const [isBackgroundPrinting, setIsBackgroundPrinting] = useState(false);
@@ -225,39 +253,29 @@ export default function App() {
   const [users, setUsers] = useState<User[]>([]);
 
   // Real active user (Role-Based Access Control)
-  const [currentUser, setCurrentUser] = useState<User>(mockUsers[0]);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   // Administrator login session state
-  const [currentAdmin, setCurrentAdmin] = useState<{ idNumber: string; name: string } | null>(() => {
-    const saved = localStorage.getItem('pm_active_admin');
-    try {
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
+  const [currentAdmin, setCurrentAdmin] = useState<{ idNumber: string; name: string } | null>(null);
 
   const handleAdminLogin = (admin: { idNumber: string; name: string }) => {
-    setCurrentAdmin(admin);
-    localStorage.setItem('pm_active_admin', JSON.stringify(admin));
-    // Synchronize the current user for RBAC to reflect the logged-in admin
-    const syncedUser: User = {
-      id: admin.idNumber,
-      name: admin.name,
-      roles: ['Super Admin'],
-      email: `${admin.idNumber}@admin.local`,
-      badgeNumber: admin.idNumber
-    };
-    setCurrentUser(syncedUser);
-    logSystemAction('ADMIN_LOGIN', `Admin ${admin.name} (ID: ${admin.idNumber}) logged in`);
+    // Firebase auth state observer automatically handles login and sets loading
+    setIsLoading(true);
   };
 
-  const handleAdminLogout = () => {
+  const handleAdminLogout = async () => {
     if (currentAdmin) {
       logSystemAction('ADMIN_LOGOUT', `Admin ${currentAdmin.name} (ID: ${currentAdmin.idNumber}) logged out`);
     }
+    try {
+      await signOut(auth);
+    } catch (err) {
+      console.warn("SignOut notice:", err);
+    }
     setCurrentAdmin(null);
-    localStorage.removeItem('pm_active_admin');
+    setCurrentUser(null);
+    setIsLoading(false);
+    setInitError(null);
   };
 
   const [showRoleSelector, setShowRoleSelector] = useState(false);
@@ -573,124 +591,66 @@ export default function App() {
     setConfirmModal({ isOpen: true, title, message, onConfirm, isDestructive });
   };
 
-  // --- PTW Seed Data Purge (One-Time) ---
-  useEffect(() => {
-    const purgeSeedData = async () => {
-      const isPurged = localStorage.getItem('ptw_seed_purged_v2');
-      if (isPurged) return;
 
-      try {
-        const seedStartCardIds = ['sc-101', 'sc-102', 'sc-201'];
-        const seedPermitIds = ['ptw-101', 'ptw-102', 'ptw-103'];
-        const seedLogIds = ['pal-1', 'pal-2', 'pal-3', 'pal-4', 'pal-5'];
-        
-        await Promise.all([
-          ...seedStartCardIds.map(id => dbApi.delete('startCards', id)),
-          ...seedPermitIds.map(id => dbApi.delete('workPermits', id)),
-          ...seedLogIds.map(id => dbApi.delete('permitAuditLogs', id))
-        ]);
-        
-        localStorage.setItem('ptw_seed_purged_v2', 'true');
-        
-        setStartCards(prev => prev.filter(c => !seedStartCardIds.includes(c.id)));
-        setPermits(prev => prev.filter(p => !seedPermitIds.includes(p.id)));
-        setPermitAuditLogs(prev => prev.filter(l => !seedLogIds.includes(l.id)));
-        
-        console.log('PTW Seed data purged successfully');
-      } catch (e) {
-        console.error('Failed to purge PTW seed data', e);
-      }
-    };
-    purgeSeedData();
-  }, []);
 
-  // Database Initialization Logic
+  // Database Initialization Logic with Fast Bootstrap & Background Progressive Loading
   useEffect(() => {
-    const initData = async () => {
+    let isMounted = true;
+    console.log(`[BOOT] ${new Date().toISOString()} App mounted`);
+
+    // Background Operational Data Loader with strict tenant isolation
+    const loadOperationalData = async (tenantId: string, isSuper: boolean) => {
+      console.log(`[BOOT] ${new Date().toISOString()} Starting background operational data load for tenant: ${tenantId} (isSuper: ${isSuper})`);
       try {
-        setIsLoading(true);
-        
-        // Fetch all data in parallel
+        const fetchCol = <T,>(col: string) => {
+          if (isSuper || !tenantId) {
+            return dbApi.getAll<T>(col).catch(() => []);
+          }
+          return dbApi.getByTenant<T>(col, tenantId).catch(() => []);
+        };
+
         const [
-          dbUsers, dbProjects, dbWorkItems, dbActivities, 
+          dbProjects, dbWorkItems, dbActivities, 
           dbMaterials, dbEquipment, dbWorkers, dbNotifications, 
-          dbAuditLogs, dbSettings, dbCheckIns, dbAttendance, dbProgress, 
+          dbAuditLogs, dbCheckIns, dbAttendance, dbProgress, 
           dbSafety, dbDelays, dbIssues, dbSavedKpiReports, dbFieldSubmissions,
           dbQuickNotes, dbMorningMeetingPlans,
           dbStartCards, dbWorkPermits, dbPermitTypes, dbPermitAuditLogs, dbStartWorks,
-          dbSaasPlans, dbSaasCustomers, dbSaasSubscriptions, dbSaasInvoices, dbSaasPayments, dbSaasLicenses, dbSaasDevices, dbSaasAuditLogs, dbSaasSettings
+          dbSaasInvoices, dbSaasPayments, dbSaasLicenses, dbSaasDevices, dbSaasAuditLogs
         ] = await Promise.all([
-          dbApi.getAll<User>('users'),
-          dbApi.getAll<Project>('projects'),
-          dbApi.getAll<WorkItem>('workItems'),
-          dbApi.getAll<Activity>('activities'),
-          dbApi.getAll<WarehouseMaterial>('warehouseMaterials'),
-          dbApi.getAll<EquipmentItem>('equipmentItems'),
-          dbApi.getAll<Worker>('workers'),
-          dbApi.getAll<SystemNotification>('notifications'),
-          dbApi.getAll<AuditLog>('auditLogs'),
-          dbApi.getById<SystemSettings>('systemSettings', 'settings-global'),
-          dbApi.getAll<SupervisorCheckIn>('checkIns'),
-          dbApi.getAll<AttendanceRecord>('attendanceRecords'),
-          dbApi.getAll<ProgressUpdate>('progressUpdates'),
-          dbApi.getAll<SafetyRecord>('safetyRecords'),
-          dbApi.getAll<DelayRecord>('delayRecords'),
-          dbApi.getAll<IssueReport>('issueReports'),
-          dbApi.getAll<SavedKpiReport>('savedKpiReports').catch(() => []),
-          dbApi.getAll<FieldWorkSubmission>('fieldSubmissions').catch(() => []),
-          dbApi.getAll<QuickNote>('quickNotes').catch(() => []),
-          dbApi.getAll<MorningMeetingPlan>('morningMeetingPlans').catch(() => []),
-          dbApi.getAll<StartCard>('startCards').catch(() => []),
-          dbApi.getAll<WorkPermit>('workPermits').catch(() => []),
+          fetchCol<Project>('projects'),
+          fetchCol<WorkItem>('workItems'),
+          fetchCol<Activity>('activities'),
+          fetchCol<WarehouseMaterial>('warehouseMaterials'),
+          fetchCol<EquipmentItem>('equipmentItems'),
+          fetchCol<Worker>('workers'),
+          fetchCol<SystemNotification>('notifications'),
+          fetchCol<AuditLog>('auditLogs'),
+          fetchCol<SupervisorCheckIn>('checkIns'),
+          fetchCol<AttendanceRecord>('attendanceRecords'),
+          fetchCol<ProgressUpdate>('progressUpdates'),
+          fetchCol<SafetyRecord>('safetyRecords'),
+          fetchCol<DelayRecord>('delayRecords'),
+          fetchCol<IssueReport>('issueReports'),
+          fetchCol<SavedKpiReport>('savedKpiReports'),
+          fetchCol<FieldWorkSubmission>('fieldSubmissions'),
+          fetchCol<QuickNote>('quickNotes'),
+          fetchCol<MorningMeetingPlan>('morningMeetingPlans'),
+          fetchCol<StartCard>('startCards'),
+          fetchCol<WorkPermit>('workPermits'),
           dbApi.getAll<PermitTypeConfig>('permitTypes').catch(() => []),
-          dbApi.getAll<PermitAuditLog>('permitAuditLogs').catch(() => []),
-          dbApi.getAll<StartWorkRecord>('startWorks').catch(() => []),
-          dbApi.getAll<SaaSPlan>('saasPlans').catch(() => []),
-          dbApi.getAll<SaaSCustomer>('saasCustomers').catch(() => []),
-          dbApi.getAll<SaaSSubscription>('saasSubscriptions').catch(() => []),
-          dbApi.getAll<SaaSInvoice>('saasInvoices').catch(() => []),
-          dbApi.getAll<SaaSPayment>('saasPayments').catch(() => []),
-          dbApi.getAll<SaaSLicense>('saasLicenses').catch(() => []),
-          dbApi.getAll<SaaSDevice>('saasDevices').catch(() => []),
-          dbApi.getAll<SaaSAuditLog>('saasAuditLogs').catch(() => []),
-          dbApi.getById<SaaSSettings>('saasSettings', 'settings-saas').catch(() => null)
+          fetchCol<PermitAuditLog>('permitAuditLogs'),
+          fetchCol<StartWorkRecord>('startWorks'),
+          fetchCol<SaaSInvoice>('saasInvoices'),
+          fetchCol<SaaSPayment>('saasPayments'),
+          fetchCol<SaaSLicense>('saasLicenses'),
+          fetchCol<SaaSDevice>('saasDevices'),
+          fetchCol<SaaSAuditLog>('saasAuditLogs')
         ]);
 
+        if (!isMounted) return;
 
-        // Seed if completely empty (no users AND no projects)
-        if (dbUsers.length === 0 && dbProjects.length === 0) {
-          console.log("Seeding Database...");
-          await Promise.all([
-            dbApi.bulkSave('users', mockUsers),
-            dbApi.bulkSave('projects', seedProjects),
-            dbApi.bulkSave('workItems', seedWorkItems),
-            dbApi.bulkSave('activities', seedActivities),
-            dbApi.bulkSave('warehouseMaterials', seedWarehouse),
-            dbApi.bulkSave('equipmentItems', seedEquipment),
-            dbApi.bulkSave('workers', seedWorkers),
-            dbApi.bulkSave('notifications', initialNotifications),
-            dbApi.bulkSave('auditLogs', initialAuditLogs),
-            dbApi.save('systemSettings', { ...defaultSettings, id: 'settings-global' }, true),
-            dbApi.bulkSave('progressUpdates', initialProgressUpdates),
-            dbApi.bulkSave('safetyRecords', initialSafetyRecords),
-            dbApi.bulkSave('delayRecords', initialDelays),
-            dbApi.bulkSave('issueReports', initialIssues),
-            dbApi.bulkSave('morningMeetingPlans', seedMorningMeetingPlans)
-          ]);
-          // Refresh after seeding
-          window.location.reload();
-          return;
-        }
-
-        // Migrate old user records
-        dbUsers.forEach(u => {
-          if ((u as any).role && !u.roles) {
-            u.roles = [(u as any).role];
-          }
-          if (!u.roles) u.roles = ['Viewer'];
-        });
-
-        // Strictly sanitize and purge orphaned records to ensure only authentic active data is loaded
+        // Strictly sanitize and purge orphaned records
         const currentProjectIds = new Set(dbProjects.map(p => p.id));
         const validWorkItems = dbWorkItems.filter(wi => currentProjectIds.has(wi.projectId));
         const validWorkItemIds = new Set(validWorkItems.map(wi => wi.id));
@@ -700,20 +660,6 @@ export default function App() {
           validActivityIds.has(upd.activityId) && (!upd.projectId || currentProjectIds.has(upd.projectId))
         );
 
-        // Permanently prune any ghost or previously orphaned records from the persistence store
-        const orphanWorkItemIds = dbWorkItems.filter(wi => !currentProjectIds.has(wi.projectId)).map(w => w.id);
-        const orphanActivityIds = dbActivities.filter(act => !validWorkItemIds.has(act.workItemId)).map(a => a.id);
-        const orphanProgressIds = (dbProgress || []).filter(upd => !validActivityIds.has(upd.activityId)).map(u => u.id);
-
-        if (orphanWorkItemIds.length > 0 || orphanActivityIds.length > 0 || orphanProgressIds.length > 0) {
-          Promise.all([
-            ...orphanWorkItemIds.map(id => dbApi.delete('workItems', id)),
-            ...orphanActivityIds.map(id => dbApi.delete('activities', id)),
-            ...orphanProgressIds.map(id => dbApi.delete('progressUpdates', id)),
-          ]).catch(err => console.warn("Cleanup of orphaned records:", err));
-        }
-
-        setUsers(dbUsers);
         setProjects(dbProjects);
         setWorkItems(validWorkItems);
         const backfilled = backfillActivities(validActivities, dbWorkers, validWorkItems, dbProjects);
@@ -723,85 +669,34 @@ export default function App() {
         setWorkers(dbWorkers);
         setNotifications(dbNotifications);
         setAuditLogs(dbAuditLogs);
-        
-        // Ensure settings exist in DB, if not save defaults
-        let effectiveSettings = dbSettings;
-        if (!effectiveSettings) {
-          effectiveSettings = { ...defaultSettings, id: 'settings-global' };
-          dbApi.save('systemSettings', effectiveSettings, true).catch(console.error);
-        }
-        setSettings(effectiveSettings);
-        
         setCheckIns(dbCheckIns);
         setAttendanceRecords(dbAttendance || []);
-        let finalProgress = dbProgress;
-        if (dbProgress.length === 0 && initialProgressUpdates.length > 0) {
-          finalProgress = initialProgressUpdates;
-          await dbApi.bulkSave('progressUpdates', initialProgressUpdates);
-        }
-        setProgressUpdates(finalProgress);
+        setProgressUpdates(validProgressUpdates.length > 0 ? validProgressUpdates : (dbProgress || []));
         setSafetyRecords(dbSafety);
         setDelays(dbDelays);
         setIssues(dbIssues);
         setSavedKpiReports(dbSavedKpiReports || []);
         setFieldSubmissions(dbFieldSubmissions || []);
         setQuickNotes(dbQuickNotes || []);
+        setMorningMeetingPlans(dbMorningMeetingPlans || []);
         
-        let finalMorningPlans = dbMorningMeetingPlans || [];
-        if (finalMorningPlans.length === 0 && seedMorningMeetingPlans.length > 0) {
-          finalMorningPlans = seedMorningMeetingPlans;
-          await dbApi.bulkSave('morningMeetingPlans', seedMorningMeetingPlans).catch(console.error);
-        }
-        setMorningMeetingPlans(finalMorningPlans);
-
-        // Start Cards & PTW Initialization
-        let finalStartCards = dbStartCards || [];
-        // Removed fake data seeding per user request
-
-        let finalPermits = dbWorkPermits || [];
-        // Removed fake data seeding per user request
-
         let finalPermitTypes = dbPermitTypes || [];
-        // Initialize Permit Types if empty
         if (finalPermitTypes.length === 0) {
           const { DEFAULT_PERMIT_TYPES } = await import('./utils/ptwCalculations');
           finalPermitTypes = DEFAULT_PERMIT_TYPES;
-          await dbApi.bulkSave('permitTypes', DEFAULT_PERMIT_TYPES).catch(console.error);
         }
-        // SaaS Collections Initialization
-        if (dbSaasPlans && dbSaasPlans.length > 0) setSaasPlans(dbSaasPlans);
-        else dbApi.bulkSave('saasPlans', SEED_SAAS_PLANS).catch(console.error);
-
-        if (dbSaasCustomers && dbSaasCustomers.length > 0) setSaasCustomers(dbSaasCustomers);
-        else dbApi.bulkSave('saasCustomers', SEED_SAAS_CUSTOMERS).catch(console.error);
-
-        if (dbSaasSubscriptions && dbSaasSubscriptions.length > 0) setSaasSubscriptions(dbSaasSubscriptions);
-        else dbApi.bulkSave('saasSubscriptions', SEED_SAAS_SUBSCRIPTIONS).catch(console.error);
-
-        if (dbSaasInvoices && dbSaasInvoices.length > 0) setSaasInvoices(dbSaasInvoices);
-        else dbApi.bulkSave('saasInvoices', SEED_SAAS_INVOICES).catch(console.error);
-
-        if (dbSaasPayments && dbSaasPayments.length > 0) setSaasPayments(dbSaasPayments);
-        else dbApi.bulkSave('saasPayments', SEED_SAAS_PAYMENTS).catch(console.error);
-
-        if (dbSaasLicenses && dbSaasLicenses.length > 0) setSaasLicenses(dbSaasLicenses);
-        else dbApi.bulkSave('saasLicenses', SEED_SAAS_LICENSES).catch(console.error);
-
-        if (dbSaasDevices && dbSaasDevices.length > 0) setSaasDevices(dbSaasDevices);
-        else dbApi.bulkSave('saasDevices', SEED_SAAS_DEVICES).catch(console.error);
-
-        if (dbSaasAuditLogs && dbSaasAuditLogs.length > 0) setSaasAuditLogs(dbSaasAuditLogs);
-        else dbApi.bulkSave('saasAuditLogs', SEED_SAAS_AUDIT_LOGS).catch(console.error);
-
-        if (dbSaasSettings) setSaasSettings(dbSaasSettings);
-        else dbApi.save('saasSettings', DEFAULT_SAAS_SETTINGS, true).catch(console.error);
-
         setPermitTypes(finalPermitTypes);
 
-        let finalPermitAuditLogs = dbPermitAuditLogs || [];
-        // Removed fake data seeding per user request
+        if (dbSaasInvoices && dbSaasInvoices.length > 0) setSaasInvoices(dbSaasInvoices);
+        if (dbSaasPayments && dbSaasPayments.length > 0) setSaasPayments(dbSaasPayments);
+        if (dbSaasLicenses && dbSaasLicenses.length > 0) setSaasLicenses(dbSaasLicenses);
+        if (dbSaasDevices && dbSaasDevices.length > 0) setSaasDevices(dbSaasDevices);
+        if (dbSaasAuditLogs && dbSaasAuditLogs.length > 0) setSaasAuditLogs(dbSaasAuditLogs);
 
-        // Strictly sanitize and purge orphaned PTW records (Fake / Deleted Data Cleanup)
+        const finalStartCards = dbStartCards || [];
+        const finalPermits = dbWorkPermits || [];
+        const finalPermitAuditLogs = dbPermitAuditLogs || [];
+
         const validStartCards = finalStartCards.filter(sc => 
           (!sc.activityId || validActivityIds.has(sc.activityId)) &&
           (!sc.workItemId || validWorkItemIds.has(sc.workItemId)) &&
@@ -822,35 +717,124 @@ export default function App() {
           (log.recordType === 'WorkExecution' && validActivityIds.has(log.recordId))
         );
 
-        const orphanStartCardIds = finalStartCards.filter(sc => !validStartCardIds.has(sc.id)).map(sc => sc.id);
-        const orphanPermitIds = finalPermits.filter(p => !validPermitIds.has(p.id)).map(p => p.id);
-        const orphanAuditLogIds = finalPermitAuditLogs.filter(l => !validAuditLogs.includes(l)).map(l => l.id);
-
-        if (orphanStartCardIds.length > 0 || orphanPermitIds.length > 0 || orphanAuditLogIds.length > 0) {
-          Promise.all([
-            ...orphanStartCardIds.map(id => dbApi.delete('startCards', id)),
-            ...orphanPermitIds.map(id => dbApi.delete('workPermits', id)),
-            ...orphanAuditLogIds.map(id => dbApi.delete('permitAuditLogs', id)),
-          ]).catch(err => console.warn("Cleanup of orphaned PTW records:", err));
-        }
-
         setStartCards(validStartCards);
         setPermits(validWorkPermits);
         setStartWorks(dbStartWorks || []);
         setPermitAuditLogs(validAuditLogs);
-        
-        setCurrentUser(dbUsers.find(u => u.roles?.includes('Super Admin')) || dbUsers[0] || mockUsers[0]);
-
-
-      } catch (error: any) {
-        console.error("Database connection failed:", error);
-        setInitError(error.message || "Failed to connect to database");
-      } finally {
-        setIsLoading(false);
+        console.log(`[BOOT] ${new Date().toISOString()} Background operational data loaded successfully`);
+      } catch (opErr) {
+        console.warn("Background operational data loading completed with notes:", opErr);
       }
     };
 
-    initData();
+    const runBootstrap = async (firebaseUser: any) => {
+      console.log(`[BOOT] ${new Date().toISOString()} Authenticated session detected. Starting bootstrap.`);
+
+      const timeoutId = setTimeout(() => {
+        if (isMounted && isLoading) {
+          console.warn(`[BOOT] ${new Date().toISOString()} Critical bootstrap timed out after 5000ms.`);
+          setInitError(lang === 'ar' ? 'انتهت مهلة الاتصال بقاعدة البيانات' : 'Cloud sync timeout exceeded.');
+          setIsLoading(false);
+        }
+      }, 5000);
+
+      try {
+        console.log(`[BOOT] ${new Date().toISOString()} Critical bootstrap queries started`);
+        
+        let myUserDoc: any = null;
+        if (firebaseUser) {
+          myUserDoc = await dbApi.getById<any>('users', firebaseUser.uid).catch(() => null);
+        }
+
+        if (!myUserDoc) {
+          console.warn(`[BOOT] User document not found for authenticated UID. Forcing signout.`);
+          await auth.signOut();
+          setCurrentAdmin(null);
+          setCurrentUser(null);
+          setIsLoading(false);
+          clearTimeout(timeoutId);
+          return;
+        }
+
+        const isSuper = myUserDoc?.isSuperAdmin === true || myUserDoc?.role === 'SUPER_ADMIN';
+        const targetTenantId = myUserDoc?.tenantId;
+
+        const [
+          dbUsers, dbSettings, dbSaasPlans, dbSaasCustomers, dbSaasSubscriptions, dbSaasSettings
+        ] = await Promise.all([
+          isSuper ? dbApi.getAll<User>('users').catch(() => []) : dbApi.getByTenant<User>('users', targetTenantId).catch(() => []),
+          dbApi.getById<SystemSettings>('systemSettings', 'settings-global').catch(() => null),
+          dbApi.getAll<SaaSPlan>('saasPlans').catch(() => []),
+          isSuper 
+            ? dbApi.getAll<SaaSCustomer>('saasCustomers').catch(() => []) 
+            : dbApi.getById<SaaSCustomer>('saasCustomers', targetTenantId).then(c => c ? [c] : []).catch(() => []),
+          isSuper 
+            ? dbApi.getAll<SaaSSubscription>('saasSubscriptions').catch(() => [])
+            : dbApi.getByTenant<SaaSSubscription>('saasSubscriptions', targetTenantId).catch(() => []),
+          dbApi.getById<SaaSSettings>('saasSettings', 'settings-saas').catch(() => null)
+        ]);
+
+        clearTimeout(timeoutId);
+        if (!isMounted) return;
+
+        console.log(`[BOOT] ${new Date().toISOString()} Critical bootstrap completed`);
+
+        const resolvedUser: User = {
+          id: firebaseUser.uid,
+          name: myUserDoc.name || firebaseUser.displayName || firebaseUser.email || 'User',
+          roles: myUserDoc.roles || (myUserDoc.role === 'OWNER' ? ['Project Manager'] : ['Viewer']),
+          email: myUserDoc.email || firebaseUser.email || '',
+          badgeNumber: myUserDoc.badgeNumber || 'EMP-0001',
+          ...myUserDoc
+        };
+
+        console.log(`[BOOT] User profile & tenant resolved: ${resolvedUser.name} (${targetTenantId})`);
+        
+        setUsers(dbUsers.length > 0 ? dbUsers : [resolvedUser]);
+        setCurrentUser(resolvedUser);
+        setCurrentAdmin({ idNumber: resolvedUser.id, name: resolvedUser.name });
+        setActiveTenantId(targetTenantId);
+
+        if (dbSettings) setSettings(dbSettings);
+        if (dbSaasPlans && dbSaasPlans.length > 0) setSaasPlans(dbSaasPlans);
+        if (dbSaasCustomers && dbSaasCustomers.length > 0) setSaasCustomers(dbSaasCustomers);
+        if (dbSaasSubscriptions && dbSaasSubscriptions.length > 0) setSaasSubscriptions(dbSaasSubscriptions);
+        if (dbSaasSettings) setSaasSettings(dbSaasSettings);
+
+        setIsLoading(false);
+
+        if (targetTenantId) {
+          loadOperationalData(targetTenantId, isSuper);
+        }
+
+      } catch (error: any) {
+        clearTimeout(timeoutId);
+        console.error(`[BOOT] ${new Date().toISOString()} Database bootstrap failed:`, error);
+        if (isMounted) {
+          setInitError(error.message || "Failed to connect to database");
+          setIsLoading(false);
+        }
+      }
+    };
+
+    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+      if (!isMounted) return;
+      
+      if (!firebaseUser) {
+        console.log(`[BOOT] ${new Date().toISOString()} No Firebase session detected. Rendering login immediately.`);
+        setCurrentAdmin(null);
+        setCurrentUser(null);
+        setIsLoading(false);
+        return;
+      }
+
+      runBootstrap(firebaseUser);
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribeAuth();
+    };
   }, []);
 
   // Language trigger helper
@@ -2234,12 +2218,70 @@ export default function App() {
     );
   }
 
+  // PUBLIC UNAUTHENTICATED ROUTES
   if (!currentAdmin) {
+    if (activeModule === 'saasLanding') {
+      return (
+        <div style={{ fontFamily: lang === 'ar' ? 'Cairo, sans-serif' : 'Inter, sans-serif', direction: lang === 'ar' ? 'rtl' : 'ltr' }}>
+          <SaaSPublicLanding
+            plans={saasPlans}
+            lang={lang}
+            onStartRegister={(planId) => {
+              setActiveModule('saasRegister');
+            }}
+            onOpenLogin={() => {
+              setActiveModule('login');
+            }}
+          />
+        </div>
+      );
+    }
+    
+    if (activeModule === 'saasRegister') {
+      return (
+        <div style={{ fontFamily: lang === 'ar' ? 'Cairo, sans-serif' : 'Inter, sans-serif', direction: lang === 'ar' ? 'rtl' : 'ltr' }}>
+          <SaaSPublicRegister
+            plans={saasPlans}
+            settings={saasSettings}
+            onOpenLogin={() => setActiveModule('login')}
+            onSuccessRegistration={(registeredData) => {
+              // Create local state entries
+              setSaasCustomers(prev => [registeredData.customer, ...prev]);
+              setSaasSubscriptions(prev => [registeredData.subscription, ...prev]);
+              setSaasLicenses(prev => [registeredData.license, ...prev]);
+              setSaasAuditLogs(prev => [registeredData.auditLog, ...prev]);
+              setUsers(prev => [registeredData.user, ...prev]);
+
+              // Force login to the newly registered user
+              handleAdminLogin({
+                idNumber: registeredData.user.id,
+                name: registeredData.user.name
+              });
+              
+              setActiveTenantId(registeredData.customer.id);
+              setCurrentUser({
+                id: registeredData.user.id,
+                name: registeredData.user.name,
+                roles: ['Admin'],
+                email: registeredData.user.email,
+                badgeNumber: registeredData.user.id
+              });
+
+              setActiveModule('saasPortal');
+            }}
+            onCancel={() => setActiveModule('saasLanding')}
+          />
+        </div>
+      );
+    }
+
     return (
       <MainLogin 
         lang={lang} 
         onLogin={handleAdminLogin} 
         settings={settings}
+        onOpenRegister={() => setActiveModule('saasLanding')}
+        onOpenLanding={() => setActiveModule('saasLanding')}
       />
     );
   }
@@ -3229,12 +3271,6 @@ export default function App() {
                 setSaasLicenses(prev => [registeredData.license, ...prev]);
                 setSaasAuditLogs(prev => [registeredData.auditLog, ...prev]);
                 setUsers(prev => [registeredData.user, ...prev]);
-
-                dbApi.save('saasCustomers', registeredData.customer);
-                dbApi.save('saasSubscriptions', registeredData.subscription);
-                dbApi.save('saasLicenses', registeredData.license);
-                dbApi.save('saasAuditLogs', registeredData.auditLog);
-                dbApi.save('users', registeredData.user);
 
                 setActiveTenantId(registeredData.customer.id);
                 setCurrentUser({

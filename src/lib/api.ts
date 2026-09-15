@@ -12,6 +12,9 @@ import {
   doc, 
   deleteDoc, 
   writeBatch,
+  query,
+  where,
+  QueryConstraint,
   FirestoreError
 } from 'firebase/firestore';
 import { db, auth } from './firebase';
@@ -81,6 +84,29 @@ export const dbApi = {
     }
   },
 
+  async getByTenant<T>(collectionName: string, tenantId: string): Promise<T[]> {
+    try {
+      if (!tenantId) return [];
+      const q = query(collection(db, collectionName), where('tenantId', '==', tenantId));
+      const querySnapshot = await getDocs(q);
+      return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as T));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.LIST, `${collectionName}?tenantId=${tenantId}`);
+      return [];
+    }
+  },
+
+  async queryWithConstraints<T>(collectionName: string, ...constraints: QueryConstraint[]): Promise<T[]> {
+    try {
+      const q = query(collection(db, collectionName), ...constraints);
+      const querySnapshot = await getDocs(q);
+      return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as T));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.LIST, collectionName);
+      return [];
+    }
+  },
+
   async getById<T>(collectionName: string, id: string): Promise<T | null> {
     try {
       const docSnap = await getDoc(doc(db, collectionName, id));
@@ -121,6 +147,24 @@ export const dbApi = {
       return { success: true };
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, collectionName);
+      throw error;
+    }
+  },
+
+  async saveMultiple(items: { collection: string, data: any }[]): Promise<{ success: boolean }> {
+    try {
+      const batch = writeBatch(db);
+      items.forEach((item) => {
+        const { collection: collName, data } = item;
+        const { id, ...saveData } = data;
+        const sanitizedData = cleanUndefined(saveData);
+        const ref = id ? doc(db, collName, id) : doc(collection(db, collName));
+        batch.set(ref, sanitizedData, { merge: true });
+      });
+      await batch.commit();
+      return { success: true };
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'multi-collection-batch');
       throw error;
     }
   },

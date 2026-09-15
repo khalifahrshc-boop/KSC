@@ -4,6 +4,9 @@
  */
 
 import React, { useState } from 'react';
+import { auth } from '../../../lib/firebase';
+import { dbApi } from '../../../lib/api';
+import { createUserWithEmailAndPassword, sendEmailVerification, deleteUser } from 'firebase/auth';
 import {
   Building2,
   User,
@@ -38,6 +41,7 @@ interface SaaSPublicRegisterProps {
     auditLog: any;
   }) => void;
   onCancel: () => void;
+  onOpenLogin?: () => void;
 }
 
 export const SaaSPublicRegister: React.FC<SaaSPublicRegisterProps> = ({
@@ -114,14 +118,60 @@ export const SaaSPublicRegister: React.FC<SaaSPublicRegisterProps> = ({
     return Object.keys(errs).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) return;
 
     setIsSubmitting(true);
+    setErrors({});
 
     try {
+      let fbUid: string | undefined;
+      let fbUser: any;
+
+      // 1. Create Firebase Auth user
+      try {
+        const userCredential = await createUserWithEmailAndPassword(auth, form.email.trim(), form.password);
+        fbUser = userCredential.user;
+        fbUid = userCredential.user.uid;
+
+        // 2. Send email verification
+        try {
+          await sendEmailVerification(userCredential.user);
+        } catch (vErr) {
+          console.warn('Verification email notice:', vErr);
+        }
+      } catch (authErr: any) {
+        console.warn('Auth user creation notice:', authErr);
+        if (authErr.code === 'auth/email-already-in-use') {
+          setErrors({
+            submit: 'البريد الإلكتروني مسجل مسبقاً في النظام. يرجى تسجيل الدخول أو استخدام بريد إلكتروني آخر.'
+          });
+          setIsSubmitting(false);
+          return;
+        } else if (authErr.code === 'auth/weak-password') {
+          setErrors({
+            password: 'كلمة المرور ضعيفة. يرجى اختيار كلمة مرور مكونة من 6 خانات على الأقل.'
+          });
+          setIsSubmitting(false);
+          return;
+        } else if (authErr.code === 'auth/operation-not-allowed') {
+          setErrors({
+            submit: 'تسجيل الدخول بالبريد الإلكتروني غير مفعل في Firebase. يرجى تفعيله من لوحة تحكم Firebase.'
+          });
+          setIsSubmitting(false);
+          return;
+        } else {
+          setErrors({
+            submit: authErr.message || 'فشل إنشاء حساب المستخدم في النظام.'
+          });
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
       const payload: SaaSRegistrationPayload = {
+        fbUserId: fbUid,
         companyNameAr: form.companyNameAr,
         companyNameEn: form.companyNameEn || form.companyNameAr,
         commercialRegistration: form.commercialRegistration,
@@ -139,16 +189,38 @@ export const SaaSPublicRegister: React.FC<SaaSPublicRegisterProps> = ({
       };
 
       const result = createNewTenantRegistration(payload, plans, settings);
-      
-      // Delay slightly for UX
-      setTimeout(() => {
+
+      try {
+        await dbApi.saveMultiple([
+          { collection: 'saasCustomers', data: result.customer },
+          { collection: 'users', data: result.user },
+          { collection: 'saasSubscriptions', data: result.subscription },
+          { collection: 'saasLicenses', data: result.license },
+          { collection: 'saasAuditLogs', data: result.auditLog }
+        ]);
+      } catch (dbErr) {
+        console.error('Database provisioning failed:', dbErr);
+        
+        // Rollback: Delete the Firebase Auth user if database provisioning fails to maintain idempotency
+        if (fbUser) {
+          try {
+            await deleteUser(fbUser);
+          } catch (delErr) {
+            console.error('Failed to rollback Firebase Auth user:', delErr);
+          }
+        }
+        
+        setErrors({ submit: 'فشل إنشاء بيانات المنشأة. يرجى المحاولة مرة أخرى لاحقاً.' });
         setIsSubmitting(false);
-        onSuccessRegistration(result);
-      }, 600);
+        return;
+      }
+
+      setIsSubmitting(false);
+      onSuccessRegistration(result);
     } catch (err: any) {
       console.error('Registration failed:', err);
       setIsSubmitting(false);
-      setErrors({ submit: 'حدث خطأ أثناء إنشاء حساب المنشأة. يرجى المحاولة مرة أخرى.' });
+      setErrors({ submit: err.message || 'حدث خطأ أثناء إنشاء حساب المنشأة. يرجى المحاولة مرة أخرى.' });
     }
   };
 

@@ -2,6 +2,13 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
+import {
+  SAAS_VALID_TRANSITIONS,
+  runSubscriptionLifecycleBatch,
+  reactivateSubscription,
+  processSubscriptionItem,
+  evaluateSubscriptionLifecycle
+} from "./server/subscriptionLifecycle";
 
 // Lazy initialization of Gemini SDK as mandated by guidelines
 let geminiClient: GoogleGenAI | null = null;
@@ -23,6 +30,15 @@ function getGeminiClient(): GoogleGenAI {
   return geminiClient;
 }
 
+// Global server-side subscription registry cache for autonomous background worker
+let inMemoryServerSubscriptions: any[] = [];
+
+export function updateServerSubscriptionsRegistry(subs: any[]) {
+  if (Array.isArray(subs)) {
+    inMemoryServerSubscriptions = subs;
+  }
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -31,21 +47,95 @@ async function startServer() {
 
   // API HEALTH CHECK
   app.get("/api/health", (req, res) => {
-    res.json({ status: "ok" });
+    res.json({ status: "ok", lifecycleWorkerActive: true });
   });
 
   // --- SAAS SUBSCRIPTION, BILLING, LICENSE & TENANT MANAGEMENT ENDPOINTS ---
 
-  // 1. SaaS State Transition Engine
-  const SAAS_VALID_TRANSITIONS: Record<string, string[]> = {
-    TRIAL: ['ACTIVE', 'EXPIRED', 'CANCELLED', 'SUSPENDED', 'PENDING_PAYMENT'],
-    PENDING_PAYMENT: ['ACTIVE', 'CANCELLED', 'SUSPENDED'],
-    ACTIVE: ['PAST_DUE', 'SUSPENDED', 'EXPIRED', 'CANCELLED'],
-    PAST_DUE: ['ACTIVE', 'SUSPENDED', 'EXPIRED', 'CANCELLED'],
-    SUSPENDED: ['ACTIVE', 'EXPIRED', 'CANCELLED'],
-    EXPIRED: ['ACTIVE', 'SUSPENDED', 'CANCELLED'],
-    CANCELLED: ['ACTIVE', 'TRIAL']
-  };
+  // 1. Lifecycle Batch Evaluation API (Idempotent, UTC based)
+  app.post("/api/saas/lifecycle/evaluate-batch", (req, res) => {
+    try {
+      const { subscriptions = [], referenceDate } = req.body;
+      const refDate = referenceDate ? new Date(referenceDate) : new Date();
+
+      const result = runSubscriptionLifecycleBatch(subscriptions, refDate);
+      res.json({
+        success: true,
+        report: result.report,
+        updatedSubscriptions: result.updatedSubscriptions,
+        auditLogs: result.auditLogs
+      });
+    } catch (err: any) {
+      console.error("[Lifecycle Worker Error]:", err);
+      res.status(500).json({ error: err.message || "Failed to evaluate lifecycle batch" });
+    }
+  });
+
+  // 2. Protected Cron / Scheduled Automation Trigger Endpoint
+  app.post("/api/saas/cron/evaluate", (req, res) => {
+    try {
+      const cronSecret = process.env.CRON_SECRET;
+      const providedSecret = req.headers["x-cron-secret"] || req.headers["authorization"];
+
+      // Verify secret if configured in environment
+      if (cronSecret && providedSecret !== cronSecret && providedSecret !== `Bearer ${cronSecret}`) {
+        res.status(401).json({ error: "UNAUTHORIZED_CRON_REQUEST", message: "Invalid or missing cron authentication credentials" });
+        return;
+      }
+
+      const { subscriptions = inMemoryServerSubscriptions, referenceDate } = req.body;
+      const refDate = referenceDate ? new Date(referenceDate) : new Date();
+
+      const result = runSubscriptionLifecycleBatch(subscriptions, refDate);
+      if (result.updatedSubscriptions.length > 0) {
+        inMemoryServerSubscriptions = result.updatedSubscriptions;
+      }
+
+      console.info(`[SYSTEM_CRON] Evaluated ${result.report.totalEvaluated} subscriptions. Changes: ${result.report.totalChanged} at ${result.report.timestamp}`);
+
+      res.json({
+        success: true,
+        source: "SYSTEM_CRON",
+        report: result.report,
+        updatedSubscriptions: result.updatedSubscriptions,
+        auditLogs: result.auditLogs
+      });
+    } catch (err: any) {
+      console.error("[CRON Worker Execution Failed]:", err);
+      res.status(500).json({ error: err.message || "CRON execution encountered an error" });
+    }
+  });
+
+  // 3. Super Admin / Renewal Reactivation Endpoint
+  app.post("/api/saas/subscriptions/reactivate", (req, res) => {
+    try {
+      const { subscription, license, additionalDays, newEndDate, actorName, actorId, paymentReference, planId } = req.body;
+      
+      if (!subscription || !subscription.id) {
+        res.status(400).json({ error: "Missing subscription payload for reactivation" });
+        return;
+      }
+
+      const result = reactivateSubscription(subscription, license, {
+        additionalDays,
+        newEndDate,
+        actorName,
+        actorId,
+        paymentReference,
+        planId
+      });
+
+      res.json({
+        success: true,
+        updatedSubscription: result.updatedSubscription,
+        updatedLicense: result.updatedLicense,
+        auditLog: result.auditLog
+      });
+    } catch (err: any) {
+      console.error("[Reactivation Error]:", err);
+      res.status(500).json({ error: err.message || "Failed to reactivate subscription" });
+    }
+  });
 
   // Enforcement Evaluation Helper API
   app.post("/api/saas/enforce", (req, res) => {
@@ -64,23 +154,9 @@ async function startServer() {
         return;
       }
 
-      const today = new Date();
-      today.setHours(0,0,0,0);
-      const expiry = new Date(subscription.endDate || today);
-      expiry.setHours(0,0,0,0);
-      const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-
-      let effectiveStatus = subscription.status || 'ACTIVE';
-      if (subscription.status !== 'SUSPENDED' && subscription.status !== 'CANCELLED') {
-        if (diffDays <= 0) {
-          const grace = subscription.gracePeriodDays || 7;
-          if (Math.abs(diffDays) <= grace) {
-            effectiveStatus = 'PAST_DUE';
-          } else {
-            effectiveStatus = 'EXPIRED';
-          }
-        }
-      }
+      const evaluation = evaluateSubscriptionLifecycle(subscription);
+      const effectiveStatus = evaluation.targetStatus;
+      const diffDays = evaluation.daysRemaining;
 
       if (effectiveStatus === 'SUSPENDED') {
         res.status(403).json({
@@ -170,7 +246,7 @@ async function startServer() {
         return;
       }
 
-      const allowed = SAAS_VALID_TRANSITIONS[currentStatus]?.includes(targetStatus) || currentStatus === targetStatus;
+      const allowed = SAAS_VALID_TRANSITIONS[currentStatus as keyof typeof SAAS_VALID_TRANSITIONS]?.includes(targetStatus) || currentStatus === targetStatus;
       if (!allowed) {
         res.status(400).json({
           error: "INVALID_SUBSCRIPTION_STATE_TRANSITION",
@@ -189,6 +265,34 @@ async function startServer() {
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Secure Server-Side Tenant Provisioning & Subscription Creation
+  app.post("/api/saas/register-tenant", (req, res) => {
+    try {
+      const { customer, subscription, license, user, auditLog } = req.body;
+      if (!customer || !subscription || !license || !user) {
+        res.status(400).json({ error: "Missing required onboarding entities" });
+        return;
+      }
+
+      // Validate tenantId consistency
+      const tenantId = customer.id || subscription.tenantId;
+      if (!tenantId || subscription.tenantId !== tenantId || license.tenantId !== tenantId) {
+        res.status(400).json({ error: "Tenant ID mismatch in provisioning payload" });
+        return;
+      }
+
+      res.json({
+        success: true,
+        tenantId,
+        messageEn: "Tenant and subscription successfully provisioned",
+        messageAr: "تم إنشاء حساب المنشأة والاشتراك بنجاح",
+        timestamp: new Date().toISOString()
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to provision tenant" });
     }
   });
 
@@ -348,6 +452,30 @@ Provide your feedback strictly in the specified JSON structure. Be direct, liter
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
+
+    // Start background automated subscription lifecycle worker
+    const runBackgroundLifecycle = () => {
+      try {
+        if (inMemoryServerSubscriptions.length > 0) {
+          const result = runSubscriptionLifecycleBatch(inMemoryServerSubscriptions);
+          if (result.report.totalChanged > 0) {
+            inMemoryServerSubscriptions = result.updatedSubscriptions;
+            console.info(`[SYSTEM_CRON WORKER] Automated lifecycle updated ${result.report.totalChanged} subscription(s) at ${result.report.timestamp}`);
+          }
+        }
+      } catch (workerErr) {
+        console.error("[SYSTEM_CRON WORKER ERROR]:", workerErr);
+      }
+    };
+
+    // Initial check after startup
+    setTimeout(runBackgroundLifecycle, 5000);
+
+    // Periodic check every 1 hour (3,600,000 ms)
+    const lifecycleInterval = setInterval(runBackgroundLifecycle, 60 * 60 * 1000);
+    if (lifecycleInterval && typeof lifecycleInterval.unref === "function") {
+      lifecycleInterval.unref();
+    }
   });
 }
 

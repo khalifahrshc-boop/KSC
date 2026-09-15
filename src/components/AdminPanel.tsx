@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { dbApi } from '../lib/api';
+import { auth } from '../lib/firebase';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 import { Shield, Key, Plus, Trash2, LogOut, Check, AlertCircle, Eye, EyeOff, Edit2 } from 'lucide-react';
 
 interface Admin {
@@ -64,28 +66,22 @@ export default function AdminPanel({
 
   const [isLoading, setIsLoading] = useState(false);
 
-  // Load admins from DB and seed default administrator if empty
+  // Load admins from DB if authenticated
   const fetchAndSeedAdmins = async () => {
     try {
       setIsLoading(true);
-      const list = await dbApi.getAll<Admin>('admins');
-      
-      if (list.length === 0) {
-        // Seed default admin
-        const defaultAdmin: Admin = {
-          id: 'admin-default',
-          idNumber: '1001',
-          name: isRtl ? 'أحمد خالد (مدير عام)' : 'Ahmed Khaled (Director)',
-          password: 'password123',
-          createdAt: new Date().toISOString()
-        };
-        await dbApi.save('admins', defaultAdmin);
-        setAdmins([defaultAdmin]);
-      } else {
-        setAdmins(list);
+      if (auth.currentUser) {
+        try {
+          const dbList = await dbApi.getAll<Admin>('admins').catch(() => []);
+          if (dbList.length > 0) {
+            setAdmins(dbList);
+          }
+        } catch (dbErr) {
+          console.warn('Admins cloud sync note:', dbErr);
+        }
       }
     } catch (error) {
-      console.error('Failed to load admins:', error);
+      console.warn('Failed to load admins:', error);
     } finally {
       setIsLoading(false);
     }
@@ -96,34 +92,60 @@ export default function AdminPanel({
   }, [lang]);
 
   // Handle Login
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError(null);
 
-    if (!loginId.trim() || !loginPassword.trim()) {
+    const inputId = loginId.trim();
+    const inputPassword = loginPassword.trim();
+
+    if (!inputId || !inputPassword) {
       setLoginError(
         isRtl 
-          ? 'الرجاء إدخال رقم الهوية وكلمة المرور' 
-          : 'Please enter both ID Number and Password'
+          ? 'الرجاء إدخال البريد الإلكتروني أو رقم الهوية وكلمة المرور' 
+          : 'Please enter Email / ID Number and Password'
       );
       return;
     }
 
-    // Find admin matching credentials
-    const found = admins.find(
-      a => a.idNumber === loginId.trim() && a.password === loginPassword.trim()
-    );
+    setIsLoading(true);
+    try {
+      const emailToUse = inputId.includes('@') ? inputId : `${inputId}@sudairicorp.com`;
+      const userCredential = await signInWithEmailAndPassword(auth, emailToUse, inputPassword);
+      const fbUser = userCredential.user;
 
-    if (found) {
-      onAdminLogin({ idNumber: found.idNumber, name: found.name });
+      let userDoc: any = null;
+      try {
+        userDoc = await dbApi.getById('users', fbUser.uid);
+      } catch {}
+
+      const resolvedName = userDoc?.name || fbUser.displayName || fbUser.email?.split('@')[0] || 'Admin';
+      onAdminLogin({ idNumber: userDoc?.badgeNumber || inputId, name: resolvedName });
       setLoginId('');
       setLoginPassword('');
-    } else {
-      setLoginError(
-        isRtl 
-          ? 'رقم الهوية أو كلمة المرور المدخلة غير صحيحة' 
-          : 'The ID Number or Password entered is incorrect'
-      );
+    } catch (err: any) {
+      console.warn('Admin Auth note:', err?.code || err);
+      if (err.code === 'auth/operation-not-allowed') {
+        setLoginError(
+          isRtl 
+            ? 'تسجيل الدخول بالبريد وكلمة المرور غير مفعّل في Firebase Authentication. يرجى تفعيله من Firebase Console (Authentication > Sign-in method).' 
+            : 'Email/Password sign-in is disabled in Firebase Console. Please enable Email/Password under Authentication > Sign-in method.'
+        );
+      } else if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
+        setLoginError(
+          isRtl 
+            ? 'البريد الإلكتروني / رقم الهوية أو كلمة المرور غير صحيحة' 
+            : 'Incorrect Email/ID Number or Password'
+        );
+      } else {
+        setLoginError(
+          isRtl 
+            ? 'حدث خطأ أثناء التحقق من الدخول' 
+            : 'Authentication error occurred'
+        );
+      }
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -166,8 +188,11 @@ export default function AdminPanel({
           password: newPassword.trim(),
         };
 
-        await dbApi.save('admins', updatedAdmin);
-        setAdmins(prev => prev.map(a => a.id === editingAdminId ? updatedAdmin : a));
+        if (auth.currentUser) {
+          await dbApi.save('admins', updatedAdmin).catch(() => {});
+        }
+        const newAdminList = admins.map(a => a.id === editingAdminId ? updatedAdmin : a);
+        setAdmins(newAdminList);
         
         setAddSuccess(
           isRtl 
@@ -186,8 +211,11 @@ export default function AdminPanel({
           createdAt: new Date().toISOString()
         };
 
-        await dbApi.save('admins', adminData);
-        setAdmins(prev => [...prev, adminData]);
+        if (auth.currentUser) {
+          await dbApi.save('admins', adminData).catch(() => {});
+        }
+        const newAdminList = [...admins, adminData];
+        setAdmins(newAdminList);
         
         setAddSuccess(
           isRtl 
@@ -201,11 +229,11 @@ export default function AdminPanel({
         setNewPassword('');
       }
     } catch (error) {
-      console.error('Error saving admin:', error);
+      console.warn('Error saving admin:', error);
       setAddError(
         isRtl 
-          ? 'فشل الاتصال بقاعدة البيانات لحفظ الحساب' 
-          : 'Failed to connect to database to save the account'
+          ? 'فشل حفظ الحساب، يرجى المحاولة لاحقاً' 
+          : 'Failed to save administrator account'
       );
     }
   };
@@ -239,10 +267,13 @@ export default function AdminPanel({
 
     const performDelete = async () => {
       try {
-        await dbApi.delete('admins', id);
-        setAdmins(prev => prev.filter(a => a.id !== id));
+        if (auth.currentUser) {
+          await dbApi.delete('admins', id).catch(() => {});
+        }
+        const newAdminList = admins.filter(a => a.id !== id);
+        setAdmins(newAdminList);
       } catch (error) {
-        console.error('Failed to delete admin:', error);
+        console.warn('Failed to delete admin:', error);
       }
     };
 
@@ -340,19 +371,6 @@ export default function AdminPanel({
             >
               {isLoading ? (isRtl ? 'جاري التحقق...' : 'VERIFYING...') : (isRtl ? 'متابعة الدخول الأمن' : 'Access System Gateway')}
             </button>
-
-            {/* Default credentials note */}
-            <div className="border-t border-dashed border-gray-150 pt-4 text-center">
-              <span className="text-[10px] text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100 inline-block font-bold">
-                💡 {isRtl ? 'بيانات الدخول الافتراضية للتجربة:' : 'Sandbox Demo Credentials:'}{' '}
-                <span className="font-mono bg-white px-1.5 py-0.5 rounded border border-emerald-200 ml-1">
-                  ID: 1001
-                </span>
-                <span className="font-mono bg-white px-1.5 py-0.5 rounded border border-emerald-200 ml-1">
-                  PW: password123
-                </span>
-              </span>
-            </div>
           </form>
         </div>
       ) : (

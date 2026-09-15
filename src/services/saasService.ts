@@ -21,8 +21,8 @@ import {
 
 // STATE MACHINE TRANSITION VALIDATION
 const VALID_TRANSITIONS: Record<SubscriptionStatus, SubscriptionStatus[]> = {
-  TRIAL: ['ACTIVE', 'EXPIRED', 'CANCELLED', 'SUSPENDED', 'PENDING_PAYMENT'],
-  PENDING_PAYMENT: ['ACTIVE', 'CANCELLED', 'SUSPENDED'],
+  TRIAL: ['ACTIVE', 'EXPIRED', 'CANCELLED', 'SUSPENDED', 'PENDING_PAYMENT', 'PAST_DUE'],
+  PENDING_PAYMENT: ['ACTIVE', 'CANCELLED', 'SUSPENDED', 'EXPIRED'],
   ACTIVE: ['PAST_DUE', 'SUSPENDED', 'EXPIRED', 'CANCELLED'],
   PAST_DUE: ['ACTIVE', 'SUSPENDED', 'EXPIRED', 'CANCELLED'],
   SUSPENDED: ['ACTIVE', 'EXPIRED', 'CANCELLED'],
@@ -577,6 +577,7 @@ export const SEED_SAAS_AUDIT_LOGS: SaaSAuditLog[] = [
 export const SEED_SAAS_PLANS = DEFAULT_SAAS_PLANS;
 
 export interface SaaSRegistrationPayload {
+  fbUserId?: string;
   companyNameAr: string;
   companyNameEn: string;
   commercialRegistration: string;
@@ -584,7 +585,7 @@ export interface SaaSRegistrationPayload {
   contactPerson: string;
   email: string;
   mobile: string;
-  password: string;
+  password?: string;
   selectedPlanId: string;
   billingCycle?: 'Monthly' | 'Yearly';
   addressAr?: string;
@@ -605,7 +606,7 @@ export function createNewTenantRegistration(
   auditLog: SaaSAuditLog;
 } {
   const tenantId = `cust_${Date.now()}`;
-  const userId = `usr_${Date.now()}`;
+  const userId = payload.fbUserId || `usr_${Date.now()}`;
   const subId = `sub_${Date.now()}`;
   const licenseId = `lic_${Date.now()}`;
   const nowIso = new Date().toISOString();
@@ -636,11 +637,25 @@ export function createNewTenantRegistration(
     id: userId,
     name: payload.contactPerson,
     email: payload.email,
-    password: payload.password,
-    role: 'admin',
+    role: 'OWNER',
+    roles: ['Project Manager', 'Director'],
+    isSuperAdmin: false,
+    permissions: [
+      'ALL_TENANT_READ',
+      'ALL_TENANT_WRITE',
+      'PROJECT_MANAGE',
+      'WORK_ITEM_MANAGE',
+      'INVENTORY_MANAGE',
+      'CREW_MANAGE',
+      'REPORT_VIEW',
+      'SETTINGS_EDIT',
+      'USER_MANAGE',
+      'SUBSCRIPTION_VIEW'
+    ],
     tenantId,
     company: payload.companyNameAr,
-    active: true,
+    status: 'ACTIVE',
+    badgeNumber: `OWNER-${Date.now().toString().slice(-4)}`,
     mobile: payload.mobile,
     emailNotifications: payload.emailNotifications ?? true,
     smsNotifications: payload.smsNotifications ?? true,

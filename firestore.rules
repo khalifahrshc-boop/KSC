@@ -2,49 +2,251 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // SaaS Central System Collections (Admin Controlled)
+    // Helper functions for authentication, tenant isolation, and RBAC
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function userDocExists() {
+      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function getUserTenantId() {
+      return userDocExists() ? getUserData().tenantId : null;
+    }
+
+    function getUserRole() {
+      return userDocExists() ? getUserData().role : null;
+    }
+
+    function isSuperAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.admin == true || 
+        (userDocExists() && (
+          getUserData().role == 'SUPER_ADMIN' || 
+          getUserData().role == 'SYSTEM_ADMIN' ||
+          getUserData().isSuperAdmin == true
+        )) ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function belongsToTenant(tenantId) {
+      return isSuperAdmin() || !userDocExists() || getUserTenantId() == null || getUserTenantId() == tenantId;
+    }
+
+    // SaaS Plans (Public read for landing/pricing/registration, Super Admin write only)
     match /saasPlans/{planId} {
       allow read: if true;
-      allow write: if request.auth != null || true; // SaaS Admin access
+      allow write: if isSuperAdmin();
     }
 
+    // SaaS Customers / Tenants
     match /saasCustomers/{customerId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated() && (isSuperAdmin() || resource.id == getUserTenantId() || resource.data.tenantId == getUserTenantId());
+      allow create: if isAuthenticated();
+      allow update: if isSuperAdmin() || (isAuthenticated() && (resource.id == getUserTenantId() || resource.data.tenantId == getUserTenantId()) && request.resource.data.status == resource.data.status);
+      allow delete: if isSuperAdmin();
     }
 
+    // SaaS Subscriptions
     match /saasSubscriptions/{subId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated() && (isSuperAdmin() || resource.data.tenantId == getUserTenantId());
+      allow create: if isSuperAdmin() || (isAuthenticated() && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId == request.resource.data.tenantId);
+      allow update, delete: if isSuperAdmin();
     }
 
+    // SaaS Invoices (Protected billing ledger)
     match /saasInvoices/{invoiceId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated() && (isSuperAdmin() || resource.data.tenantId == getUserTenantId());
+      allow create, update, delete: if isSuperAdmin();
     }
 
+    // SaaS Payments (Protected payment ledger)
     match /saasPayments/{paymentId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated() && (isSuperAdmin() || resource.data.tenantId == getUserTenantId());
+      allow create, update, delete: if isSuperAdmin();
     }
 
+    // SaaS Licenses
     match /saasLicenses/{licenseId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated() && (isSuperAdmin() || resource.data.tenantId == getUserTenantId());
+      allow create: if isSuperAdmin() || (isAuthenticated() && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId == request.resource.data.tenantId);
+      allow update, delete: if isSuperAdmin();
     }
 
+    // SaaS Devices (Managed per tenant)
     match /saasDevices/{deviceId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated() && (isSuperAdmin() || resource.data.tenantId == getUserTenantId());
+      allow create, update, delete: if isSuperAdmin() || (isAuthenticated() && (resource == null || resource.data.tenantId == getUserTenantId() || request.resource.data.tenantId == getUserTenantId()));
     }
 
+    // SaaS Audit Logs (Append-only & immutable)
     match /saasAuditLogs/{logId} {
-      allow read: if true;
-      allow create: if true; // Immutable append-only audit trail
-      allow update, delete: if false; // Strict audit log preservation
+      allow read: if isAuthenticated() && (isSuperAdmin() || resource.data.tenantId == getUserTenantId() || resource.data.tenantId == null);
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
     }
 
+    // SaaS Global & Tenant Settings
     match /saasSettings/{settingId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin() || (userDocExists() && (getUserRole() == 'OWNER' || getUserRole() == 'ADMIN'));
     }
 
-    // Default tenant & general application collections
+    // System Settings
+    match /systemSettings/{settingId} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin() || (userDocExists() && (getUserRole() == 'OWNER' || getUserRole() == 'ADMIN'));
+    }
+
+    // System Admins
+    match /admins/{adminId} {
+      allow read, write: if isSuperAdmin();
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isSuperAdmin() || resource.data.tenantId == getUserTenantId());
+      allow create: if isAuthenticated() && (request.auth.uid == userId || isSuperAdmin());
+      allow update: if isAuthenticated() && (
+        isSuperAdmin() || 
+        (request.auth.uid == userId && 
+          request.resource.data.role == resource.data.role && 
+          request.resource.data.tenantId == resource.data.tenantId && 
+          request.resource.data.isSuperAdmin == resource.data.isSuperAdmin
+        ) || 
+        (userDocExists() && getUserRole() == 'OWNER' && 
+          resource.data.tenantId == getUserTenantId() && 
+          request.resource.data.tenantId == getUserTenantId() && 
+          request.resource.data.role != 'SUPER_ADMIN' && 
+          request.resource.data.isSuperAdmin != true
+        )
+      );
+      allow delete: if isSuperAdmin() || (userDocExists() && getUserRole() == 'OWNER' && resource.data.tenantId == getUserTenantId());
+    }
+
+    // Operational Audit Logs (Append-only)
+    match /auditLogs/{logId} {
+      allow read: if isAuthenticated() && (isSuperAdmin() || resource.data.tenantId == getUserTenantId() || resource.data.tenantId == null);
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
+    }
+
+    match /permitAuditLogs/{logId} {
+      allow read: if isAuthenticated() && (isSuperAdmin() || resource.data.tenantId == getUserTenantId() || resource.data.tenantId == null);
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
+    }
+
+    // Operational collections (Tenant isolated)
+    match /projects/{projectId} {
+      allow read, write: if isAuthenticated() && (isSuperAdmin() || resource == null || resource.data.tenantId == getUserTenantId() || request.resource.data.tenantId == getUserTenantId());
+    }
+
+    match /workItems/{workItemId} {
+      allow read, write: if isAuthenticated() && (isSuperAdmin() || resource == null || resource.data.tenantId == getUserTenantId() || request.resource.data.tenantId == getUserTenantId());
+    }
+
+    match /activities/{activityId} {
+      allow read, write: if isAuthenticated() && (isSuperAdmin() || resource == null || resource.data.tenantId == getUserTenantId() || request.resource.data.tenantId == getUserTenantId());
+    }
+
+    match /warehouseMaterials/{materialId} {
+      allow read, write: if isAuthenticated() && (isSuperAdmin() || resource == null || resource.data.tenantId == getUserTenantId() || request.resource.data.tenantId == getUserTenantId());
+    }
+
+    match /equipmentItems/{equipmentId} {
+      allow read, write: if isAuthenticated() && (isSuperAdmin() || resource == null || resource.data.tenantId == getUserTenantId() || request.resource.data.tenantId == getUserTenantId());
+    }
+
+    match /workers/{workerId} {
+      allow read, write: if isAuthenticated() && (isSuperAdmin() || resource == null || resource.data.tenantId == getUserTenantId() || request.resource.data.tenantId == getUserTenantId());
+    }
+
+    match /notifications/{notificationId} {
+      allow read, write: if isAuthenticated() && (isSuperAdmin() || resource == null || resource.data.tenantId == getUserTenantId() || request.resource.data.tenantId == getUserTenantId());
+    }
+
+    match /checkIns/{checkInId} {
+      allow read, write: if isAuthenticated() && (isSuperAdmin() || resource == null || resource.data.tenantId == getUserTenantId() || request.resource.data.tenantId == getUserTenantId());
+    }
+
+    match /attendanceRecords/{attendanceId} {
+      allow read, write: if isAuthenticated() && (isSuperAdmin() || resource == null || resource.data.tenantId == getUserTenantId() || request.resource.data.tenantId == getUserTenantId());
+    }
+
+    match /progressUpdates/{progressId} {
+      allow read, write: if isAuthenticated() && (isSuperAdmin() || resource == null || resource.data.tenantId == getUserTenantId() || request.resource.data.tenantId == getUserTenantId());
+    }
+
+    match /safetyRecords/{safetyId} {
+      allow read, write: if isAuthenticated() && (isSuperAdmin() || resource == null || resource.data.tenantId == getUserTenantId() || request.resource.data.tenantId == getUserTenantId());
+    }
+
+    match /delayRecords/{delayId} {
+      allow read, write: if isAuthenticated() && (isSuperAdmin() || resource == null || resource.data.tenantId == getUserTenantId() || request.resource.data.tenantId == getUserTenantId());
+    }
+
+    match /issueReports/{issueId} {
+      allow read, write: if isAuthenticated() && (isSuperAdmin() || resource == null || resource.data.tenantId == getUserTenantId() || request.resource.data.tenantId == getUserTenantId());
+    }
+
+    match /savedKpiReports/{reportId} {
+      allow read, write: if isAuthenticated() && (isSuperAdmin() || resource == null || resource.data.tenantId == getUserTenantId() || request.resource.data.tenantId == getUserTenantId());
+    }
+
+    match /savedReports/{reportId} {
+      allow read, write: if isAuthenticated() && (isSuperAdmin() || resource == null || resource.data.tenantId == getUserTenantId() || request.resource.data.tenantId == getUserTenantId());
+    }
+
+    match /siteReports/{reportId} {
+      allow read, write: if isAuthenticated() && (isSuperAdmin() || resource == null || resource.data.tenantId == getUserTenantId() || request.resource.data.tenantId == getUserTenantId());
+    }
+
+    match /fieldRequests/{requestId} {
+      allow read, write: if isAuthenticated() && (isSuperAdmin() || resource == null || resource.data.tenantId == getUserTenantId() || request.resource.data.tenantId == getUserTenantId());
+    }
+
+    match /fieldSubmissions/{submissionId} {
+      allow read, write: if isAuthenticated() && (isSuperAdmin() || resource == null || resource.data.tenantId == getUserTenantId() || request.resource.data.tenantId == getUserTenantId());
+    }
+
+    match /materialDeliveries/{deliveryId} {
+      allow read, write: if isAuthenticated() && (isSuperAdmin() || resource == null || resource.data.tenantId == getUserTenantId() || request.resource.data.tenantId == getUserTenantId());
+    }
+
+    match /quickNotes/{noteId} {
+      allow read, write: if isAuthenticated() && (isSuperAdmin() || resource == null || resource.data.tenantId == getUserTenantId() || request.resource.data.tenantId == getUserTenantId());
+    }
+
+    match /morningMeetingPlans/{planId} {
+      allow read, write: if isAuthenticated() && (isSuperAdmin() || resource == null || resource.data.tenantId == getUserTenantId() || request.resource.data.tenantId == getUserTenantId());
+    }
+
+    match /startCards/{cardId} {
+      allow read, write: if isAuthenticated() && (isSuperAdmin() || resource == null || resource.data.tenantId == getUserTenantId() || request.resource.data.tenantId == getUserTenantId());
+    }
+
+    match /workPermits/{permitId} {
+      allow read, write: if isAuthenticated() && (isSuperAdmin() || resource == null || resource.data.tenantId == getUserTenantId() || request.resource.data.tenantId == getUserTenantId());
+    }
+
+    match /permitTypes/{typeId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /startWorks/{startWorkId} {
+      allow read, write: if isAuthenticated() && (isSuperAdmin() || resource == null || resource.data.tenantId == getUserTenantId() || request.resource.data.tenantId == getUserTenantId());
+    }
+
+    // Default tenant & general application collections catch-all
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if isAuthenticated() && (isSuperAdmin() || resource.data.tenantId == getUserTenantId() || request.resource.data.tenantId == getUserTenantId());
     }
   }
 }
